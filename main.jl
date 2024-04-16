@@ -10,8 +10,8 @@ using Pardiso
 using Enzyme
 using HCubature
 
-using StaRMAP
-using PNSolver
+# using StaRMAP
+# using PNSolver
 
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
@@ -19,64 +19,64 @@ using .SphericalHarmonicsMatrices
 include("even_odd_fem.jl")
 using .EvenOddFEM
 
-## for comparison
-struct TestMaterial{E} <: PNMaterial{1, Float64}
-    elms::E
-end
-
-import PNSolver.component_densities!
-function component_densities!(ρ::AbstractVector, m::TestMaterial, x::AbstractVector)
-    ρ .= 1.0
-end
-
-struct DummySP <: PNSolver.NeXLCore.BetheEnergyLoss end
-import PNSolver:stopping_power_func
-function stopping_power_func(::Type{DummySP}, element::PNSolver.NeXLCore.PeriodicTable.Element)
-    return ϵ -> -s([ϵ]) + 0.0*ϵ
-end
-
-struct DummyTC <: PNSolver.NeXLCore.ElasticScatteringCrossSection end
-import PNSolver:transport_coefficient_func
-function transport_coefficient_func(TCA::Type{<:DummyTC}, element, Nmax)
-    # A_e = convert_strip_mass(element.atomic_mass)
-    # ρ = convert_strip_density(element.density)
-    tc = zeros(Nmax+1)
-    for l = 0:Nmax
-        f(x) = scattering_kernel(x) * SphericalHarmonicsMatrices.Pl(x, l)
-        # tc[l+1] = 2. * π * hquadrature(f, -1., 1.)[1]
-        tc[l+1] = 2*π*hquadrature(f, -1., 1., maxevals=1000)[1] # the 2π probably depends on the definition of the differential scattering cross section (sometimes it might be included, sometimes it might be not..)
-    end
-    function tcoeff(ϵ)
-        # integrate the differential cross section into legendre polynomials
-        # ϵ_eV = ϵ # no need to convert as our default unit is eV.
-        # tc = zeros(Nmax+1)
-        # for l = 0:Nmax
-        #     f(x) = δσδΩ(TCA, acos(x), element, ϵ_eV) * Pl(x, l)
-        #     # tc[l+1] = 2. * π * hquadrature(f, -1., 1.)[1]
-        #     tc[l+1] = hquadrature(f, -1., 1.)[1] # the 2π probably depends on the definition of the differential scattering cross section (sometimes it might be included, sometimes it might be not..)
-        # end
-        return σ(ϵ)*tc
-    end
-    return tcoeff
-end
-
-# temp = transport_coefficient_func(DummyTC, nothing, 5)
-
-# function δσδΩ(::Type{DummyTC} , θ, element, ϵ)
-#     return 0.5*scattering_kernel(cos(θ))*PNSolver.convert_strip_mass(PNSolver.n"Cu".atomic_mass)
+# ## for comparison
+# struct TestMaterial{E} <: PNMaterial{1, Float64}
+#     elms::E
 # end
 
-gspec = PNSolver.make_gridspec((100, 1, 1), (-4.0, 0.0), 0.0, 0.0)
-beam = PNSolver.PNBeam{Float64}(MultivariateNormal([0.0, 0.0], [1.0, 1.0]), VonMisesFisher([1.0, 0.0, 0.0], 10.0), Normal(0.7, 0.09))
-problem = PNSolver.ForwardPNProblem{11, Float64}(gspec, [PNSolver.n"Cu"], beam, 1.0, -1.0, 300, PNSolver.PhysicalAlgorithm{DummySP, DummyTC})
+# import PNSolver.component_densities!
+# function component_densities!(ρ::AbstractVector, m::TestMaterial, x::AbstractVector)
+#     ρ .= 1.0
+# end
 
-m = TestMaterial{typeof([PNSolver.n"Cu"])}([PNSolver.n"Cu"])
-save = PNSolver.compute_and_save(problem, m)
+# struct DummySP <: PNSolver.NeXLCore.BetheEnergyLoss end
+# import PNSolver:stopping_power_func
+# function stopping_power_func(::Type{DummySP}, element::PNSolver.NeXLCore.PeriodicTable.Element)
+#     return ϵ -> -s([ϵ]) + 0.0*ϵ
+# end
 
-@gif for i in 1:300
-    plot(save[i][2][:, 1, 1])
-    title!("$(i)")
-end
+# struct DummyTC <: PNSolver.NeXLCore.ElasticScatteringCrossSection end
+# import PNSolver:transport_coefficient_func
+# function transport_coefficient_func(TCA::Type{<:DummyTC}, element, Nmax)
+#     # A_e = convert_strip_mass(element.atomic_mass)
+#     # ρ = convert_strip_density(element.density)
+#     tc = zeros(Nmax+1)
+#     for l = 0:Nmax
+#         f(x) = scattering_kernel(x) * SphericalHarmonicsMatrices.Pl(x, l)
+#         # tc[l+1] = 2. * π * hquadrature(f, -1., 1.)[1]
+#         tc[l+1] = 2*π*hquadrature(f, -1., 1., maxevals=1000)[1] # the 2π probably depends on the definition of the differential scattering cross section (sometimes it might be included, sometimes it might be not..)
+#     end
+#     function tcoeff(ϵ)
+#         # integrate the differential cross section into legendre polynomials
+#         # ϵ_eV = ϵ # no need to convert as our default unit is eV.
+#         # tc = zeros(Nmax+1)
+#         # for l = 0:Nmax
+#         #     f(x) = δσδΩ(TCA, acos(x), element, ϵ_eV) * Pl(x, l)
+#         #     # tc[l+1] = 2. * π * hquadrature(f, -1., 1.)[1]
+#         #     tc[l+1] = hquadrature(f, -1., 1.)[1] # the 2π probably depends on the definition of the differential scattering cross section (sometimes it might be included, sometimes it might be not..)
+#         # end
+#         return σ(ϵ)*tc
+#     end
+#     return tcoeff
+# end
+
+# # temp = transport_coefficient_func(DummyTC, nothing, 5)
+
+# # function δσδΩ(::Type{DummyTC} , θ, element, ϵ)
+# #     return 0.5*scattering_kernel(cos(θ))*PNSolver.convert_strip_mass(PNSolver.n"Cu".atomic_mass)
+# # end
+
+# gspec = PNSolver.make_gridspec((100, 1, 1), (-4.0, 0.0), 0.0, 0.0)
+# beam = PNSolver.PNBeam{Float64}(MultivariateNormal([0.0, 0.0], [1.0, 1.0]), VonMisesFisher([1.0, 0.0, 0.0], 10.0), Normal(0.7, 0.09))
+# problem = PNSolver.ForwardPNProblem{11, Float64}(gspec, [PNSolver.n"Cu"], beam, 1.0, -1.0, 300, PNSolver.PhysicalAlgorithm{DummySP, DummyTC})
+
+# m = TestMaterial{typeof([PNSolver.n"Cu"])}([PNSolver.n"Cu"])
+# save = PNSolver.compute_and_save(problem, m)
+
+# @gif for i in 1:300
+#     plot(save[i][2][:, 1, 1])
+#     title!("$(i)")
+# end
 
 
 # include("quick_and_dirty_1D_even_odd_fem.jl")
@@ -183,9 +183,9 @@ end
 
 ## basis evaluations
 function eval_space(U_x, x)
-    bp, bm = zeros(num_free_dofs(U_x[1])), zeros(num_free_dofs(U_x[2]))
-    e_i_p = zeros(num_free_dofs(U_x[1]))
-    e_i_m = zeros(num_free_dofs(U_x[2]))
+    bp, bm = spzeros(num_free_dofs(U_x[1])), spzeros(num_free_dofs(U_x[2]))
+    e_i_p = spzeros(num_free_dofs(U_x[1]))
+    e_i_m = spzeros(num_free_dofs(U_x[2]))
 
     for i = 1:num_free_dofs(U_x[1])
         e_i_p[i] = 1.0
@@ -205,8 +205,8 @@ function eval_space(U_x, x)
 end
 
 function eval_energy(U_ϵ, ϵ)
-    b = zeros(num_free_dofs(U_ϵ))
-    e_i = zeros(num_free_dofs(U_ϵ))
+    b = spzeros(num_free_dofs(U_ϵ))
+    e_i = spzeros(num_free_dofs(U_ϵ))
 
     for i = 1:num_free_dofs(U_ϵ)
         e_i[i] = 1.0
@@ -234,7 +234,7 @@ nd = Val{1}()
 
 ### space definitions
 ## space 
-model_R = CartesianDiscreteModel((-1.0, 1.0), (100))
+model_R = CartesianDiscreteModel((-1.0, 1.0), (150))
 order_x = 1
 refel_x = ReferenceFE(lagrangian, Float64, order_x)
 # V_x = TestFESpace(model_R, refel_x, conformity=:H1)
@@ -249,7 +249,7 @@ d∂R = Measure(∂R, order_x+1)
 n = get_normal_vector(∂R)
 
 ## direction
-N = 5
+N = 11
 n_dir_basis = length(SphericalHarmonicsMatrices.get_moments(N, nd))
 n_dir_basis_p = length([m for m in SphericalHarmonicsMatrices.get_moments(N, nd) if SphericalHarmonicsMatrices.is_even(m...)])
 n_dir_basis_m = length([m for m in SphericalHarmonicsMatrices.get_moments(N, nd) if SphericalHarmonicsMatrices.is_odd(m...)])
@@ -257,7 +257,7 @@ dir_idx_p = 1:n_dir_basis_p
 dir_idx_m = n_dir_basis_p+1:n_dir_basis_p+n_dir_basis_m
 
 ## energy
-model_E_2 = CartesianDiscreteModel((-1.0, 0.0), (30))
+model_E_2 = CartesianDiscreteModel((-1.0, 0.0), (50))
 order_ϵ = 2
 refel_ϵ = ReferenceFE(lagrangian, Float64, order_ϵ)
 V_ϵ = MultiFieldFESpace([TestFESpace(model_E_2, refel_ϵ, conformity=:H1), TestFESpace(model_E_2, refel_ϵ, conformity=:H1, dirichlet_tags=[2])])
@@ -440,7 +440,31 @@ A = vcat(
     hcat(dXpm⊗E⊗dApm, Xmm⊗(dE⊗AImm + C⊗AImm - S⊗Kmm))
 )
 
+n_p_ = n_space_basis_p*n_dir_basis_p
+n_m_ = n_space_basis_m*n_dir_basis_m
 
+A_alt = dE ⊗ vcat(
+    hcat(Xpp ⊗ AIpp, spzeros(n_p_, n_m_)),
+    hcat(spzeros(n_m_, n_p_), Xmm ⊗ AImm)
+)
+
+A_alt += E ⊗ vcat(
+    hcat(∂Xpp ⊗ ∂App, -dXmp ⊗ dAmp),
+    hcat(dXpm ⊗ dApm, spzeros(n_m_, n_m_))
+)
+
+A_alt +=  C ⊗ vcat(
+    hcat(Xpp ⊗ AIpp, spzeros(n_p_, n_m_)),
+    hcat(spzeros(n_m_, n_p_), Xmm⊗AImm)
+)
+
+A_alt -= S ⊗ vcat(
+    hcat(Xpp ⊗ Kpp, spzeros(n_p_, n_m_)),
+    hcat(spzeros(n_m_, n_p_), Xmm⊗Kmm)
+)
+
+A
+A_alt
 # decom = svd(Matrix(A))
 # plot(decom.S)
 
@@ -452,6 +476,12 @@ b = - 2.0 * vcat(
     b_g_x_p⊗b_g_ϵ⊗b_g_Ω_p, 
     b_g_x_m⊗b_g_ϵ⊗b_g_Ω_m)
 
+b_alt = -2.0 * b_g_ϵ ⊗ vcat(
+    b_g_x_p ⊗ b_g_Ω_p,
+    b_g_x_m ⊗ b_g_Ω_m
+)
+
+
 c = vcat(
     b_μ_x_p⊗b_μ_ϵ⊗b_μ_Ω_p,
     b_μ_x_m⊗b_μ_ϵ⊗b_μ_Ω_m,
@@ -462,6 +492,7 @@ c = vcat(
 # u = A \ b
 ps = MKLPardisoSolver()
 @time u = Pardiso.solve(ps, A, b)
+@time u_alt = Pardiso.solve(ps, A_alt, b_alt)
 #v = Pardiso.solve(ps, sparse(transpose(A)), c)
 
 #dot(u, c)
@@ -473,13 +504,14 @@ GC.gc()
 
 x_coords = range(-1, 1, length=100)
 y = zeros(length(x_coords))
+y_alt = zeros(length(x_coords))
 y_v = zeros(length(x_coords))
 
 e_x = [eval_space(U_x, x_) for x_ in x_coords]
 
 gr()
-e_Ω_p = zeros(n_dir_basis_p)
-e_Ω_m = zeros(n_dir_basis_m)
+e_Ω_p = spzeros(n_dir_basis_p)
+e_Ω_m = spzeros(n_dir_basis_m)
 e_Ω_p[1] = 1.0
 
 # function extraction(ϵ)
@@ -495,16 +527,19 @@ e_Ω_p[1] = 1.0
 # xlabel!("energy ϵ")
 # ylabel!("intensity")
 
-@gif for (i, ϵ) = enumerate(range(1, -1, length=100))
+@gif for (j, ϵ) = enumerate(range(1, -1, length=100))
     e_ϵ = eval_energy(U_ϵ, ϵ)
     for (i, x_) in enumerate(x_coords)
         e_x_p, e_x_m = e_x[i]
         full_basis = vcat(e_x_p⊗e_ϵ⊗e_Ω_p, e_x_m⊗e_ϵ⊗e_Ω_m)
+        full_basis_alt = e_ϵ ⊗ vcat(e_x_p ⊗ e_Ω_p, e_x_m ⊗ e_Ω_m)
         y[i] = dot(u, full_basis)
+        y_alt[i] = dot(u_alt, full_basis_alt)
         #y_v[i] = dot(v, full_basis)
     end
 
     plot(x_coords, y, xflip=true, label="epma-fem")
+    plot!(x_coords, y_alt, xflip=true, label="epma-fem_alt")
     # plot!(x_coords, y_v, label="adjoint")
     # plot!(x_coords, x -> μ.x(Point(x))*μ.ϵ(Point(ϵ)), label="extraction")
     # scatter!([0.0], [u_diffeq(ϵ)])
@@ -512,7 +547,7 @@ e_Ω_p[1] = 1.0
     xlabel!("z")
     # scatter!([x[1] for x in R.grid.node_coords], zeros(length(R.grid.node_coords)))
     plot!(x_coords, zeros(length(x_coords)), ls=:dot, color=:black, label=nothing)
-    plot!(range(-1, 1, 100), save[i*3][2][:, 1, 1], label="epma-starmap")
+    # plot!(range(-1, 1, 100), save[i*3][2][:, 1, 1], label="epma-starmap")
     ylims!(-0.05, 0.5)
 end fps=3
 
