@@ -157,7 +157,7 @@ module SphericalHarmonicsMatrices
 
     function get_moments(N, ::Val{1})
         # only allocate moments for z
-        moments = [(l, k) for l in 0:N for k in -l:l if (!is_odd_in(l, k, Val{1}()) || !is_odd_in(l, k, Val{2}()))]
+        moments = [(l, k) for l in 0:N for k in -l:l if (!is_odd_in(l, k, Val{1}()) && !is_odd_in(l, k, Val{2}()))]
         return moments
     end
 
