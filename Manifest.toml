@@ -2,12 +2,18 @@
 
 julia_version = "1.10.2"
 manifest_format = "2.0"
-project_hash = "e910b29a968149edff5af9421e6a73a87f232c4c"
+project_hash = "7584b13f3ff24e7b77f590a3b55e9dcc7be152ce"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "016833eb52ba2d6bea9fcb50ca295980e728ee24"
 uuid = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
 version = "0.2.7"
+
+[[deps.AMD]]
+deps = ["LinearAlgebra", "SparseArrays", "SuiteSparse_jll"]
+git-tree-sha1 = "45a1272e3f809d36431e57ab22703c6896b8908f"
+uuid = "14f7f29c-3bd6-536c-9a0b-7339e30b5a3e"
+version = "0.5.3"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -1014,6 +1020,12 @@ git-tree-sha1 = "f6250b16881adf048549549fba48b1161acdac8c"
 uuid = "c1c5ebd0-6772-5130-a774-d5fcae4a789d"
 version = "3.100.1+0"
 
+[[deps.LDLFactorizations]]
+deps = ["AMD", "LinearAlgebra", "SparseArrays", "Test"]
+git-tree-sha1 = "70f582b446a1c3ad82cf87e62b878668beef9d13"
+uuid = "40e66cde-538c-5869-a4ad-c39174c6795b"
+version = "0.10.1"
+
 [[deps.LERC_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "bf36f528eec6634efc60d7ec062008f171071434"
@@ -1191,6 +1203,16 @@ version = "7.2.0"
 [[deps.LinearAlgebra]]
 deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
 uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+
+[[deps.LinearOperators]]
+deps = ["FastClosures", "LDLFactorizations", "LinearAlgebra", "Printf", "Requires", "SparseArrays", "TimerOutputs"]
+git-tree-sha1 = "f06df3a46255879cbccae1b5b6dcb16994c31be7"
+uuid = "5c8ed15e-5a4c-59e4-a42b-c7e8811fb125"
+version = "2.7.0"
+weakdeps = ["ChainRulesCore"]
+
+    [deps.LinearOperators.extensions]
+    LinearOperatorsChainRulesCoreExt = "ChainRulesCore"
 
 [[deps.LinearSolve]]
 deps = ["ArrayInterface", "ChainRulesCore", "ConcreteStructs", "DocStringExtensions", "EnumX", "FastLapackInterface", "GPUArraysCore", "InteractiveUtils", "KLU", "Krylov", "LazyArrays", "Libdl", "LinearAlgebra", "MKL_jll", "Markdown", "PrecompileTools", "Preferences", "RecursiveFactorization", "Reexport", "SciMLBase", "SciMLOperators", "Setfield", "SparseArrays", "Sparspak", "StaticArraysCore", "UnPack"]
@@ -1568,6 +1590,18 @@ deps = ["AbstractTrees", "CodecZlib", "EnumX", "FlameGraphs", "Libdl", "OrderedC
 git-tree-sha1 = "c909f647881a80ec4c5974eec9624b0c96afad9d"
 uuid = "e4faabce-9ead-11e9-39d9-4379958e3056"
 version = "3.1.0"
+
+[[deps.PROPACK]]
+deps = ["LinearAlgebra", "LinearOperators", "PROPACK_jll"]
+git-tree-sha1 = "f500ecef3edcf1c8889fc861a0debcdb6c714c57"
+uuid = "b169e327-5944-5131-97a6-5d3d3f0a476a"
+version = "0.5.0"
+
+[[deps.PROPACK_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "OpenBLAS_jll", "Pkg", "libblastrampoline_jll"]
+git-tree-sha1 = "b6141cf260569331be16207e0886e71f71ccd5b1"
+uuid = "2c99449f-f194-5e92-8ff0-13814ff41dcf"
+version = "0.2.1+0"
 
 [[deps.PackageExtensionCompat]]
 git-tree-sha1 = "fb28e33b8a95c4cee25ce296c817d89cc2e53518"
