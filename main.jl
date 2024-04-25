@@ -313,8 +313,13 @@ scattering_kernel(μ) = scattering_kernel_(μ) / scattering_norm_factor
 
 s(ϵ) = -1.0
 ∂s_2(ϵ) = 0.5 * Enzyme.autodiff(Forward, s, Duplicated(ϵ[1], 1.0))[1]
-γ(ϵ) = 0.5
-σ(ϵ) = γ(ϵ)
+τ(ϵ) = 0.5
+σ(ϵ) = τ(ϵ)
+
+si(ϵ) = 0.5*(-s(ϵ)) # the minus is due to the definition in s(ϵ)
+τi(ϵ) = τ(ϵ) - (-∂s_2(ϵ)) #also the minus here
+σi(ϵ) = σ(ϵ)
+
 
 ## space
 n_space_basis_p = num_free_dofs(U_x[1])
@@ -473,7 +478,7 @@ dE = assemble_bilinear(
 dE = round.(dE, digits=8)
 
 C = assemble_bilinear(
-    (u, v) -> ∫(2.0 * ⁺((ϵ -> (γ(ϵ) + ∂s_2(ϵ)))* u * v))*dϵ,
+    (u, v) -> ∫(2.0 * ⁺((ϵ -> (τ(ϵ) + ∂s_2(ϵ)))* u * v))*dϵ,
     U_ϵ, V_ϵ
 )
 C = round.(C, digits=8)
@@ -502,6 +507,8 @@ b_g_ϵ = assemble_linear(
 
 import Gridap.TensorValues.⊗
 ⊗(A, B) = kron(A, B)
+⊗ₓ((A, ), (B, )) = kron(A, B)
+⊗ₓ((A1, A2), (B1, B2)) = kron(A1, B1) + kron(A2, B2)
 
 n_p = n_space_basis_p*num_free_dofs(U_ϵ)*n_dir_basis_p
 n_m = n_space_basis_m*num_free_dofs(U_ϵ)*n_dir_basis_m
@@ -593,70 +600,152 @@ n_mm = n_space_basis_m*n_dir_basis_m
 #     )
 # end
 
-A(s, τ, σ, Δϵ) = vcat(
-    hcat((s + Δϵ*τ) .* Xpp ⊗ AIpp + Δϵ .* ∂Xpp[1] ⊗ ∂App[1] + Δϵ .* ∂Xpp[2] ⊗ ∂App[2] - (Δϵ * σ).* Xpp ⊗Kpp , -Δϵ .* dXmp[1] ⊗ dAmp[1] - Δϵ .* dXmp[2] ⊗ dAmp[2]),
-    hcat(Δϵ .* dXpm[1]⊗dApm[1] + Δϵ .* dXpm[2]⊗dApm[2], (s + Δϵ*τ) .* Xmm ⊗ AImm - (Δϵ*σ).* Xmm ⊗Kmm)
-)
 
-A_U(s, τ, σ, Δϵ, (Up, Um)) = vcat(
-    hcat((s + Δϵ*τ) .* Xpp ⊗ (transpose(Up)*AIpp*Up) + Δϵ .* ∂Xpp[1] ⊗ (transpose(Up)*∂App[1]*Up) + Δϵ .* ∂Xpp[2] ⊗ (transpose(Up)*∂App[2]*Up) - (Δϵ * σ).* Xpp ⊗(transpose(Up)*Kpp*Up) , -Δϵ .* dXmp[1] ⊗ (transpose(Up)*dAmp[1]*Um) - Δϵ .* dXmp[2] ⊗ (transpose(Up)*dAmp[2]*Um)),
-    hcat(Δϵ .* dXpm[1]⊗(transpose(Um)*dApm[1]*Up) + Δϵ .* dXpm[2]⊗(transpose(Um)*dApm[2]*Up), (s + Δϵ*τ) .* Xmm ⊗ (transpose(Um)*AImm*Um) - (Δϵ*σ).* Xmm ⊗(transpose(Um)*Kmm*Um))
-)
-
-A_V(s, τ, σ, Δϵ, (Vp, Vm)) = vcat(
-    hcat((s + Δϵ*τ) .* (transpose(Vp)*Xpp*Vp) ⊗ AIpp + Δϵ .* (transpose(Vp)*∂Xpp[1]*Vp) ⊗ ∂App[1] + Δϵ .* (transpose(Vp)*∂Xpp[2]*Vp) ⊗ ∂App[2] - (Δϵ * σ).* (transpose(Vp)*Xpp*Vp) ⊗Kpp , -Δϵ .* (transpose(Vp)*dXmp[1]*Vm) ⊗ dAmp[1] - Δϵ .* (transpose(Vp)*dXmp[2]*Vm) ⊗ dAmp[2]),
-    hcat(Δϵ .* (transpose(Vm)*dXpm[1]*Vp)⊗dApm[1] + Δϵ .* (transpose(Vm)*dXpm[2]*Vp)⊗dApm[2], (s + Δϵ*τ) .* (transpose(Vm)*Xmm*Vm) ⊗ AImm - (Δϵ*σ).* (transpose(Vm)*Xmm*Vm) ⊗Kmm)
-)
-
-A_UV(s, τ, σ, Δϵ, (Up, Um), (Vp, Vm)) = vcat(
-    hcat((s + Δϵ*τ) .* (transpose(Vp)*Xpp*Vp) ⊗ (transpose(Up)*AIpp*Up) + Δϵ .* (transpose(Vp)*∂Xpp[1]*Vp) ⊗ (transpose(Up)*∂App[1]*Up) + Δϵ .* (transpose(Vp)*∂Xpp[2]*Vp) ⊗ (transpose(Up)*∂App[2]*Up) - (Δϵ * σ).* (transpose(Vp)*Xpp*Vp) ⊗(transpose(Up)*Kpp*Up) , -Δϵ .* (transpose(Vp)*dXmp[1]*Vm) ⊗ (transpose(Up)*dAmp[1]*Um) - Δϵ .* (transpose(Vp)*dXmp[2]*Vm) ⊗ (transpose(Up)*dAmp[2]*Um)),
-    hcat(Δϵ .* (transpose(Vm)*dXpm[1]*Vp)⊗(transpose(Um)*dApm[1]*Up) + Δϵ .* (transpose(Vm)*dXpm[2]*Vp)⊗(transpose(Um)*dApm[2]*Up), (s + Δϵ*τ) .* (transpose(Vm)*Xmm*Vm) ⊗ (transpose(Um)*AImm*Um) - (Δϵ*σ).* (transpose(Vm)*Xmm*Vm) ⊗(transpose(Um)*Kmm*Um))
-)
-
-
-b_ψΦ = vcat(
-    hcat(Xpp ⊗ AIpp, spzeros(n_pp, n_mm)),
-    hcat(spzeros(n_mm, n_pp), Xmm ⊗ AImm)
-)
-
-b_nΩΦ = vcat(
-    b_g_x_p⊗b_g_Ω_p, 
-    b_g_x_m⊗b_g_Ω_m
-)
-
-b_ψΦ_U((Up, Um)) = vcat(
-    hcat(Xpp ⊗ (transpose(Up)*AIpp), spzeros(n_space_basis_p*size(Up, 2), n_space_basis_m*n_dir_basis_m)),
-    hcat(spzeros(n_space_basis_m*size(Um, 2), n_space_basis_p*n_dir_basis_p), Xmm ⊗ (transpose(Um)*AImm))
-)
-
-b_nΩΦ_U((Up, Um)) = vcat(
-    b_g_x_p⊗(transpose(Up)*b_g_Ω_p), 
-    b_g_x_m⊗(transpose(Um)*b_g_Ω_m)
-)
-
-function b_ψΦ_V((Vp, Vm))
+function A_midpoint(ϵ0, ϵ)
+    Δϵ = ϵ - ϵ0
+    @assert Δϵ < 0.0 # should be solve backwards!
+    Δϵ = abs(Δϵ)
+    s = si(ϵ)
+    s_2 = si((ϵ0 + ϵ) / 2.0)
+    τ_2 = τi((ϵ0 + ϵ) / 2.0)
+    σ_2 = σi((ϵ0 + ϵ) / 2.0)
     return vcat(
-        hcat((transpose(Vp)*Xpp) ⊗ AIpp, spzeros(size(Vp, 2)*n_dir_basis_p, n_space_basis_m*n_dir_basis_m)),
-        hcat(spzeros(size(Vm, 2)*n_dir_basis_m, n_space_basis_p*n_dir_basis_p), (transpose(Vm)*Xmm) ⊗ AImm))
+        hcat((s + s_2) .* Xpp⊗AIpp + (Δϵ / 2) .* (∂Xpp⊗ₓ ∂App .+ τ_2 .* Xpp⊗AIpp .- σ_2.*Xpp⊗Kpp), (Δϵ / 2) .* dXmp ⊗ₓ dAmp),
+        hcat(-(Δϵ / 2) .* dXpm ⊗ₓ dApm, (s + s_2) .* Xmm ⊗ AImm + (Δϵ / 2) .* (τ_2 .* Xmm⊗AImm .- σ_2.*Xmm⊗Kmm))
+    )
 end
 
-b_nΩΦ_V((Vp, Vm)) = vcat(
-    (transpose(Vp)*b_g_x_p)⊗b_g_Ω_p, 
-    (transpose(Vm)*b_g_x_m)⊗b_g_Ω_m)
+function Ax_midpoint(ϵ0, ϵ)
+    Δϵ = ϵ - ϵ0
+    s = si(ϵ)
+    s_2 = si((ϵ0 + ϵ) / 2.0)
+    τ_2 = τi((ϵ0 + ϵ) / 2.0)
+    σ_2 = σi((ϵ0 + ϵ) / 2.0)
+    return vcat(
+        hcat((s + s_2) .* Xpp⊗AIpp + (Δϵ / 2) .* (∂Xpp⊗ₓ ∂App .+ τ_2 .* Xpp⊗AIpp .- σ_2.*Xpp⊗Kpp), (Δϵ / 2) .* dXmp ⊗ₓ dAmp),
+        hcat(-(Δϵ / 2) .* dXpm ⊗ₓ dApm, (s + s_2) .* Xmm ⊗ AImm + (Δϵ / 2) .* (τ_2 .* Xmm⊗AImm .- σ_2.*Xmm⊗Kmm))
+    )
+end
 
-b_ψΦ_UV((Up, Um), (Vp, Vm)) = vcat(
-    hcat((transpose(Vp)*Xpp) ⊗ (transpose(Up)*AIpp), spzeros(size(Vp, 2)*size(Up, 2), n_space_basis_m*n_dir_basis_m)),
-    hcat(spzeros(size(Vm, 2)*size(Um, 2), n_space_basis_p*n_dir_basis_p), (transpose(Vm)*Xmm) ⊗ (transpose(Um)*AImm))
-)
+function bx_midpoint(ϵ0, ϵ, λ0)
+    Δϵ = ϵ - ϵ0
+    s = si(ϵ)
+    s_2 = si((ϵ0 + ϵ) / 2.0)
+    τ_2 = τi((ϵ0 + ϵ) / 2.0)
+    σ_2 = σi((ϵ0 + ϵ) / 2.0)
+    A = vcat(
+        hcat((s + s_2) .* Xpp⊗AIpp - (Δϵ / 2) .* (∂Xpp⊗ₓ ∂App .+ τ_2 .* Xpp⊗AIpp .- σ_2.*Xpp⊗Kpp), -(Δϵ / 2) .* dXmp ⊗ₓ dAmp),
+        hcat((Δϵ / 2) .* dXpm ⊗ₓ dApm, (s + s_2) .* Xmm ⊗ AImm - (Δϵ / 2) .* (τ_2 .* Xmm⊗AImm .- σ_2.*Xmm⊗Kmm))
+    )
 
-b_nΩΦ_UV((Up, Um), (Vp, Vm)) = vcat(
-    (transpose(Vp)*b_g_x_p)⊗(transpose(Up)*b_g_Ω_p), 
-    (transpose(Vm)*b_g_x_m)⊗(transpose(Um)*b_g_Ω_m))
+    μ_2 = μ.ϵ((ϵ0 + ϵ) / 2.0)
+    c = vcat(
+        b_μ_x_p⊗b_μ_Ω_p, 
+        b_μ_x_m⊗b_μ_Ω_m)
 
-b(s, g_ϵ, Δϵ, ψN) = s .* (b_ψΦ * ψN) - 2*Δϵ*g_ϵ*b_nΩΦ
-b_V(s, g_ϵ, Δϵ, ψN, V) = s .* (b_ψΦ_V(V) * ψN) - 2*Δϵ*g_ϵ*b_nΩΦ_V(V)
-b_U(s, g_ϵ, Δϵ, ψN, U) = s .* (b_ψΦ_U(U) * ψN) - 2*Δϵ*g_ϵ*b_nΩΦ_U(U)
-b_UV(s, g_ϵ, Δϵ, ψN, U, V) = s .* (b_ψΦ_UV(U, V) * ψN) - 2*Δϵ*g_ϵ*b_nΩΦ_UV(U, V)
+    return A*λ0 - Δϵ*μ_2*c
+end
+
+λs = [zeros(n_pp + n_mm)]
+ϵs_x = range(-1.0, 1.0, length=100)
+ps = MKLPardisoSolver()
+
+for k in 2:length(ϵs_x)
+    @show k
+    A = Ax_midpoint(ϵs_x[k-1], ϵs_x[k])
+    b = bx_midpoint(ϵs_x[k-1], ϵs_x[k], λs[k-1])
+    λk = Pardiso.solve(ps, A, b)
+    push!(λs, λk)
+end
+
+
+function A(s, τ, σ, Δϵ)
+    return vcat(
+        hcat((s + Δϵ*τ) .* Xpp ⊗ AIpp + Δϵ .* ∂Xpp[1] ⊗ ∂App[1] + Δϵ .* ∂Xpp[2] ⊗ ∂App[2] - (Δϵ * σ).* Xpp ⊗Kpp , -Δϵ .* dXmp[1] ⊗ dAmp[1] - Δϵ .* dXmp[2] ⊗ dAmp[2]),
+        hcat(Δϵ .* dXpm[1]⊗dApm[1] + Δϵ .* dXpm[2]⊗dApm[2], (s + Δϵ*τ) .* Xmm ⊗ AImm - (Δϵ*σ).* Xmm ⊗Kmm)
+    )
+end
+
+function Ax(s, τ, σ, Δϵ)
+    return vcat(
+        hcat((s + Δϵ*τ) .* Xpp ⊗ AIpp + Δϵ .* ∂Xpp[1] ⊗ ∂App[1] + Δϵ .* ∂Xpp[2] ⊗ ∂App[2] - (Δϵ * σ).* Xpp ⊗Kpp , Δϵ .* dXmp[1] ⊗ dAmp[1] + Δϵ .* dXmp[2] ⊗ dAmp[2]),
+        hcat(-Δϵ .* dXpm[1]⊗dApm[1] - Δϵ .* dXpm[2]⊗dApm[2], (s + Δϵ*τ) .* Xmm ⊗ AImm - (Δϵ*σ).* Xmm ⊗Kmm)
+    )
+end
+
+function A_U(s, τ, σ, Δϵ, (Up, Um))
+    return vcat(
+        hcat((s + Δϵ*τ) .* Xpp ⊗ (transpose(Up)*AIpp*Up) + Δϵ .* ∂Xpp[1] ⊗ (transpose(Up)*∂App[1]*Up) + Δϵ .* ∂Xpp[2] ⊗ (transpose(Up)*∂App[2]*Up) - (Δϵ * σ).* Xpp ⊗(transpose(Up)*Kpp*Up) , -Δϵ .* dXmp[1] ⊗ (transpose(Up)*dAmp[1]*Um) - Δϵ .* dXmp[2] ⊗ (transpose(Up)*dAmp[2]*Um)),
+        hcat(Δϵ .* dXpm[1]⊗(transpose(Um)*dApm[1]*Up) + Δϵ .* dXpm[2]⊗(transpose(Um)*dApm[2]*Up), (s + Δϵ*τ) .* Xmm ⊗ (transpose(Um)*AImm*Um) - (Δϵ*σ).* Xmm ⊗(transpose(Um)*Kmm*Um))
+    )
+end
+
+function A_V(s, τ, σ, Δϵ, (Vp, Vm))
+    vcat(
+        hcat((s + Δϵ*τ) .* (transpose(Vp)*Xpp*Vp) ⊗ AIpp + Δϵ .* (transpose(Vp)*∂Xpp[1]*Vp) ⊗ ∂App[1] + Δϵ .* (transpose(Vp)*∂Xpp[2]*Vp) ⊗ ∂App[2] - (Δϵ * σ).* (transpose(Vp)*Xpp*Vp) ⊗Kpp , -Δϵ .* (transpose(Vp)*dXmp[1]*Vm) ⊗ dAmp[1] - Δϵ .* (transpose(Vp)*dXmp[2]*Vm) ⊗ dAmp[2]),
+        hcat(Δϵ .* (transpose(Vm)*dXpm[1]*Vp)⊗dApm[1] + Δϵ .* (transpose(Vm)*dXpm[2]*Vp)⊗dApm[2], (s + Δϵ*τ) .* (transpose(Vm)*Xmm*Vm) ⊗ AImm - (Δϵ*σ).* (transpose(Vm)*Xmm*Vm) ⊗Kmm)
+    )
+end
+
+function A_UV(s, τ, σ, Δϵ, (Up, Um), (Vp, Vm))
+    vcat(
+        hcat((s + Δϵ*τ) .* (transpose(Vp)*Xpp*Vp) ⊗ (transpose(Up)*AIpp*Up) + Δϵ .* (transpose(Vp)*∂Xpp[1]*Vp) ⊗ (transpose(Up)*∂App[1]*Up) + Δϵ .* (transpose(Vp)*∂Xpp[2]*Vp) ⊗ (transpose(Up)*∂App[2]*Up) - (Δϵ * σ).* (transpose(Vp)*Xpp*Vp) ⊗(transpose(Up)*Kpp*Up) , -Δϵ .* (transpose(Vp)*dXmp[1]*Vm) ⊗ (transpose(Up)*dAmp[1]*Um) - Δϵ .* (transpose(Vp)*dXmp[2]*Vm) ⊗ (transpose(Up)*dAmp[2]*Um)),
+        hcat(Δϵ .* (transpose(Vm)*dXpm[1]*Vp)⊗(transpose(Um)*dApm[1]*Up) + Δϵ .* (transpose(Vm)*dXpm[2]*Vp)⊗(transpose(Um)*dApm[2]*Up), (s + Δϵ*τ) .* (transpose(Vm)*Xmm*Vm) ⊗ (transpose(Um)*AImm*Um) - (Δϵ*σ).* (transpose(Vm)*Xmm*Vm) ⊗(transpose(Um)*Kmm*Um))
+    )
+end
+
+function b(s, g_ϵ, Δϵ, ψN)
+    b_ψΦ = vcat(
+    hcat(Xpp ⊗ AIpp, spzeros(n_pp, n_mm)),
+    hcat(spzeros(n_mm, n_pp), Xmm ⊗ AImm))
+
+    b_nΩΦ = vcat(
+        b_g_x_p⊗b_g_Ω_p, 
+        b_g_x_m⊗b_g_Ω_m)
+    return s .* (b_ψΦ * ψN) - 2*Δϵ*g_ϵ*b_nΩΦ
+end
+
+function c(s, μ_ϵ, Δϵ, ΨN)
+    c_ψΦ = vcat(
+        hcat(Xpp ⊗ AIpp, spzeros(n_pp, n_mm)),
+        hcat(spzeros(n_mm, n_pp), Xmm ⊗ AImm))
+
+    c_μψ = vcat(
+        b_μ_x_p⊗b_μ_Ω_p, 
+        b_μ_x_m⊗b_μ_Ω_m)
+    return s .* (c_ψΦ * ΨN) - Δϵ*μ_ϵ*c_μψ
+end
+
+function b_V(s, g_ϵ, Δϵ, ψN, (Vp, Vm))
+    b_ψΦ_V = vcat(
+        hcat((transpose(Vp)*Xpp) ⊗ AIpp, spzeros(size(Vp, 2)*n_dir_basis_p, n_space_basis_m*n_dir_basis_m)),
+        hcat(spzeros(size(Vm, 2)*n_dir_basis_m, n_space_basis_p*n_dir_basis_p), (transpose(Vm)*Xmm) ⊗ AImm))
+    b_nΩΦ_V = vcat(
+        (transpose(Vp)*b_g_x_p)⊗b_g_Ω_p, 
+        (transpose(Vm)*b_g_x_m)⊗b_g_Ω_m)
+    s .* (b_ψΦ_V * ψN) - 2*Δϵ*g_ϵ*b_nΩΦ_V
+end
+
+function b_U(s, g_ϵ, Δϵ, ψN, (Up, Um))
+    b_ψΦ_U = vcat(
+        hcat(Xpp ⊗ (transpose(Up)*AIpp), spzeros(n_space_basis_p*size(Up, 2), n_space_basis_m*n_dir_basis_m)),
+        hcat(spzeros(n_space_basis_m*size(Um, 2), n_space_basis_p*n_dir_basis_p), Xmm ⊗ (transpose(Um)*AImm)))
+    b_nΩΦ_U = vcat(
+        b_g_x_p⊗(transpose(Up)*b_g_Ω_p), 
+        b_g_x_m⊗(transpose(Um)*b_g_Ω_m))
+    return s .* (b_ψΦ_U * ψN) - 2*Δϵ*g_ϵ*b_nΩΦ_U
+end
+
+#currently the expensive term..
+function b_UV(s, g_ϵ, Δϵ, ψN, (Up, Um), (Vp, Vm))
+    b_ψΦ_UV = vcat(
+        hcat((transpose(Vp)*Xpp) ⊗ (transpose(Up)*AIpp), spzeros(size(Vp, 2)*size(Up, 2), n_space_basis_m*n_dir_basis_m)),
+        hcat(spzeros(size(Vm, 2)*size(Um, 2), n_space_basis_p*n_dir_basis_p), (transpose(Vm)*Xmm) ⊗ (transpose(Um)*AImm)))
+    b_nΩΦ_UV = vcat(
+        (transpose(Vp)*b_g_x_p)⊗(transpose(Up)*b_g_Ω_p), 
+        (transpose(Vm)*b_g_x_m)⊗(transpose(Um)*b_g_Ω_m))
+    return s .* (b_ψΦ_UV * ψN) - 2*Δϵ*g_ϵ*b_nΩΦ_UV
+end
 
 
 # solver
@@ -672,8 +761,8 @@ for i in 1:length(ϵs)-1
     ϵ = ϵs[i]
     ϵ_ = ϵs[i+1]
     Δϵ = ϵs[i+1] - ϵs[i]
-    A_ = A(s(ϵ_)/0.5, γ(ϵ_), σ(ϵ_), Δϵ)
-    b_ = b(s(ϵ)/0.5, g.ϵ(ϵ_), Δϵ, Ψs_full[i][1])
+    A_ = A(s(ϵ_), τ(ϵ_), σ(ϵ_), Δϵ)
+    b_ = b(s(ϵ), g.ϵ(ϵ_), Δϵ, Ψs_full[i][1])
     Ψ, (Ψp, Ψm) = splitview((n_dir_basis_p, n_space_basis_p), (n_dir_basis_m, n_space_basis_m))
     Pardiso.solve!(ps, Ψ, A_, b_)
     push!(Ψs_full, (Ψ, (Ψp, Ψm)))
@@ -694,15 +783,15 @@ r = 30
 
 ϵs = range(1.0, -1.0, length=100)
 ps = MKLPardisoSolver()
-for i in 1:length(ϵs)-1
+@profview for i in 1:10 # length(ϵs)-1
     @show i
     ϵ = ϵs[i]
     ϵ_ = ϵs[i+1]
     Δϵ = ϵs[i+1] - ϵs[i]
     Ψp, Ψm = Ψs[i].p.U * Ψs[i].p.S * transpose(Ψs[i].p.V), Ψs[i].m.U * Ψs[i].m.S * transpose(Ψs[i].m.V)
     # K-step
-    A_V_ = A_V(s(ϵ_)/0.5, γ(ϵ_), σ(ϵ_), Δϵ, (Ψs[i].p.V, Ψs[i].m.V))
-    b_V_ = b_V(s(ϵ)/0.5, g.ϵ(ϵ_), Δϵ, vcat(Ψp[:], Ψm[:]), (Ψs[i].p.V, Ψs[i].m.V))
+    A_V_ = A_V(s(ϵ_), τ(ϵ_), σ(ϵ_), Δϵ, (Ψs[i].p.V, Ψs[i].m.V))
+    b_V_ = b_V(s(ϵ), g.ϵ(ϵ_), Δϵ, vcat(Ψp[:], Ψm[:]), (Ψs[i].p.V, Ψs[i].m.V))
     K_ = Pardiso.solve(ps, A_V_, b_V_)
     # factorization
     Kp_, Km_ = reshape(K_[1:n_dir_basis_p*r], n_dir_basis_p, r), reshape(K_[n_dir_basis_p*r+1:end], n_dir_basis_m, r)
@@ -710,8 +799,8 @@ for i in 1:length(ϵs)-1
     U_ = (p=K_svd.p.U, m=K_svd.m.U)
     MM = (p=transpose(U_.p)*Ψs[i].p.U, m=transpose(U_.m)*Ψs[i].m.U)
     # L-step
-    A_U_ = A_U(s(ϵ_)/0.5, γ(ϵ_), σ(ϵ_), Δϵ, (Ψs[i].p.U, Ψs[i].m.U))
-    b_U_ = b_U(s(ϵ)/0.5, g.ϵ(ϵ_), Δϵ, vcat(Ψp[:], Ψm[:]), (Ψs[i].p.U, Ψs[i].m.U))
+    A_U_ = A_U(s(ϵ_), τ(ϵ_), σ(ϵ_), Δϵ, (Ψs[i].p.U, Ψs[i].m.U))
+    b_U_ = b_U(s(ϵ), g.ϵ(ϵ_), Δϵ, vcat(Ψp[:], Ψm[:]), (Ψs[i].p.U, Ψs[i].m.U))
     L_ = Pardiso.solve(ps, A_U_, b_U_)
     # factorization
     Lp_, Lm_ = reshape(L_[1:r*n_space_basis_p], r, n_space_basis_p), reshape(L_[r*n_space_basis_p+1:end], r, n_space_basis_m)
@@ -720,8 +809,8 @@ for i in 1:length(ϵs)-1
     NN = (p=transpose(V_.p)*Ψs[i].p.V, m=transpose(V_.m)*Ψs[i].m.V)
     # S-step
     # Ψp_S, Ψm_S = MM.p * Ψs[i].p.S * transpose(NN.p), MM.m * Ψs[i].m.S * transpose(NN.m)
-    A_UV_ = A_UV(s(ϵ_)/0.5, γ(ϵ_), σ(ϵ_), Δϵ, U_, V_)
-    b_UV_ = b_UV(s(ϵ)/0.5, g.ϵ(ϵ_), Δϵ, vcat(Ψp[:], Ψm[:]), U_, V_)
+    A_UV_ = A_UV(s(ϵ_), τ(ϵ_), σ(ϵ_), Δϵ, U_, V_)
+    b_UV_ = b_UV(s(ϵ), g.ϵ(ϵ_), Δϵ, vcat(Ψp[:], Ψm[:]), U_, V_)
     S_ = Pardiso.solve(ps, sparse(A_UV_), b_UV_)
     Sp_, Sm_ = reshape(S_[1:r*r], r, r), reshape(S_[r*r+1:end], r, r)
     
@@ -748,22 +837,23 @@ e_Ω_p[1] = 1.0
             e_x_p, e_x_m = e_x[i, j]
             full_basis = vcat(e_x_p⊗e_Ω_p, e_x_m⊗e_Ω_m)
             # full_basis_alt = e_ϵ ⊗ vcat(e_x_p ⊗ e_Ω_p, e_x_m ⊗ e_Ω_m)
-            Ψkp = Ψs[k].p.U*Ψs[k].p.S*transpose(Ψs[k].p.V)
-            sol[i, j] = transpose(e_Ω_p) * Ψkp * e_x_p
-            sol_full[i, j] = transpose(e_Ω_p) * Ψs_full[k][2][1] * e_x_p
+            #Ψkp = Ψs[k].p.U*Ψs[k].p.S*transpose(Ψs[k].p.V)
+            # sol[i, j] = transpose(e_Ω_p) * Ψkp * e_x_p
+            sol[i, j] = dot(λs[k], full_basis)
+            #sol_full[i, j] = transpose(e_Ω_p) * Ψs_full[k][2][1] * e_x_p
             # y_alt[i] = dot(u_alt, full_basis_alt)
             #y_v[i] = dot(v, full_basis)
         end
     end
 
-    p1 = heatmap(sol)
-    p2 = heatmap(sol_full)
-    plot(p1, p2)
+    heatmap(sol)
+    #p2 = heatmap(sol_full)
+    #plot(p1, p2)
     # plot!(x_coords, y_alt, xflip=true, label="epma-fem_alt")
     # plot!(x_coords, y_v, label="adjoint")
     # plot!(x_coords, x -> μ.x(Point(x))*μ.ϵ(Point(ϵ)), label="extraction")
     # scatter!([0.0], [u_diffeq(ϵ)])
-    title!("energy: $(round(ϵs[k], digits=2))")
+    title!("energy: $(round(ϵs_x[k], digits=2))")
     # scatter!([x[1] for x in R.grid.node_coords], zeros(length(R.grid.node_coords)))
     # plot!(x_coords, zeros(length(x_coords)), ls=:dot, color=:black, label=nothing)
     # plot!(range(-1, 1, 100), save[i*3][2][:, 1, 1], label="epma-starmap")
