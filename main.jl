@@ -79,17 +79,6 @@ using .EvenOddFEM
 #     title!("$(i)")
 # end
 
-
-# include("quick_and_dirty_1D_even_odd_fem.jl")
-# using .EvenOddFiniteElements
-
-# function get_model(::Val{1})
-#     return CartesianDiscreteModel((-1.0, 1.0), (50))
-# end
-# function get_model(::Val{2})
-#     return CartesianDiscreteModel((-1.0, 1.0, -1.0, 1.0), (26, 26))
-# end
-
 function assemble_bilinear(a, U, V)
     u = get_trial_fe_basis(U)
     v = get_fe_basis(V)
@@ -105,39 +94,6 @@ function assemble_linear(b, U, V)
     return assemble_vector(SparseMatrixAssembler(U, V), data)
 end
 
-# function get_rhs_x(::Val{1})
-#     return x -> -exp(-50*(x[1]-(-0.0))^2)
-# end
-
-# function get_rhs_x(::Val{2})
-#     return x -> -exp(-50*(x[1]-(-0))^2 - 50*(x[2]-0)^2)
-# end
-
-# function get_boundary_condition_x(::Val{1})
-#     return x -> exp(-10.0*(x[1] - (-1.0))^2)
-# end
-
-# function get_G_xd(::Val{1})
-#     g_x_func = get_boundary_condition_x(nd)
-#     n = get_normal_vector(∂R)
-#     d1 = VectorValue(1.0)
-#     g_x_v1(v) = ∫(g_x_func*dot(n,d1)*v)*d∂R
-#     G_x1 = assemble_space_rhs(g_x_v1, U_x, V_x)
-#     return (G_x1, )
-# end
-
-# function get_G_xd(::Val{2})
-#     g_x_func = get_boundary_condition_x(nd)
-#     n = get_normal_vector(∂R)
-#     d1 = VectorValue(1.0, 0.0)
-#     g_x_v1(v) = ∫(g_x_func*dot(n,d1)*v)*d∂R
-#     G_x1 = assemble_space_rhs(g_x_v1, U_x, V_x)
-
-#     d2 = VectorValue(0.0, 1.0)
-#     g_x_v2(v) = ∫(g_x_func*dot(n,d2)*v)*d∂R
-#     G_x2 = assemble_space_rhs(g_x_v2, U_x, V_x)
-#     return (G_x1, G_x2)
-# end
 
 function get_transport_matrices(N, nd::Val{1})
     Apm1 = assemble_transport_matrix(N, Val{3}(), :pm, nd)
@@ -152,7 +108,6 @@ function get_transport_matrices(N, nd::Val{2})
 
     Apm2 = assemble_transport_matrix(N, Val{1}(), :pm, nd)
     Amp2 = assemble_transport_matrix(N, Val{1}(), :mp, nd)
-
     return (Apm1, Apm2), (Amp1, Amp2)
 end
 
@@ -165,54 +120,64 @@ end
 #     return (Apm1 + Amp1, Amp2 + Apm2)
 # end
 
-function get_∂A(N, nd::Val{1})
-    ∂A1 = assemble_boundary_matrix(N, Val(3), nd)
-    # ∂A2 = assemble_boundary_matrix(N, Val{1}(), nd)
-    return (∂A1, )
-end
+# function get_∂A(N, nd::Val{1})
+#     ∂A1 = assemble_boundary_matrix(N, Val(3), nd)
+#     # ∂A2 = assemble_boundary_matrix(N, Val{1}(), nd)
+#     return (∂A1, )
+# end
 
-function get_∂A(N, nd::Val{2})
-    ∂A1 = assemble_boundary_matrix(N, Val(3), nd)
-    ∂A2 = assemble_boundary_matrix(N, Val(1), nd)
-    return (∂A1, ∂A2)
-end
+# function get_∂A(N, nd::Val{2})
+#     ∂A1 = assemble_boundary_matrix(N, Val(3), nd)
+#     ∂A2 = assemble_boundary_matrix(N, Val(1), nd)
+#     return (∂A1, ∂A2)
+# end
 
-function get_b_g_Ω(g_Ω, N, nd::Val{1})
-    return (SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(3), nd), )
-end
+# function get_b_g_Ω(g_Ω, N, nd::Val{1})
+#     return (SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(3), nd), )
+# end
 
-function get_b_g_Ω(g_Ω, N, nd::Val{2})
-    return (SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(3), nd),
-        SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(1), nd))
-end
+# function get_b_g_Ω(g_Ω, N, nd::Val{2})
+#     return (SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(3), nd),
+#         SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(1), nd))
+# end
 
-function get_b_g_Ω(g_Ω, N, nd::Val{3})
-    return (SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(3), nd),
-        SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(1), nd),
-        SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(2), nd))
-end
+# function get_b_g_Ω(g_Ω, N, nd::Val{3})
+#     return (SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(3), nd),
+#         SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(1), nd),
+#         SphericalHarmonicsMatrices.assemble_boundary_source(N, g_Ω, Val(2), nd))
+# end
 
 ## basis evaluations
-function eval_space(U_x, x)
-    bp, bm = spzeros(num_free_dofs(U_x[1])), spzeros(num_free_dofs(U_x[2]))
-    e_i_p = spzeros(num_free_dofs(U_x[1]))
-    e_i_m = spzeros(num_free_dofs(U_x[2]))
-
-    for i = 1:num_free_dofs(U_x[1])
-        e_i_p[i] = 1.0
-        funcp = FEFunction(U_x[1], e_i_p)
-        bp[i] = funcp(Point(x))
-        # bm[i] = funcm(Point(x))
-        e_i_p[i] = 0.0
+function eval_space(U_x, points)
+    res = [(spzeros(num_free_dofs(U_x[1])), spzeros(num_free_dofs(U_x[2]))) for _ in points]
+    
+    funcp = FEFunction(U_x[1], spzeros(num_free_dofs(U_x[1])))
+    for k = 1:num_free_dofs(U_x[1])
+        funcp.free_values[k] = 1.0
+        vals = reshape(evaluate(funcp, points[:]), size(points))
+        for i in 1:size(points, 1)
+            for j in 1:size(points, 2)
+                if !isapprox(vals[i, j], 0.0)
+                    res[i, j][1][k] = vals[i, j]
+                end
+            end
+        end
+        funcp.free_values[k] = 0.0
     end
-    for i = 1:num_free_dofs(U_x[2])
-        e_i_m[i] = 1.0
-        funcm = FEFunction(U_x[2], e_i_m)
-        bm[i] = funcm(Point(x))
-        # bm[i] = funcm(Point(x))
-        e_i_m[i] = 0.0
+    funcm = FEFunction(U_x[2], spzeros(num_free_dofs(U_x[2])))
+    for k = 1:num_free_dofs(U_x[2])
+        funcm.free_values[k] = 1.0
+        vals = reshape(evaluate(funcm, points[:]), size(points))
+        for i in 1:size(points, 1)
+            for j in 1:size(points, 2)
+                if !isapprox(vals[i, j], 0.0)
+                    res[i, j][2][k] = vals[i, j]
+                end
+            end
+        end
+        funcm.free_values[k] = 0.0
     end
-    return bp, bm
+    return res
 end
 
 function eval_energy(U_ϵ, ϵ)
@@ -245,7 +210,7 @@ nd = Val(2)
 
 ### space definitions
 ## space 
-model_R = CartesianDiscreteModel((-1.0, 1.0, -1.0, 1.0), (20, 20))
+model_R = CartesianDiscreteModel((-1.0, 1.0, -1.0, 1.0), (50, 50))
 # model_R = CartesianDiscreteModel((-1.0, 1.0), (150))
 order_x = 1
 refel_x = ReferenceFE(lagrangian, Float64, order_x)
@@ -261,7 +226,7 @@ d∂R = Measure(∂R, order_x+1)
 n = get_normal_vector(∂R)
 
 ## direction
-N = 15
+N = 13
 n_dir_basis = length(SphericalHarmonicsMatrices.get_moments(N, nd))
 n_dir_basis_p = length([m for m in SphericalHarmonicsMatrices.get_moments(N, nd) if SphericalHarmonicsMatrices.is_even(m...)])
 n_dir_basis_m = length([m for m in SphericalHarmonicsMatrices.get_moments(N, nd) if SphericalHarmonicsMatrices.is_odd(m...)])
@@ -511,6 +476,7 @@ import Gridap.TensorValues.⊗
 ⊗ₓ((A1, A2), (B1, B2)) = kron(A1, B1) + kron(A2, B2)
 
 n_p = n_space_basis_p*num_free_dofs(U_ϵ)*n_dir_basis_p
+
 n_m = n_space_basis_m*num_free_dofs(U_ϵ)*n_dir_basis_m
 
 n_pp = n_space_basis_p*n_dir_basis_p
@@ -584,9 +550,6 @@ n_mm = n_space_basis_m*n_dir_basis_m
 #     # ylims!(-0.05, 0.5)
 # end fps=90
 
-
-
-
 ## implicit energy stepping method
 
 # function vec(A)
@@ -600,23 +563,108 @@ n_mm = n_space_basis_m*n_dir_basis_m
 #     )
 # end
 
+using LinearMaps, IterativeSolvers
 
-function A_midpoint(ϵ0, ϵ)
+
+function Ab_midpoint(ϵ0, ϵ, ψ0)
     Δϵ = ϵ - ϵ0
-    @assert Δϵ < 0.0 # should be solve backwards!
-    Δϵ = abs(Δϵ)
+    @assert Δϵ < 0.0 # should be solved backwards!
     s = si(ϵ)
     s_2 = si((ϵ0 + ϵ) / 2.0)
     τ_2 = τi((ϵ0 + ϵ) / 2.0)
     σ_2 = σi((ϵ0 + ϵ) / 2.0)
-    return vcat(
-        hcat((s + s_2) .* Xpp⊗AIpp + (Δϵ / 2) .* (∂Xpp⊗ₓ ∂App .+ τ_2 .* Xpp⊗AIpp .- σ_2.*Xpp⊗Kpp), (Δϵ / 2) .* dXmp ⊗ₓ dAmp),
-        hcat(-(Δϵ / 2) .* dXpm ⊗ₓ dApm, (s + s_2) .* Xmm ⊗ AImm + (Δϵ / 2) .* (τ_2 .* Xmm⊗AImm .- σ_2.*Xmm⊗Kmm))
-    )
+    g_2 = g.ϵ((ϵ0 + ϵ) / 2.0)
+
+    XppAIpp = LinearMap(Xpp) ⊗ LinearMap(AIpp)
+    XmmAImm = LinearMap(Xmm) ⊗ LinearMap(AImm)
+
+    ∂Xpp∂App = LinearMap.(∂Xpp)⊗ₓ LinearMap.(∂App)
+
+    XppKpp = LinearMap(Xpp)⊗LinearMap(Kpp)
+    XmmKmm = LinearMap(Xmm)⊗LinearMap(Kmm)
+
+    dXmpdAmp = LinearMap.(dXmp) ⊗ₓ LinearMap.(dAmp)
+    dXpmdApm = LinearMap.(dXpm) ⊗ₓ LinearMap.(dApm)
+
+    # A_b = vcat(
+    #     hcat((s + s_2) .* XppAIpp - (-Δϵ / 2) .* (∂Xpp∂App .+ τ_2 .* XppAIpp .- σ_2.*XppKpp), (-Δϵ / 2) .* dXmpdAmp),
+    #     hcat(-(-Δϵ / 2) .* dXpmdApm, (s + s_2) .* XmmAImm - (-Δϵ / 2) .* (τ_2 .* XmmAImm .- σ_2.*XmmKmm))
+    # )
+
+    A_b = [(s + s_2)*XppAIpp-(-Δϵ / 2) * (∂Xpp∂App + τ_2 * XppAIpp - σ_2*XppKpp)     (-Δϵ / 2) * dXmpdAmp;
+        -(-Δϵ / 2) * dXpmdApm    (s + s_2) * XmmAImm - (-Δϵ / 2) * (τ_2 * XmmAImm - σ_2*XmmKmm)]
+
+    b_b = vcat(
+        b_g_x_p⊗b_g_Ω_p, 
+        b_g_x_m⊗b_g_Ω_m)
+
+    b = A_b*ψ0 - (-Δϵ)*g_2*b_b
+
+    # A = vcat(
+    #     hcat((s + s_2) .* XppAIpp + (-Δϵ / 2) .* (∂Xpp∂App .+ τ_2 .* XppAIpp .- σ_2.*XppKpp), -(-Δϵ / 2) .* dXmpdAmp),
+    #     hcat((-Δϵ / 2) .* dXpmdApm, (s + s_2) .* XmmAImm + (-Δϵ / 2) .* (τ_2 .* XmmAImm .- σ_2.*XmmKmm))
+    # )
+    A = [(s + s_2) * XppAIpp + (-Δϵ / 2) * (∂Xpp∂App + τ_2 * XppAIpp - σ_2*XppKpp)      -(-Δϵ / 2) * dXmpdAmp;
+        (-Δϵ / 2) * dXpmdApm                   (s + s_2) * XmmAImm + (-Δϵ / 2) * (τ_2 * XmmAImm - σ_2*XmmKmm)]
+    
+    return A, b
+end
+
+function wrap(A, U1::LinearMap, U2::LinearMap)
+    return (transpose(U1)*A*U2)
+end
+
+function wrap(A, ::UniformScaling, ::UniformScaling)
+    return A
+end
+
+function Ab_midpoint_UV(ϵ0, ϵ, ψ0, (Up, Um), (Vp, Vm))
+    Δϵ = ϵ - ϵ0
+    @assert Δϵ < 0.0 # should be solved backwards!
+    s = si(ϵ)
+    s_2 = si((ϵ0 + ϵ) / 2.0)
+    τ_2 = τi((ϵ0 + ϵ) / 2.0)
+    σ_2 = σi((ϵ0 + ϵ) / 2.0)
+    g_2 = g.ϵ((ϵ0 + ϵ) / 2.0)
+
+    XppAIpp = wrap(LinearMap(Xpp), Vp, Vp) ⊗ wrap(LinearMap(AIpp), Up, Up)
+    XmmAImm = wrap(LinearMap(Xmm), Vm, Vm) ⊗ wrap(LinearMap(AImm), Um, Um)
+
+    ∂Xpp∂App = wrap.(LinearMap.(∂Xpp), Ref(Vp), Ref(Vp))⊗ₓ wrap.(LinearMap.(∂App), Up, Up)
+
+    XppKpp = wrap(LinearMap(Xpp), Vp, Vp)⊗wrap(LinearMap(Kpp), Up, Up)
+    XmmKmm = wrap(LinearMap(Xmm), Vm, Vm)⊗wrap(LinearMap(Kmm), Um, Um)
+
+    dXmpdAmp = wrap.(LinearMap.(dXmp), Ref(Vp), Ref(Vm)) ⊗ₓ wrap.(LinearMap.(dAmp), Ref(Up), Ref(Um))
+    dXpmdApm = wrap.(LinearMap.(dXpm), Ref(Vm), Ref(Vp)) ⊗ₓ wrap.(LinearMap.(dApm), Ref(Um), Ref(Up))
+
+    # A_b = vcat(
+    #     hcat((s + s_2) .* XppAIpp - (-Δϵ / 2) .* (∂Xpp∂App .+ τ_2 .* XppAIpp .- σ_2.*XppKpp), (-Δϵ / 2) .* dXmpdAmp),
+    #     hcat(-(-Δϵ / 2) .* dXpmdApm, (s + s_2) .* XmmAImm - (-Δϵ / 2) .* (τ_2 .* XmmAImm .- σ_2.*XmmKmm))
+    # )
+
+    A_b = [(s + s_2)*XppAIpp-(-Δϵ / 2) * (∂Xpp∂App + τ_2 * XppAIpp - σ_2*XppKpp)     (-Δϵ / 2) * dXmpdAmp;
+        -(-Δϵ / 2) * dXpmdApm    (s + s_2) * XmmAImm - (-Δϵ / 2) * (τ_2 * XmmAImm - σ_2*XmmKmm)]
+
+    b_b = vcat(
+        (transpose(Vp)*b_g_x_p)⊗(transpose(Up)*b_g_Ω_p), 
+        (transpose(Vm)*b_g_x_m)⊗(transpose(Um)*b_g_Ω_m))
+
+    b = A_b*ψ0 - (-Δϵ)*g_2*b_b
+
+    # A = vcat(
+    #     hcat((s + s_2) .* XppAIpp + (-Δϵ / 2) .* (∂Xpp∂App .+ τ_2 .* XppAIpp .- σ_2.*XppKpp), -(-Δϵ / 2) .* dXmpdAmp),
+    #     hcat((-Δϵ / 2) .* dXpmdApm, (s + s_2) .* XmmAImm + (-Δϵ / 2) .* (τ_2 .* XmmAImm .- σ_2.*XmmKmm))
+    # )
+    A = [(s + s_2) * XppAIpp + (-Δϵ / 2) * (∂Xpp∂App + τ_2 * XppAIpp - σ_2*XppKpp)      -(-Δϵ / 2) * dXmpdAmp;
+        (-Δϵ / 2) * dXpmdApm                   (s + s_2) * XmmAImm + (-Δϵ / 2) * (τ_2 * XmmAImm - σ_2*XmmKmm)]
+    
+    return A, b
 end
 
 function Ax_midpoint(ϵ0, ϵ)
     Δϵ = ϵ - ϵ0
+    @assert Δϵ > 0 # shold be solve forwards!
     s = si(ϵ)
     s_2 = si((ϵ0 + ϵ) / 2.0)
     τ_2 = τi((ϵ0 + ϵ) / 2.0)
@@ -646,9 +694,21 @@ function bx_midpoint(ϵ0, ϵ, λ0)
     return A*λ0 - Δϵ*μ_2*c
 end
 
+#ps = MKLPardisoSolver()
+
+ψs = [zeros(n_pp + n_mm)]
+
+ϵs = range(1.0, -1.0, length=100)
+for k in 2:length(ϵs)
+    @show k
+    A, b = Ab_midpoint(ϵs[k-1], ϵs[k], ψs[k-1])
+    ψk = copy(ψs[k-1])
+    ψk = IterativeSolvers.bicgstabl!(ψk, A, b, 2)
+    push!(ψs, ψk)
+end
+
 λs = [zeros(n_pp + n_mm)]
 ϵs_x = range(-1.0, 1.0, length=100)
-ps = MKLPardisoSolver()
 
 for k in 2:length(ϵs_x)
     @show k
@@ -657,7 +717,6 @@ for k in 2:length(ϵs_x)
     λk = Pardiso.solve(ps, A, b)
     push!(λs, λk)
 end
-
 
 function A(s, τ, σ, Δϵ)
     return vcat(
@@ -817,13 +876,12 @@ ps = MKLPardisoSolver()
     push!(Ψs, (p=(U=U_.p, S=Sp_, V=V_.p), m=(U=U_.m, S=Sm_, V=V_.m)))
 end
 
-x_coords = range(-1, 1, length=50)
-y_coords = range(-1, 1, length=50)
+x_coords = range(-1, 1, length=80)
+y_coords = range(-1, 1, length=80)
 sol_full = zeros(length(x_coords), length(y_coords))
 sol = zeros(length(x_coords), length(y_coords))
 
-e_x = [eval_space(U_x, (x_, y_)) for x_ in x_coords, y_ in y_coords]
-
+e_x = eval_space(U_x, Point.(x_coords, y_coords'))
 gr()
 e_Ω_p = spzeros(n_dir_basis_p)
 e_Ω_m = spzeros(n_dir_basis_m)
@@ -839,21 +897,21 @@ e_Ω_p[1] = 1.0
             # full_basis_alt = e_ϵ ⊗ vcat(e_x_p ⊗ e_Ω_p, e_x_m ⊗ e_Ω_m)
             #Ψkp = Ψs[k].p.U*Ψs[k].p.S*transpose(Ψs[k].p.V)
             # sol[i, j] = transpose(e_Ω_p) * Ψkp * e_x_p
-            sol[i, j] = dot(λs[k], full_basis)
+            sol[i, j] = dot(ψs[k], full_basis)
             #sol_full[i, j] = transpose(e_Ω_p) * Ψs_full[k][2][1] * e_x_p
             # y_alt[i] = dot(u_alt, full_basis_alt)
             #y_v[i] = dot(v, full_basis)
         end
     end
 
-    heatmap(sol)
+    contourf(sol, linewidth=0.0, levels=10, clims=(-0.2, max(2, maximum(sol))), aspect_ratio=:equal)
     #p2 = heatmap(sol_full)
     #plot(p1, p2)
     # plot!(x_coords, y_alt, xflip=true, label="epma-fem_alt")
     # plot!(x_coords, y_v, label="adjoint")
     # plot!(x_coords, x -> μ.x(Point(x))*μ.ϵ(Point(ϵ)), label="extraction")
     # scatter!([0.0], [u_diffeq(ϵ)])
-    title!("energy: $(round(ϵs_x[k], digits=2))")
+    title!("energy: $(round(ϵs[k], digits=2))")
     # scatter!([x[1] for x in R.grid.node_coords], zeros(length(R.grid.node_coords)))
     # plot!(x_coords, zeros(length(x_coords)), ls=:dot, color=:black, label=nothing)
     # plot!(range(-1, 1, 100), save[i*3][2][:, 1, 1], label="epma-starmap")
@@ -895,7 +953,6 @@ e_Ω_p[1] = 1.0
     #ylims!(-0.1, 2.0)
 end fps=6
 
-
 # XW = vcat(
 #     hcat(∂Xpp[1]⊗∂App[1], -dXmp[1]⊗dAmp[1]),
 #     hcat(dXpm[1]⊗dApm[1], spzeros(n_space_basis_m*n_dir_basis_m, n_space_basis_m*n_dir_basis_m))
@@ -908,8 +965,8 @@ end fps=6
 # U_trunc = E ⊗ XW_svd.U[:, 1:300]
 
 A = vcat(
-    hcat((dE + C)⊗Xpp⊗AIpp - S⊗Xpp⊗Kpp + E⊗∂Xpp[1]⊗∂App[1], -E⊗dXmp[1]⊗dAmp[1]),
-    hcat(E⊗dXpm[1]⊗dApm[1], (dE + C)⊗Xmm⊗AImm - S⊗Xmm⊗Kmm)
+    hcat((dE + C)⊗Xpp⊗AIpp - S⊗Xpp⊗Kpp + E⊗(∂Xpp⊗ₓ ∂App), -E⊗(dXmp⊗ₓ dAmp)),
+    hcat(E⊗(dXpm⊗ₓ dApm), (dE + C)⊗Xmm⊗AImm - S⊗Xmm⊗Kmm)
 )
 
 # A*b
@@ -924,6 +981,16 @@ A = vcat(
 b = - 2.0 * vcat(
     b_g_ϵ⊗b_g_x_p⊗b_g_Ω_p, 
     b_g_ϵ⊗b_g_x_m⊗b_g_Ω_m)
+
+x = copy(b)
+
+A*x
+
+IterativeSolvers.bicgstabl!(x, A, b, 2)
+
+IterativeSolvers.bicgstabl_iterator!
+
+IterativeSolvers.BiCGStabIterable(2)
 
 c = vcat(
     b_μ_ϵ⊗b_μ_x_p⊗b_μ_Ω_p,
