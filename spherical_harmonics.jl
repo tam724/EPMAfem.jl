@@ -197,13 +197,13 @@ module SphericalHarmonicsMatrices
         return !is_even(l, k)
     end
 
-    function get_eo_moments(N, nd::Val{ND}) where ND
+    function get_eo_moments(N, nd)
         even_moments = [m for m in get_moments(N, nd) if is_even(m...)]
         odd_moments = [m for m in get_moments(N, nd) if !is_even(m...)]
         return vcat(even_moments, odd_moments)
     end
 
-    function assemble_transport_matrix(N, dim, parity, nd::Val{ND}) where ND
+    function assemble_transport_matrix(N, dim, parity, nd)
         if parity == :pm
             eo_moms1 = [m for m ∈ get_eo_moments(N, nd) if is_even(m...)]
             eo_moms2 = [m for m ∈ get_eo_moments(N, nd) if is_odd(m...)]
@@ -236,24 +236,25 @@ module SphericalHarmonicsMatrices
             return abs_Ω * ((Y_e' .* Y_e))
         end
         A = hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π), rtol=1e-8, atol=1e-8, maxevals=100000)[1]
-        A = round.(A, digits=10)
-        return sparse(A)
+        return round.(sparse(A), digits=8)
     end
 
-    function assemble_scattering_matrix(N, scattering_kernel, nd::Val{ND}) where ND
+    function assemble_scattering_matrices(N, scattering_kernel, nd::Val{ND}) where ND
         eo_moms = get_eo_moments(N, nd)
         Σl = 2*π*hquadrature(x -> scattering_kernel(x).*Pl.(x, 0:N), -1.0, 1.0, rtol=1e-8, atol=1e-8, maxevals=100000)[1]
-        return Diagonal([Σl[l+1] for (l, k) in eo_moms])
+        return Diagonal([Σl[l+1] for (l, k) in eo_moms if is_even(l, k)]), Diagonal([Σl[l+1] for (l, k) in eo_moms if is_odd(l, k)])
     end
 
-    function assemble_direction_rhs(N, qΩ, nd::Val{ND}) where ND
+    function assemble_direction_source(N, qΩ, nd::Val{ND}) where ND
+        eo_moms = get_eo_moments(N, nd)
         function integrand((θ, ϕ))
             Ω = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
             Y = computeYlm(θ, ϕ, lmax=N, SHType=SphericalHarmonics.RealHarmonics())
-            Y_eo = [Y[m] for m ∈ get_eo_moments(N, nd)]
+            Y_eo = [Y[m] for m ∈ eo_moms]
             return qΩ(Ω)*Y_eo
         end
-        return hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π))[1]
+        b = hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π))[1]
+        return (p=[b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)], m=[b[i] for (i, m) ∈ enumerate(eo_moms) if is_odd(m...)])
     end
 
     function assemble_gram_matrix(N, nd::Val{ND}) where ND
@@ -270,17 +271,20 @@ module SphericalHarmonicsMatrices
         return x <= 0.0 ? x : 0.0
     end
 
-    function assemble_boundary_source(N, g_Ω, n, nd::Val{ND}) where {ND}
+    function assemble_direction_boundary(N, g_Ω, n, nd::Val{ND}) where {ND}
+        eo_moms = get_eo_moments(N, nd)
         function integrand((θ, ϕ))
             Ω = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
             Y = computeYlm(θ, ϕ, lmax=N, SHType=SphericalHarmonics.RealHarmonics())
-            Y_eo_even = [is_even(m...) ? Y[m] : 0.0 for m ∈ get_eo_moments(N, nd)]
+            Y_eo_even = [is_even(m...) ? Y[m] : 0.0 for m ∈ eo_moms]
             return cut_pos(dot(Ω, n))*g_Ω(Ω)*Y_eo_even
         end
-        return hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π))[1]
+        b = hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π))[1]
+        # return [b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)], [b[i] for (i, m) ∈ enumerate(eo_moms) if is_odd(m...)]
+        return (p=round.(sparse([b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)]), digits=8), m=spzeros(length([m for m in eo_moms if is_odd(m...)])))
     end
     
-    export assemble_transport_matrix, assemble_boundary_matrix, assemble_scattering_matrix, assemble_direction_rhs
+    export assemble_transport_matrix, assemble_boundary_matrix, assemble_scattering_matrices, assemble_direction_source, assemble_direction_boundary
 end
 #### FOR TESTING
 

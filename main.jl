@@ -384,11 +384,11 @@ dApm, dAmp = get_transport_matrices(N, nd)
 
 AIpp = Diagonal(ones(n_dir_basis_p))
 AImm = Diagonal(ones(n_dir_basis_m))
-K = assemble_scattering_matrix(N, scattering_kernel, nd)
-@assert isapprox(K[1, 1], 1.0)
+Kpp, Kmm = assemble_scattering_matrices(N, scattering_kernel, nd)
+@assert isapprox(Kpp[1, 1], 1.0)
 # SphericalHarmonicsMatrices.assemble_gram_matrix(5, nd)
-Kpp = sparse(K[dir_idx_p, dir_idx_p])
-Kmm = sparse(K[dir_idx_m, dir_idx_m])
+# Kpp = sparse(K[dir_idx_p, dir_idx_p])
+# Kmm = sparse(K[dir_idx_m, dir_idx_m])
 
 b_q_Ω = assemble_direction_rhs(N, q.Ω, nd)
 b_q_Ω_p = b_q_Ω[dir_idx_p]
