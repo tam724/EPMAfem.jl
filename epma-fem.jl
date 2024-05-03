@@ -184,14 +184,14 @@ import Gridap.TensorValues.⊗
 ⊗ₓ((A, ), (B, )) = kron(A, B)
 ⊗ₓ((A1, A2), (B1, B2)) = kron(A1, B1) + kron(A2, B2)
 
-function Ab_midpoint(ϵ0, ϵ, ψ0, sf, τf, σf, X, Ω, gh)
+function Ab_midpoint(ϵ0, ϵ, ψ0, physics, X, Ω, gh)
     Δϵ = ϵ - ϵ0
     @assert Δϵ < 0.0 # should be solved backwards!
-    s = sf(ϵ)
-    s0 = sf(ϵ0)
-    s_2 = sf((ϵ0 + ϵ) / 2.0)
-    τ_2 = τf((ϵ0 + ϵ) / 2.0)
-    σ_2 = σf((ϵ0 + ϵ) / 2.0)
+    s = physics.s(ϵ)
+    s0 = physics.s(ϵ0)
+    s_2 = physics.s((ϵ0 + ϵ) / 2.0)
+    τ_2 = physics.τ((ϵ0 + ϵ) / 2.0)
+    σ_2 = physics.σ((ϵ0 + ϵ) / 2.0)
 
     ΣsXpp = (s[1] + s_2[1]).*X.Xpp[1] .+ (s[2] + s_2[2]).*X.Xpp[2] # only binary materials
     ΣsXmm = (s[1] + s_2[1]).*X.Xmm[1] .+ (s[2] + s_2[2]).*X.Xmm[2] # only binary materials
@@ -230,14 +230,14 @@ function Ab_midpoint(ϵ0, ϵ, ψ0, sf, τf, σf, X, Ω, gh)
     return A, b
 end
 
-function Abx_midpoint(ϵ0, ϵ, ψ0, sf, τf, σf, X, Ω, μh)
+function Abx_midpoint(ϵ0, ϵ, ψ0, physics, X, Ω, μh)
     Δϵ = ϵ - ϵ0
     @assert Δϵ > 0.0 # should be solved forwards!
-    s = sf(ϵ)
-    s0 = sf(ϵ0)
-    s_2 = sf((ϵ0 + ϵ) / 2.0)
-    τ_2 = τf((ϵ0 + ϵ) / 2.0)
-    σ_2 = σf((ϵ0 + ϵ) / 2.0)
+    s = physics.s(ϵ)
+    s0 = physics.s(ϵ0)
+    s_2 = physics.s((ϵ0 + ϵ) / 2.0)
+    τ_2 = physics.τ((ϵ0 + ϵ) / 2.0)
+    σ_2 = physics.σ((ϵ0 + ϵ) / 2.0)
 
     ΣsXpp = (s[1] + s_2[1]).*X.Xpp[1] .+ (s[2] + s_2[2]).*X.Xpp[2] # only binary materials
     ΣsXmm = (s[1] + s_2[1]).*X.Xmm[1] .+ (s[2] + s_2[2]).*X.Xmm[2] # only binary materials
@@ -276,13 +276,13 @@ function Abx_midpoint(ϵ0, ϵ, ψ0, sf, τf, σf, X, Ω, μh)
     return A, b
 end
 
-function solve_forward(solver, (ϵ0, ϵ1), N, gh)
+function solve_forward(solver, X, Ω, physics, (ϵ0, ϵ1), N, gh)
     n_basis = number_of_basis_functions(solver)
     ϵs = range(ϵ1, ϵ0, length=N)
     ψs = [zeros(n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m)]
     for k in 2:length(ϵs)
         @show k
-        A, b = Ab_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], s, τ, σ, X, Ω, gh)
+        A, b = Ab_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], physics, X, Ω, gh)
         ψk = copy(ψs[k-1])
         ψk = IterativeSolvers.bicgstabl!(ψk, A, b, 2)
         push!(ψs, ψk)
@@ -291,14 +291,14 @@ function solve_forward(solver, (ϵ0, ϵ1), N, gh)
     return reverse(ϵs), reverse(ψs)
 end
 
-function solve_adjoint(solver, (ϵ0, ϵ1), N, μh)
+function solve_adjoint(solver, X, Ω, physics, (ϵ0, ϵ1), N, μh)
     n_basis = number_of_basis_functions(solver)
     ψs = [zeros(n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m)]
     ϵs = range(ϵ0, ϵ1, length=N)
 
     for k in 2:length(ϵs)
         @show k
-        A, b = Abx_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], s, τ, σ, X, Ω, μh)
+        A, b = Abx_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], physics, X, Ω, μh)
         ψk = copy(ψs[k-1])
         ψk = IterativeSolvers.bicgstabl!(ψk, A, b, 2)
         push!(ψs, ψk)
@@ -321,12 +321,12 @@ function integrate(ϵs, ψs, bh)
     return res
 end
 
-function measure_forward(solver, (ϵ0, ϵ1), N, ghs, μhs)
+function measure_forward(solver, X, Ω, physics, (ϵ0, ϵ1), N, ghs, μhs)
     measurements = zeros(length(ghs.x), length(ghs.Ω), length(ghs.ϵ), length(μhs.x))
     for (i, ghx) ∈ enumerate(ghs.x)
-        for (j, ghΩ) ∈ enumerate(gh.Ω)
-            for (k, ghϵ) ∈ enumerate(gh.ϵ)
-                ϵs, ψs = solve_forward(solver, (ϵ0, ϵ1), N, (x=ghx, Ω=ghΩ, ϵ=ghϵ))
+        for (j, ghΩ) ∈ enumerate(ghs.Ω)
+            for (k, ghϵ) ∈ enumerate(ghs.ϵ)
+                ϵs, ψs = solve_forward(solver, X, Ω, physics, (ϵ0, ϵ1), N, (x=ghx, Ω=ghΩ, ϵ=ghϵ))
                 for (l, (μhx, μhϵ)) ∈ enumerate(zip(μhs.x, μhs.ϵ))
                     measurements[i, j, k, l] = integrate(ϵs, ψs, (x=μhx, Ω=μhs.Ω[1], ϵ=μhϵ))
                 end
@@ -336,13 +336,13 @@ function measure_forward(solver, (ϵ0, ϵ1), N, ghs, μhs)
     return measurements
 end
 
-function measure_adjoint(solver, (ϵ0, ϵ1), N, ghs, μhs)
+function measure_adjoint(solver, X, Ω, physics, (ϵ0, ϵ1), N, ghs, μhs)
     measurements = zeros(length(ghs.x), length(ghs.Ω), length(ghs.ϵ), length(μhs.x))
     for (l, (μhx, μhϵ)) ∈ enumerate(zip(μhs.x, μhs.ϵ))
-        ϵs, ψxs = solve_adjoint(solver, (ϵ0, ϵ1), N, (x=μhx, Ω=μhs.Ω[1], ϵ=μhϵ))
+        ϵs, ψxs = solve_adjoint(solver, X, Ω, physics, (ϵ0, ϵ1), N, (x=μhx, Ω=μhs.Ω[1], ϵ=μhϵ))
         for (i, ghx) ∈ enumerate(ghs.x)
-            for (j, ghΩ) ∈ enumerate(gh.Ω)
-                for (k, ghϵ) ∈ enumerate(gh.ϵ)
+            for (j, ghΩ) ∈ enumerate(ghs.Ω)
+                for (k, ghϵ) ∈ enumerate(ghs.ϵ)
                     measurements[i, j, k, l] = integrate(ϵs, ψxs, (x=ghx, Ω=ghΩ, ϵ=ghϵ))
                 end
             end
