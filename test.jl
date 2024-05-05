@@ -6,6 +6,7 @@ using Enzyme
 using Distributions
 using Plots
 using IterativeSolvers
+using Zygote
 
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
@@ -19,7 +20,7 @@ scattering_kernel(μ) = scattering_kernel_(μ) / scattering_norm_factor
 
 ss(ϵ) = [1.0 + 0.1*exp(-ϵ), 1.0 + 0.2*exp(-ϵ)]
 ∂ss(ϵ) = Enzyme.autodiff(Forward, ss, Duplicated(ϵ, 1.0))[1]
-σ(ϵ) = [0.5 + 0.1*exp(-3*ϵ), 0.5 + 0.1*exp(-4*ϵ)]
+σ(ϵ) = [0.0, 0.0] #[0.5 + 0.1*exp(-3*ϵ), 0.5 + 0.1*exp(-4*ϵ)]
 ττ(ϵ) = σ(ϵ)
 
 s(ϵ) = 0.5 .* ss(ϵ)
@@ -27,8 +28,8 @@ s(ϵ) = 0.5 .* ss(ϵ)
 
 physics = (s=s, τ=τ, σ=σ)
 
-nhx = 100
-model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (60, nhx))
+nhx = 50
+model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (25, nhx))
 
 M = material_space(model)
 
@@ -43,13 +44,18 @@ end
 mass_concentrations = [interpolate(x -> ρ(x)[1], M), interpolate(x -> ρ(x)[2], M)]
 # build solver:
 
-solver = build_solver(model, 11)
+solver = build_solver(model, 5)
 X = assemble_space_matrices(solver, mass_concentrations)
 Ω = assemble_direction_matrices(solver, scattering_kernel)
 
 g = (ϵ = [(ϵ -> pdf(Normal(ϵpos, 0.04), ϵ[1])) for ϵpos ∈ [0.85, 0.75, 0.65, 0.55, 0.45, 0.35]],
     x = [(x -> isapprox(x[1], 1.0) ? (pdf(MultivariateNormal([xpos, 0.0], [0.05, 0.05]), [(length(x)>1) ? x[2] : 0.0, (length(x)>2) ? x[3] : 0.0])) : 0.0) for xpos ∈ range(-0.5, 0.5, length=40)], 
     Ω = [(Ω -> pdf(VonMisesFisher(normalize(Ωpos), 10.0), [Ω...])) for Ωpos ∈ [[-0.5, 0.0, -1.0], [0.0, 0.0, -1.0], [0.5, 0.0, -1.0]]])
+
+# reduced number of experiments
+g = (ϵ = [(ϵ -> pdf(Normal(ϵpos, 0.04), ϵ[1])) for ϵpos ∈ [0.85]],
+    x = [(x -> isapprox(x[1], 1.0) ? (pdf(MultivariateNormal([xpos, 0.0], [0.05, 0.05]), [(length(x)>1) ? x[2] : 0.0, (length(x)>2) ? x[3] : 0.0])) : 0.0) for xpos ∈ range(-0.5, 0.5, length=5)], 
+    Ω = [(Ω -> pdf(VonMisesFisher(normalize(Ωpos), 10.0), [Ω...])) for Ωpos ∈ [[0.0, 0.0, -1.0]]])
 
 plot()
 for gϵ ∈ g.ϵ
@@ -84,8 +90,134 @@ plot!()
 gh = semidiscretize_boundary(solver, g)
 μh = semidiscretize_source(solver, μ)
 
-# measurements2 = measure_forward(solver, (0, 1), 100, gh, μh) #dont use!!
-measurementsx2 = measure_adjoint(solver, X, Ω, physics, (0, 1), 100, gh, μh)
+# plotly()
+# mm = measure_forward(solver, X, Ω, physics, (0, 1), 100, gh, μh)
+# mmx = measure_adjoint(solver, X, Ω, physics, (0, 1), 100, gh, μh)
+
+# plot(mm[:, 1, 1, 2])
+# plot!(mmx[:, 1, 1, 2])
+
+# ϵs, ψs = solve_forward(solver, X, Ω, physics, (0, 1), 100, ϵ -> 2*gh.ϵ[1](ϵ)*vcat(gh.x[1].p⊗gh.Ω[2].p, gh.x[1].m⊗gh.Ω[2].m))
+
+true_ρ_vals = [mass_concentrations[1].free_values mass_concentrations[2].free_values]
+
+param = (mass_concentrations=mass_concentrations, solver=solver, X=X, Ω=Ω, physics=physics, ϵ=(0.0, 1.0), N=100, gh=gh, μh=μh, proj=projection_matrix(solver), gram=gram_matrix(solver))
+
+true_measurements = measure_raw(true_ρ_vals, param)
+
+objective(ρ_vals) = sum((true_measurements .- measure_raw(ρ_vals, param)).^2)
+
+ρ_vals = copy(true_ρ_vals)
+ρ_vals[:, 1] .= 0.4
+ρ_vals[:, 2] .= 0.5
+
+objective(ρ_vals)
+measurements = measure_raw(ρ_vals, param)
+
+plot(true_measurements[:, 2, 1, 2])
+plot!(measurements[:, 2, 1, 2])
+
+grad = Zygote.gradient(objective, ρ_vals)
+grad[1]
+
+function finite_diff(f, x, h, index)
+    val0 = f(x)
+    x_ = copy(x)
+    x_[index...] += h
+    return (objective(x_) - val0)/h
+end
+
+finite_diff(objective, ρ_vals, 0.01, (950, 2))
+grad[1][950, 2]
+
+
+
+argmin(grad[1])
+
+m = FEFunction(M, grad[1][:,1])
+contourf(0:0.1:1, -1:0.1:1, (z, x) -> m(Point(z, x)))
+
+function measure_raw(ρ_vals, params)
+    for i ∈ 1:length(params.mass_concentrations)
+        params.mass_concentrations[i].free_values .= ρ_vals[:, i]
+    end
+    update_space_matrices!(params.X, params.solver, params.mass_concentrations)
+    measurements = measure_adjoint(params.solver, params.X, params.Ω, params.physics, params.ϵ, params.N, params.gh, params.μh)
+    return measurements
+end
+
+Zygote.@adjoint function measure_raw(ρ_vals, params)
+    for i ∈ 1:length(params.mass_concentrations)
+        params.mass_concentrations[i].free_values .= ρ_vals[:, i]
+    end
+    update_space_matrices!(params.X, params.solver, params.mass_concentrations)
+    measurements, ψxss = measure_adjoint(params.solver, params.X, params.Ω, params.physics, params.ϵ, params.N, params.gh, params.μh, true)
+    function measure_raw_adjoint(measurements_) 
+        function gh(ϵ, l)
+            n_basis = number_of_basis_functions(params.solver)
+            res = zeros(n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m)
+            for (i, ghx) ∈ enumerate(params.gh.x)
+                for (j, ghΩ) ∈ enumerate(params.gh.Ω)
+                    for (k, ghϵ) ∈ enumerate(params.gh.ϵ)
+                        res .+= measurements_[i, j, k, l] * 2.0*ghϵ(ϵ) * vcat(ghx.p⊗ghΩ.p, ghx.m⊗ghΩ.m)
+                    end
+                end
+            end
+            return res
+        end
+        ## hacked ... (first we project all the x.p basis to L2 -> orthogonal basis and we dont need space derivatives from now on...)
+        ψxss_proj = [[project_disassemble_solution(params.solver, ψx, params.proj) for ψx ∈ ψxs] for ψxs ∈ ψxss]
+        ρ_vals_ = zeros(size(ρ_vals))
+        ϵs = range(params.ϵ[1], params.ϵ[2], params.N)
+        for (l, (μhx, μhϵ)) ∈ enumerate(zip(params.μh.x, params.μh.ϵ))
+            _, ψs_ = solve_forward(params.solver, params.X, params.Ω, params.physics, params.ϵ, params.N, ϵ -> gh(ϵ, l))
+            ψs_proj = [project_disassemble_solution(params.solver, ψ, params.proj) for  ψ ∈ ψs_]
+            for i ∈ 1:2 # number of elements
+                for k ∈ 1:params.N-1
+                    s_2 = params.physics.s((ϵs[k] + ϵs[k+1])/2)
+                    ρ_vals_[:, i] .+= s_2[i] .* sum(ψs_proj[k] .* ψxss_proj[l][k+1] .- ψs_proj[k+1] .* ψxss_proj[l][k], dims=1)[:]
+                end
+                
+            end
+            # combine the two
+            # add dot_c 
+            # project to ρ_vals
+        end
+        for i in 1:2
+            ρ_vals_[:, i] .= params.gram * ρ_vals_[:, i]
+        end
+        return (ρ_vals_, nothing)
+    end
+    return measurements, measure_raw_adjoint
+end
+
+function project_disassemble_solution(solver, ψ, projection)
+    n_basis = number_of_basis_functions(solver)
+    ψp = reshape(@view(ψ[1:n_basis.x.p*n_basis.Ω.p]), n_basis.Ω.p, n_basis.x.p)
+    ψm = reshape(@view(ψ[1 + n_basis.x.p*n_basis.Ω.p:n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m]), n_basis.Ω.m, n_basis.x.m)
+    return vcat(ψp*projection, ψm)
+end
+
+test_vec = reshape(ψs[50][1:n_basis.x.p*n_basis.Ω.p], n_basis.Ω.p, n_basis.x.p)
+test_vec_proj = test_vec * projection_matrix
+u = FEFunction(solver.U[1], test_vec[1, :])
+m = FEFunction(M, test_vec_proj[1, :])
+
+contourf(0:0.1:1, -1:0.1:1, (z, x) -> u(Point(z, x)))
+contourf(0:0.1:1, -1:0.1:1, (z, x) -> m(Point(z, x)))
+
+
+function integrate_direction(solver, ψ, ϕ)
+    n_basis = number_of_basis_functions(solver)
+    ψp = reshape(@view(ψ[1:n_basis.x.p*n_basis.Ω.p]), n_basis.Ω.p, n_basis.x.p)
+    ψm = reshape(@view(ψ[1 + n_basis.x.p*n_basis.Ω.p:n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m]), n_basis.Ω.m, n_basis.x.m)
+    ϕp = reshape(@view(ϕ[1:n_basis.x.p*n_basis.Ω.p]), n_basis.Ω.p, n_basis.x.p)
+    ϕm = reshape(@view(ϕ[1 + n_basis.x.p*n_basis.Ω.p:n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m]), n_basis.Ω.m, n_basis.x.m)
+    return (p=sum(ψp .* ϕp, dims=1)[:], m=sum(ψm .* ϕm, dims=1)[:])
+end
+
+@time res = integrate_direction(solver, ψs[10], ψs[20])
+res.p
 
 plot(measurementsx2[:, 2, 1, 1])
 plot!(measurementsx2[:, 2, 1, 2])

@@ -62,6 +62,7 @@ end
 ∂y(u, ::DiscreteModel{3}) = dot(VectorValue(0.0, 0.0, 1.0), ∇(u))
 
 ∫ρuv(u, v, ρ, (model, R, dx, ∂R, dΓ, n)) = ∫(ρ*u*v)dx
+∫uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(u*v)dx
 
 ∫∂zu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂z(u, model)*v)dx
 ∫∂xu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂x(u, model)*v)dx
@@ -94,6 +95,14 @@ nx(n, ::DiscreteModel{2}) = dot(n, VectorValue(0.0, 1.0))
 
 
 ## space assembly
+function update_space_matrices!(X, solver, mass_concentrations)
+    U = solver.U
+    V = solver.V
+    model = solver.model
+    X.Xpp .= [assemble_bilinear(∫ρuv, (ρi, model), U[1], V[1]) for ρi ∈ mass_concentrations]
+    X.Xmm .= [assemble_bilinear(∫ρuv, (ρi, model), U[2], V[2]) for ρi ∈ mass_concentrations]
+end
+
 function assemble_space_matrices(solver, mass_concentrations)
     U = solver.U
     V = solver.V
@@ -179,6 +188,21 @@ function semidiscretize_source(solver, μ)
     return (x=μh_x, Ω=μh_Ω, ϵ=μ.ϵ)
 end
 
+function projection_matrix(solver)
+    projection_matrix = zeros(num_free_dofs(solver.U[1]), num_free_dofs(solver.U[2]))
+    for i in 1:num_free_dofs(solver.U[1])
+        u = FEFunction(solver.U[1], spzeros(num_free_dofs(solver.U[1])))
+        u.free_values[i] = 1.0
+        m = interpolate(u, solver.U[2])
+        projection_matrix[i, :] .= m.free_values
+    end
+    return projection_matrix
+end
+
+function gram_matrix(solver)
+    gram_matrix = assemble_bilinear(∫uv, (solver.model, ), solver.U[2], solver.V[2])
+end
+
 import Gridap.TensorValues.⊗
 ⊗(A, B) = kron(A, B)
 ⊗ₓ((A, ), (B, )) = kron(A, B)
@@ -216,19 +240,15 @@ function Ab_midpoint(ϵ0, ϵ, ψ0, physics, X, Ω, gh)
 
     A_b = [ΣsXpp0 ⊗ Ω.AIpp .- (-Δϵ / 2) .* AA_pp     (-Δϵ / 2) .* AA_mp
         (-(-Δϵ / 2)) .* AA_pm             ΣsXmm0 ⊗Ω.AImm .- (-Δϵ / 2) .* AA_mm]
-    
-    g_2 = gh.ϵ((ϵ0 + ϵ) / 2.0)
-    b_b = vcat(
-        gh.x.p⊗gh.Ω.p, 
-        gh.x.m⊗gh.Ω.m)
 
-    b = A_b*ψ0 - (-Δϵ)*g_2*b_b
+    b = A_b*ψ0 - (-Δϵ)*gh((ϵ0 + ϵ) / 2.0)
 
     A = [ΣsXpp ⊗ Ω.AIpp .+ (-Δϵ / 2) .* AA_pp    (-(-Δϵ / 2)) .* AA_mp
         (-Δϵ / 2) .* AA_pm             ΣsXmm ⊗Ω.AImm .+ (-Δϵ / 2) .* AA_mm]
     
     return A, b
 end
+
 
 function Abx_midpoint(ϵ0, ϵ, ψ0, physics, X, Ω, μh)
     Δϵ = ϵ - ϵ0
@@ -262,13 +282,8 @@ function Abx_midpoint(ϵ0, ϵ, ψ0, physics, X, Ω, μh)
 
     A_b = [ΣsXpp0 ⊗ Ω.AIpp .- (Δϵ / 2) .* AA_pp     (-(Δϵ / 2)) .* AA_mp
         (Δϵ / 2) .* AA_pm             ΣsXmm0 ⊗Ω.AImm .- (Δϵ / 2) .* AA_mm]
-    
-    μ_2 = μh.ϵ((ϵ0 + ϵ) / 2.0)
-    b_b = vcat(
-        μh.x.p⊗μh.Ω.p, 
-        μh.x.m⊗μh.Ω.m)
 
-    b = A_b*ψ0 - (Δϵ)*μ_2*b_b
+    b = A_b*ψ0 - (Δϵ)*μh((ϵ0 + ϵ) / 2.0)
 
     A = [ΣsXpp ⊗ Ω.AIpp .+ (Δϵ / 2) .* AA_pp    (Δϵ / 2) .* AA_mp
         (-(Δϵ / 2)) .* AA_pm             ΣsXmm ⊗Ω.AImm .+ (Δϵ / 2) .* AA_mm]
@@ -310,14 +325,14 @@ end
 function integrate(ϵs, ψs, bh)
     res = 0.0
     Δϵ = ϵs[2] - ϵs[1]
-    b_b = vcat(
-        bh.x.p⊗bh.Ω.p, 
-        bh.x.m⊗bh.Ω.m)
-    res += 0.5*Δϵ*bh.ϵ(ϵs[1])*dot(ψs[1], b_b)
+    # b_b = vcat(
+    #     bh.x.p⊗bh.Ω.p, 
+    #     bh.x.m⊗bh.Ω.m)
+    res += 0.5*Δϵ*dot(bh(ϵs[1]), ψs[1])
     for i in 2:length(ϵs)-1
-        res += 0.5*Δϵ*bh.ϵ(ϵs[i])*dot(ψs[i], b_b)
+        res += Δϵ*dot(bh(ϵs[i]), ψs[i])
     end
-    res += 0.5*Δϵ*bh.ϵ(ϵs[end])*dot(ψs[end], b_b)
+    res += 0.5*Δϵ*dot(bh(ϵs[end]), ψs[end])
     return res
 end
 
@@ -326,9 +341,15 @@ function measure_forward(solver, X, Ω, physics, (ϵ0, ϵ1), N, ghs, μhs)
     for (i, ghx) ∈ enumerate(ghs.x)
         for (j, ghΩ) ∈ enumerate(ghs.Ω)
             for (k, ghϵ) ∈ enumerate(ghs.ϵ)
-                ϵs, ψs = solve_forward(solver, X, Ω, physics, (ϵ0, ϵ1), N, (x=ghx, Ω=ghΩ, ϵ=ghϵ))
+                # g_2 = gh.ϵ((ϵ0 + ϵ) / 2.0)
+                # b_b = vcat(
+                #     gh.x.p⊗gh.Ω.p, 
+                #     gh.x.m⊗gh.Ω.m)
+                gh(ϵ) = 2*ghϵ(ϵ)*vcat(ghx.p⊗ghΩ.p, ghx.m⊗ghΩ.m)
+                ϵs, ψs = solve_forward(solver, X, Ω, physics, (ϵ0, ϵ1), N, gh)
                 for (l, (μhx, μhϵ)) ∈ enumerate(zip(μhs.x, μhs.ϵ))
-                    measurements[i, j, k, l] = integrate(ϵs, ψs, (x=μhx, Ω=μhs.Ω[1], ϵ=μhϵ))
+                    μh(ϵ) = μhϵ(ϵ) * vcat(μhx.p ⊗ μhs.Ω[1].p, μhx.m ⊗ μhs.Ω[1].m)
+                    measurements[i, j, k, l] = integrate(ϵs, ψs, μh)
                 end
             end
         end
@@ -336,20 +357,30 @@ function measure_forward(solver, X, Ω, physics, (ϵ0, ϵ1), N, ghs, μhs)
     return measurements
 end
 
-function measure_adjoint(solver, X, Ω, physics, (ϵ0, ϵ1), N, ghs, μhs)
+function measure_adjoint(solver, X, Ω, physics, (ϵ0, ϵ1), N, ghs, μhs, retsol=false)
     measurements = zeros(length(ghs.x), length(ghs.Ω), length(ghs.ϵ), length(μhs.x))
+    ψxss = []
     for (l, (μhx, μhϵ)) ∈ enumerate(zip(μhs.x, μhs.ϵ))
-        ϵs, ψxs = solve_adjoint(solver, X, Ω, physics, (ϵ0, ϵ1), N, (x=μhx, Ω=μhs.Ω[1], ϵ=μhϵ))
+        μh(ϵ) = μhϵ(ϵ) * vcat(μhx.p⊗μhs.Ω[1].p, μhx.m⊗μhs.Ω[1].m)
+        ϵs, ψxs = solve_adjoint(solver, X, Ω, physics, (ϵ0, ϵ1), N, μh)
+        if retsol
+            push!(ψxss, ψxs)
+        end
         for (i, ghx) ∈ enumerate(ghs.x)
             for (j, ghΩ) ∈ enumerate(ghs.Ω)
                 for (k, ghϵ) ∈ enumerate(ghs.ϵ)
-                    measurements[i, j, k, l] = integrate(ϵs, ψxs, (x=ghx, Ω=ghΩ, ϵ=ghϵ))
+                    gh(ϵ) = 2*ghϵ(ϵ)*vcat(ghx.p⊗ghΩ.p, ghx.m⊗ghΩ.m)
+                    measurements[i, j, k, l] = integrate(ϵs, ψxs, gh)
                 end
             end
         end
     end
+    if retsol
+        return measurements, ψxss
+    end
     return measurements
 end
+
 ## basis evaluations
 function eval_space(U_x, points)
     res = [(spzeros(num_free_dofs(U_x[1])), spzeros(num_free_dofs(U_x[2]))) for _ in points]
