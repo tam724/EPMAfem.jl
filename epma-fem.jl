@@ -63,6 +63,7 @@ end
 
 ∫ρuv(u, v, ρ, (model, R, dx, ∂R, dΓ, n)) = ∫(ρ*u*v)dx
 ∫uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(u*v)dx
+∫v(v, (model, R, dx, ∂R, dΓ, n)) = ∫(v)dx
 
 ∫∂zu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂z(u, model)*v)dx
 ∫∂xu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂x(u, model)*v)dx
@@ -101,6 +102,15 @@ function update_space_matrices!(X, solver, mass_concentrations)
     model = solver.model
     X.Xpp .= [assemble_bilinear(∫ρuv, (ρi, model), U[1], V[1]) for ρi ∈ mass_concentrations]
     X.Xmm .= [assemble_bilinear(∫ρuv, (ρi, model), U[2], V[2]) for ρi ∈ mass_concentrations]
+end
+
+function update_extractions!(μs, solver, mass_concentrations)
+    for (i, μx) ∈ enumerate(μ.x)
+        μsp, μsm = assemble_space_source(solver, x -> μx(x, mass_concentrations[i]))
+        μs.x[i].p .= μsp
+        μs.x[i].m .= μsm 
+    end
+    # μh_x = [assemble_space_source(solver, x -> μx(x, mass_concentrations[i])) for (i, μx) ∈ enumerate(μ.x)]
 end
 
 function assemble_space_matrices(solver, mass_concentrations)
@@ -180,11 +190,11 @@ function semidiscretize_boundary(solver, g)
     return (x=gh_x, Ω=gh_Ω, ϵ=g.ϵ)
 end
 
-function semidiscretize_source(solver, μ)
+function semidiscretize_source(solver, μ, mass_concentrations)
     N = solver.PN
     num_dim = nd(solver)
     μh_Ω = [assemble_direction_source(N, μΩ, num_dim) for μΩ ∈ μ.Ω]
-    μh_x = [assemble_space_source(solver, μx) for μx ∈ μ.x]
+    μh_x = [assemble_space_source(solver, x -> μx(x, mass_concentrations[i])) for (i, μx) ∈ enumerate(μ.x)]
     return (x=μh_x, Ω=μh_Ω, ϵ=μ.ϵ)
 end
 

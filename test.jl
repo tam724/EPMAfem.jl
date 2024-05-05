@@ -53,9 +53,9 @@ g = (ϵ = [(ϵ -> pdf(Normal(ϵpos, 0.04), ϵ[1])) for ϵpos ∈ [0.85, 0.75, 0.
     Ω = [(Ω -> pdf(VonMisesFisher(normalize(Ωpos), 10.0), [Ω...])) for Ωpos ∈ [[-0.5, 0.0, -1.0], [0.0, 0.0, -1.0], [0.5, 0.0, -1.0]]])
 
 # reduced number of experiments
-g = (ϵ = [(ϵ -> pdf(Normal(ϵpos, 0.04), ϵ[1])) for ϵpos ∈ [0.85]],
-    x = [(x -> isapprox(x[1], 1.0) ? (pdf(MultivariateNormal([xpos, 0.0], [0.05, 0.05]), [(length(x)>1) ? x[2] : 0.0, (length(x)>2) ? x[3] : 0.0])) : 0.0) for xpos ∈ range(-0.5, 0.5, length=5)], 
-    Ω = [(Ω -> pdf(VonMisesFisher(normalize(Ωpos), 10.0), [Ω...])) for Ωpos ∈ [[0.0, 0.0, -1.0]]])
+# g = (ϵ = [(ϵ -> pdf(Normal(ϵpos, 0.04), ϵ[1])) for ϵpos ∈ [0.85]],
+#     x = [(x -> isapprox(x[1], 1.0) ? (pdf(MultivariateNormal([xpos, 0.0], [0.05, 0.05]), [(length(x)>1) ? x[2] : 0.0, (length(x)>2) ? x[3] : 0.0])) : 0.0) for xpos ∈ range(-0.5, 0.5, length=5)], 
+#     Ω = [(Ω -> pdf(VonMisesFisher(normalize(Ωpos), 10.0), [Ω...])) for Ωpos ∈ [[0.0, 0.0, -1.0]]])
 
 plot()
 for gϵ ∈ g.ϵ
@@ -69,16 +69,16 @@ for gx ∈ g.x
 end
 plot!()
 
-function μ_x(nd)
-    if nd == Val(1)
-        return x -> (x[1] < 0.9 && x[1] > 0.8) ? 1.0 : 0.0
-    elseif nd == Val(2)
-        return x -> (x[2] > -0.2 && x[2] < 0.2) ? 1.0 : 0.0
-    end
-end
+# function μ_x(nd)
+#     if nd == Val(1)
+#         return x -> (x[1] < 0.9 && x[1] > 0.8) ? 1.0 : 0.0
+#     elseif nd == Val(2)
+#         return x -> (x[2] > -0.2 && x[2] < 0.2) ? 1.0 : 0.0
+#     end
+# end
 
 μ = (ϵ = [(ϵ -> (ϵ[1]-0.1 > 0) ? sqrt(ϵ[1]-0.1) : 0.0), (ϵ -> (ϵ[1]-0.2 > 0) ? sqrt(ϵ[1]-0.2) : 0.0)],
-    x = [(x -> ρ(x)[1]), (x -> ρ(x)[2])],
+    x = [((x, ρ) -> ρ(x)), ((x, ρ) -> ρ(x))],
     Ω = [(Ω -> 1.0)])
 
 plot()
@@ -88,7 +88,7 @@ end
 plot!()
 
 gh = semidiscretize_boundary(solver, g)
-μh = semidiscretize_source(solver, μ)
+μh = semidiscretize_source(solver, μ, mass_concentrations)
 
 # plotly()
 # mm = measure_forward(solver, X, Ω, physics, (0, 1), 100, gh, μh)
@@ -114,8 +114,8 @@ objective(ρ_vals) = sum((true_measurements .- measure_raw(ρ_vals, param)).^2)
 objective(ρ_vals)
 measurements = measure_raw(ρ_vals, param)
 
-plot(true_measurements[:, 1, 1, 2])
-plot!(measurements[:, 1, 1, 2])
+plot(true_measurements[:, 1, 6, 2])
+plot!(measurements[:, 3, 6, 2])
 
 grad = Zygote.gradient(objective, ρ_vals)
 grad[1]
@@ -127,12 +127,12 @@ function finite_diff(f, x, h, index)
     return (objective(x_) - val0)/h
 end
 
-finite_diff(objective, ρ_vals, 0.01, (300, 1))
-grad[1][300, 1]
+finite_diff(objective, ρ_vals, 0.01, (875, 1))
+grad[1][875, 1]
 
-argmin(grad[1])
+argmax(grad[1])
 
-m = FEFunction(M, grad[1][:,1])
+m = FEFunction(M, grad[1][:,2])
 contourf(0:0.1:1, -1:0.1:1, (z, x) -> m(Point(z, x)))
 
 function measure_raw(ρ_vals, params)
@@ -140,6 +140,7 @@ function measure_raw(ρ_vals, params)
         params.mass_concentrations[i].free_values .= ρ_vals[:, i]
     end
     update_space_matrices!(params.X, params.solver, params.mass_concentrations)
+    update_extractions!(params.μh, params.solver, params.mass_concentrations)
     measurements = measure_adjoint(params.solver, params.X, params.Ω, params.physics, params.ϵ, params.N, params.gh, params.μh)
     return measurements
 end
@@ -149,7 +150,7 @@ Zygote.@adjoint function measure_raw(ρ_vals, params)
         params.mass_concentrations[i].free_values .= ρ_vals[:, i]
     end
     update_space_matrices!(params.X, params.solver, params.mass_concentrations)
-    
+    update_extractions!(params.μh, params.solver, params.mass_concentrations)
     measurements, ψxss = measure_adjoint(params.solver, params.X, params.Ω, params.physics, params.ϵ, params.N, params.gh, params.μh, true)
     function measure_raw_adjoint(measurements_) 
         function gh(ϵ, l)
@@ -176,24 +177,33 @@ Zygote.@adjoint function measure_raw(ρ_vals, params)
             for i ∈ 1:2 # number of elements
                 for k ∈ 1:params.N-1
                     s_2 = params.physics.s((ϵs[k] + ϵs[k+1])/2)
-                    ρ_vals_[:, i] .+= s_2[i] .* sum(ψs_proj[k] .* ψxss_proj[l][k+1] .- ψs_proj[k+1] .* ψxss_proj[l][k], dims=1)[:]
+                    ρ_vals_[:, i] .+= params.gram * (s_2[i] .* sum(ψs_proj[k] .* ψxss_proj[l][k+1] .- ψs_proj[k+1] .* ψxss_proj[l][k], dims=1)[:])
                 end
                 
                 # initial and final are 0.0 (because initial and final conditions of ψ and λ)
                 for k ∈ 2:params.N-1
                     τ = params.physics.τ(ϵs[k])
                     σ = params.physics.σ(ϵs[k])
-                    ρ_vals_[:, i] .+= (Δϵ*τ[i]).*sum(ψs_proj[k] .* ψxss_proj[l][k], dims=1)[:]
-                    ρ_vals_[:, i] .-= (Δϵ*σ[i]).*sum(K * (ψs_proj[k] .* ψxss_proj[l][k]), dims=1)[:]
+                    ρ_vals_[:, i] .+= params.gram * ((Δϵ*τ[i]).*sum(ψs_proj[k] .* ψxss_proj[l][k], dims=1)[:])
+                    ρ_vals_[:, i] .-= params.gram * ((Δϵ*σ[i]).*sum(K * (ψs_proj[k] .* ψxss_proj[l][k]), dims=1)[:])
                 end
             end
-            # combine the two
+            #for i ∈ 1:2 # number of elements
+                # final is 0.0 (forward solution)
+                μ_ϵ = μhϵ(ϵs[1])
+                μ_Ω = [params.μh.Ω[1].p; params.μh.Ω[1].m]
+                ρ_vals_[:, l] .+= params.gram * ((Δϵ * μ_ϵ / 2) .* (μ_Ω' * ψs_proj[1]))[:]
+                for k ∈ 2:params.N-1
+                    μ_ϵ = μhϵ(ϵs[k])
+                    ρ_vals_[:, l] .+= params.gram * ((Δϵ*μ_ϵ) .* (μ_Ω' * ψs_proj[k]))[:]
+                end
             # add dot_c 
             # project to ρ_vals
+            # end
         end
-        for i in 1:2
-            ρ_vals_[:, i] .= params.gram * ρ_vals_[:, i]
-        end
+        # for i in 1:2
+        #     ρ_vals_[:, i] .= params.gram * ρ_vals_[:, i]
+        # end
         return (ρ_vals_, nothing)
     end
     return measurements, measure_raw_adjoint
