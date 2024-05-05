@@ -20,7 +20,7 @@ scattering_kernel(μ) = scattering_kernel_(μ) / scattering_norm_factor
 
 ss(ϵ) = [1.0 + 0.1*exp(-ϵ), 1.0 + 0.2*exp(-ϵ)]
 ∂ss(ϵ) = Enzyme.autodiff(Forward, ss, Duplicated(ϵ, 1.0))[1]
-σ(ϵ) = [0.0, 0.0] #[0.5 + 0.1*exp(-3*ϵ), 0.5 + 0.1*exp(-4*ϵ)]
+σ(ϵ) = [0.5 + 0.1*exp(-3*ϵ), 0.5 + 0.1*exp(-4*ϵ)]
 ττ(ϵ) = σ(ϵ)
 
 s(ϵ) = 0.5 .* ss(ϵ)
@@ -114,8 +114,8 @@ objective(ρ_vals) = sum((true_measurements .- measure_raw(ρ_vals, param)).^2)
 objective(ρ_vals)
 measurements = measure_raw(ρ_vals, param)
 
-plot(true_measurements[:, 2, 1, 2])
-plot!(measurements[:, 2, 1, 2])
+plot(true_measurements[:, 1, 1, 2])
+plot!(measurements[:, 1, 1, 2])
 
 grad = Zygote.gradient(objective, ρ_vals)
 grad[1]
@@ -127,10 +127,8 @@ function finite_diff(f, x, h, index)
     return (objective(x_) - val0)/h
 end
 
-finite_diff(objective, ρ_vals, 0.01, (950, 2))
-grad[1][950, 2]
-
-
+finite_diff(objective, ρ_vals, 0.01, (300, 1))
+grad[1][300, 1]
 
 argmin(grad[1])
 
@@ -151,6 +149,7 @@ Zygote.@adjoint function measure_raw(ρ_vals, params)
         params.mass_concentrations[i].free_values .= ρ_vals[:, i]
     end
     update_space_matrices!(params.X, params.solver, params.mass_concentrations)
+    
     measurements, ψxss = measure_adjoint(params.solver, params.X, params.Ω, params.physics, params.ϵ, params.N, params.gh, params.μh, true)
     function measure_raw_adjoint(measurements_) 
         function gh(ϵ, l)
@@ -169,15 +168,24 @@ Zygote.@adjoint function measure_raw(ρ_vals, params)
         ψxss_proj = [[project_disassemble_solution(params.solver, ψx, params.proj) for ψx ∈ ψxs] for ψxs ∈ ψxss]
         ρ_vals_ = zeros(size(ρ_vals))
         ϵs = range(params.ϵ[1], params.ϵ[2], params.N)
+        Δϵ = ϵs[2] - ϵs[1]
         for (l, (μhx, μhϵ)) ∈ enumerate(zip(params.μh.x, params.μh.ϵ))
             _, ψs_ = solve_forward(params.solver, params.X, params.Ω, params.physics, params.ϵ, params.N, ϵ -> gh(ϵ, l))
             ψs_proj = [project_disassemble_solution(params.solver, ψ, params.proj) for  ψ ∈ ψs_]
+            K = Diagonal([diag(params.Ω.Kpp); diag(param.Ω.Kmm)])
             for i ∈ 1:2 # number of elements
                 for k ∈ 1:params.N-1
                     s_2 = params.physics.s((ϵs[k] + ϵs[k+1])/2)
                     ρ_vals_[:, i] .+= s_2[i] .* sum(ψs_proj[k] .* ψxss_proj[l][k+1] .- ψs_proj[k+1] .* ψxss_proj[l][k], dims=1)[:]
                 end
                 
+                # initial and final are 0.0 (because initial and final conditions of ψ and λ)
+                for k ∈ 2:params.N-1
+                    τ = params.physics.τ(ϵs[k])
+                    σ = params.physics.σ(ϵs[k])
+                    ρ_vals_[:, i] .+= (Δϵ*τ[i]).*sum(ψs_proj[k] .* ψxss_proj[l][k], dims=1)[:]
+                    ρ_vals_[:, i] .-= (Δϵ*σ[i]).*sum(K * (ψs_proj[k] .* ψxss_proj[l][k]), dims=1)[:]
+                end
             end
             # combine the two
             # add dot_c 
@@ -198,23 +206,23 @@ function project_disassemble_solution(solver, ψ, projection)
     return vcat(ψp*projection, ψm)
 end
 
-test_vec = reshape(ψs[50][1:n_basis.x.p*n_basis.Ω.p], n_basis.Ω.p, n_basis.x.p)
-test_vec_proj = test_vec * projection_matrix
-u = FEFunction(solver.U[1], test_vec[1, :])
-m = FEFunction(M, test_vec_proj[1, :])
+# test_vec = reshape(ψs[50][1:n_basis.x.p*n_basis.Ω.p], n_basis.Ω.p, n_basis.x.p)
+# test_vec_proj = test_vec * projection_matrix
+# u = FEFunction(solver.U[1], test_vec[1, :])
+# m = FEFunction(M, test_vec_proj[1, :])
 
-contourf(0:0.1:1, -1:0.1:1, (z, x) -> u(Point(z, x)))
-contourf(0:0.1:1, -1:0.1:1, (z, x) -> m(Point(z, x)))
+# contourf(0:0.1:1, -1:0.1:1, (z, x) -> u(Point(z, x)))
+# contourf(0:0.1:1, -1:0.1:1, (z, x) -> m(Point(z, x)))
 
 
-function integrate_direction(solver, ψ, ϕ)
-    n_basis = number_of_basis_functions(solver)
-    ψp = reshape(@view(ψ[1:n_basis.x.p*n_basis.Ω.p]), n_basis.Ω.p, n_basis.x.p)
-    ψm = reshape(@view(ψ[1 + n_basis.x.p*n_basis.Ω.p:n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m]), n_basis.Ω.m, n_basis.x.m)
-    ϕp = reshape(@view(ϕ[1:n_basis.x.p*n_basis.Ω.p]), n_basis.Ω.p, n_basis.x.p)
-    ϕm = reshape(@view(ϕ[1 + n_basis.x.p*n_basis.Ω.p:n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m]), n_basis.Ω.m, n_basis.x.m)
-    return (p=sum(ψp .* ϕp, dims=1)[:], m=sum(ψm .* ϕm, dims=1)[:])
-end
+# function integrate_direction(solver, ψ, ϕ)
+#     n_basis = number_of_basis_functions(solver)
+#     ψp = reshape(@view(ψ[1:n_basis.x.p*n_basis.Ω.p]), n_basis.Ω.p, n_basis.x.p)
+#     ψm = reshape(@view(ψ[1 + n_basis.x.p*n_basis.Ω.p:n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m]), n_basis.Ω.m, n_basis.x.m)
+#     ϕp = reshape(@view(ϕ[1:n_basis.x.p*n_basis.Ω.p]), n_basis.Ω.p, n_basis.x.p)
+#     ϕm = reshape(@view(ϕ[1 + n_basis.x.p*n_basis.Ω.p:n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m]), n_basis.Ω.m, n_basis.x.m)
+#     return (p=sum(ψp .* ϕp, dims=1)[:], m=sum(ψm .* ϕm, dims=1)[:])
+# end
 
 @time res = integrate_direction(solver, ψs[10], ψs[20])
 res.p
