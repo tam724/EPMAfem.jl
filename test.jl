@@ -7,6 +7,7 @@ using Distributions
 using Plots
 using IterativeSolvers
 using Zygote
+using Lux
 
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
@@ -34,15 +35,17 @@ model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (25, nhx))
 M = material_space(model)
 
 function ρ(x)
-    if x[2] < -0.1 || x[2] > 0.1
-        return [0.0, 1.0]
-    else
+    if (x[2] > -0.15 && x[2] < 0.15) && (x[1] > 0.85)
         return [0.8, 0.0]
+    else
+        return [0.0, 1.2]
     end
 end
 
 mass_concentrations = [interpolate(x -> ρ(x)[1], M), interpolate(x -> ρ(x)[2], M)]
 # build solver:
+
+contourf(-1:0.01:1, 0:0.01:1, (x, z) -> mass_concentrations[2](Point(z, x)))
 
 solver = build_solver(model, 5)
 X = assemble_space_matrices(solver, mass_concentrations)
@@ -105,20 +108,81 @@ param = (mass_concentrations=mass_concentrations, solver=solver, X=X, Ω=Ω, phy
 
 true_measurements = measure_raw(true_ρ_vals, param)
 
-objective(ρ_vals) = sum((true_measurements .- measure_raw(ρ_vals, param)).^2)
+plot(true_measurements[:, 2, 1, 2])
 
-ρ_vals = copy(true_ρ_vals)
-ρ_vals[:, 1] .= 0.4
-ρ_vals[:, 2] .= 0.5
+function objective(ρ_vals)
+    n = length(true_measurements)
+    measurements = measure_raw(ρ_vals, param)
+    Zygote.ignore() do
+        p = plot(measurements[:, 1, 1, 1])
+        p = plot!(true_measurements[:, 1, 1, 1])
+        display(p)
+    end
+    return 1/n * sum((true_measurements .- measurements).^2)
+end
 
-objective(ρ_vals)
-measurements = measure_raw(ρ_vals, param)
+xys = mean.(Gridap.get_cell_coordinates(M.fe_basis.trian.grid))[:]
+xys_mat = [xys[i][j] for j in 1:2, i in 1:length(xys)]
 
-plot(true_measurements[:, 1, 6, 2])
-plot!(measurements[:, 3, 6, 2])
+NN = Chain(Dense(2, 10, tanh), Dense(10, 2), Lux.softmax)
+ps, st = Lux.setup(Random.default_rng(), NN)
+p0, restruct = Optimisers.destructure(ps)
 
-grad = Zygote.gradient(objective, ρ_vals)
-grad[1]
+function p_trans(p)
+    NN_params = restruct(p)
+    p_ = Lux.apply(NN, xys_mat, NN_params, st)[1]
+    # pxs = choose_p.(xy, Ref(p))
+    # p_ = Lux.NNlib.σ.(pxs)
+    ρ_vals = p_[1, :] .* [0.0, 1.2]' .+ p_[2, :] .* [0.8, 0.0]'
+    @show sum(ρ_vals, dims=2)
+    @assert all(sum(ρ_vals, dims=2) .> 0.75)
+    return ρ_vals
+end
+
+using Optim, Lux, Random, Optimisers
+
+function fg!(F, G, x)
+    if G !== nothing
+        res = Zygote.withgradient(objective ∘ p_trans, x)
+        G .= res.grad[1]
+        return res.val
+    end
+    if F !== nothing
+        return objective(p_trans(x))
+    end
+end
+
+function optim_callback(trace)
+    m_temp = FEFunction(M, p_trans(trace[end].metadata["x"])[:, 2])
+    p = contourf(-1:0.05:1, 0:0.05:1, (x, z) -> m_temp(Point(z, x)))
+    display(p)
+    return false
+end
+
+res = Optim.optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(store_trace=true, extended_trace=true, iterations=1000, time_limit=60*60, g_abstol=1e-6, g_reltol=1e-6, callback=optim_callback))
+
+@gif for i in 1:length(res.trace)
+    m_temp = FEFunction(M, p_trans(res.trace[i].metadata["x"])[:, 1])
+    p = contourf(-1:0.05:1, 0:0.05:1, (x, z) -> m_temp(Point(z, x)), clims=(0, 0.8))
+    hline!([0.85])
+    vline!([-0.15, 0.15])
+    title!("iteration: $(i)")
+end fps=5
+
+trace_measurements = [measure_raw(p_trans(res.trace[i].metadata["x"]), param) for i in 1:length(res.trace)]
+
+@gif for i in 1:length(res.trace)
+    plot(true_measurements[:, 2, 1, 1], color=1)
+    plot!(true_measurements[:, 2, 1, 2], color=2)
+    plot!(true_measurements[:, 1, 1, 1], color=3)
+    # measurements = measure_raw(p_trans(res.trace[i].metadata["x"]), param)
+    plot!(trace_measurements[i][:, 2, 1, 1], color=1, linestyle=:dash)
+    plot!(trace_measurements[i][:, 2, 1, 2], color=2, linestyle=:dash)
+    plot!(trace_measurements[i][:, 1, 1, 1], color=3, linestyle=:dash)
+    title!("interation: $(i)")
+end fps=5
+
+res.minimizer
 
 function finite_diff(f, x, h, index)
     val0 = f(x)
@@ -132,8 +196,16 @@ grad[1][875, 1]
 
 argmax(grad[1])
 
-m = FEFunction(M, grad[1][:,2])
-contourf(0:0.1:1, -1:0.1:1, (z, x) -> m(Point(z, x)))
+m = FEFunction(M, p_trans(grad.grad[1])[:, 1])
+m = FEFunction(M, p_trans(p0)[:, 1])
+m = FEFunction(M, p_trans(res.minimizer)[:, 2])
+contourf(0:0.05:1, -1:0.05:1, (z, x) -> m(Point(z, x)))
+
+@gif for i in 1:16
+    m_i = FEFunction(M, p_trans(res.trace[i].metadata["x"])[:, 2])
+    contourf(0:0.05:1, -1:0.05:1, (z, x) -> m_i(Point(z, x)), clims=(0, 1))
+end fps=2
+p_trans(p0)
 
 function measure_raw(ρ_vals, params)
     for i ∈ 1:length(params.mass_concentrations)
