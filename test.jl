@@ -8,6 +8,8 @@ using Plots
 using IterativeSolvers
 using Zygote
 using Lux
+using Optim, Lux, Random, Optimisers
+
 
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
@@ -29,8 +31,8 @@ s(ϵ) = 0.5 .* ss(ϵ)
 
 physics = (s=s, τ=τ, σ=σ)
 
-nhx = 50
-model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (25, nhx))
+nhx = 80
+model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (40, nhx))
 
 M = material_space(model)
 
@@ -47,7 +49,7 @@ mass_concentrations = [interpolate(x -> ρ(x)[1], M), interpolate(x -> ρ(x)[2],
 
 contourf(-1:0.01:1, 0:0.01:1, (x, z) -> mass_concentrations[2](Point(z, x)))
 
-solver = build_solver(model, 5)
+solver = build_solver(model, 9)
 X = assemble_space_matrices(solver, mass_concentrations)
 Ω = assemble_direction_matrices(solver, scattering_kernel)
 
@@ -110,6 +112,8 @@ true_measurements = measure_raw(true_ρ_vals, param)
 
 plot(true_measurements[:, 2, 1, 2])
 
+counter = [0]
+
 function objective(ρ_vals)
     n = length(true_measurements)
     measurements = measure_raw(ρ_vals, param)
@@ -117,6 +121,8 @@ function objective(ρ_vals)
         p = plot(measurements[:, 1, 1, 1])
         p = plot!(true_measurements[:, 1, 1, 1])
         display(p)
+        savefig(p, "measurements/plot$(counter[1]).pdf")
+        counter[1] += 1
     end
     return 1/n * sum((true_measurements .- measurements).^2)
 end
@@ -124,7 +130,7 @@ end
 xys = mean.(Gridap.get_cell_coordinates(M.fe_basis.trian.grid))[:]
 xys_mat = [xys[i][j] for j in 1:2, i in 1:length(xys)]
 
-NN = Chain(Dense(2, 10, tanh), Dense(10, 2), Lux.softmax)
+NN = Chain(Dense(2, 10, tanh), Dense(10, 10, tanh), Dense(10, 2), Lux.softmax)
 ps, st = Lux.setup(Random.default_rng(), NN)
 p0, restruct = Optimisers.destructure(ps)
 
@@ -139,7 +145,6 @@ function p_trans(p)
     return ρ_vals
 end
 
-using Optim, Lux, Random, Optimisers
 
 function fg!(F, G, x)
     if G !== nothing
@@ -152,14 +157,18 @@ function fg!(F, G, x)
     end
 end
 
+counter2 = [0]
+
 function optim_callback(trace)
     m_temp = FEFunction(M, p_trans(trace[end].metadata["x"])[:, 2])
     p = contourf(-1:0.05:1, 0:0.05:1, (x, z) -> m_temp(Point(z, x)))
     display(p)
+    savefig(p, "material/plot$(counter2[1]).pdf")
+    counter2[1] += 1
     return false
 end
 
-res = Optim.optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(store_trace=true, extended_trace=true, iterations=1000, time_limit=60*60, g_abstol=1e-6, g_reltol=1e-6, callback=optim_callback))
+res = Optim.optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(store_trace=true, extended_trace=true, iterations=1000, time_limit=60*60*10, g_abstol=1e-6, g_reltol=1e-6, callback=optim_callback))
 
 @gif for i in 1:length(res.trace)
     m_temp = FEFunction(M, p_trans(res.trace[i].metadata["x"])[:, 1])
@@ -182,7 +191,6 @@ trace_measurements = [measure_raw(p_trans(res.trace[i].metadata["x"]), param) fo
     title!("interation: $(i)")
 end fps=5
 
-res.minimizer
 
 function finite_diff(f, x, h, index)
     val0 = f(x)
