@@ -104,11 +104,11 @@ function update_space_matrices!(X, solver, mass_concentrations)
     X.Xmm .= [assemble_bilinear(∫ρuv, (ρi, model), U[2], V[2]) for ρi ∈ mass_concentrations]
 end
 
-function update_extractions!(μs, solver, mass_concentrations)
-    for (i, μx) ∈ enumerate(μ.x)
-        μsp, μsm = assemble_space_source(solver, x -> μx(x, mass_concentrations[i]))
-        μs.x[i].p .= μsp
-        μs.x[i].m .= μsm 
+function update_extractions!(μhs, solver, mass_concentrations)
+    for (i, μx) ∈ enumerate(μhs.x)
+        μsp, μsm = assemble_space_source(solver, mass_concentrations[i])
+        μhs.x[i].p .= μsp
+        μhs.x[i].m .= μsm 
     end
     # μh_x = [assemble_space_source(solver, x -> μx(x, mass_concentrations[i])) for (i, μx) ∈ enumerate(μ.x)]
 end
@@ -194,7 +194,7 @@ function semidiscretize_source(solver, μ, mass_concentrations)
     N = solver.PN
     num_dim = nd(solver)
     μh_Ω = [assemble_direction_source(N, μΩ, num_dim) for μΩ ∈ μ.Ω]
-    μh_x = [assemble_space_source(solver, x -> μx(x, mass_concentrations[i])) for (i, μx) ∈ enumerate(μ.x)]
+    μh_x = [assemble_space_source(solver, μx(mass_concentrations[i])) for (i, μx) ∈ enumerate(μ.x)]
     return (x=μh_x, Ω=μh_Ω, ϵ=μ.ϵ)
 end
 
@@ -309,7 +309,8 @@ function solve_forward(solver, X, Ω, physics, (ϵ0, ϵ1), N, gh)
         @show k
         A, b = Ab_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], physics, X, Ω, gh)
         ψk = copy(ψs[k-1])
-        ψk = IterativeSolvers.bicgstabl!(ψk, A, b, 2)
+        ψk, log = IterativeSolvers.bicgstabl!(ψk, A, b, 2, log=true, abstol=1e-3, reltol=1e-3)
+        @show log
         push!(ψs, ψk)
     end
 
@@ -325,7 +326,8 @@ function solve_adjoint(solver, X, Ω, physics, (ϵ0, ϵ1), N, μh)
         @show k
         A, b = Abx_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], physics, X, Ω, μh)
         ψk = copy(ψs[k-1])
-        ψk = IterativeSolvers.bicgstabl!(ψk, A, b, 2)
+        ψk, log = IterativeSolvers.bicgstabl!(ψk, A, b, 2, log=true)
+        @show log
         push!(ψs, ψk)
     end
 
