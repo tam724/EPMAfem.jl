@@ -75,13 +75,26 @@ end
 
 function (u::Gridap.MultiField.MultiFieldFEFunction)(x::VectorValue)
     Ω0 = get_triangulation(u).model.grid.node_coords[end][1]
-    u1 = Gridap.interpolate(u[1], u[2].fe_space)
+
+    # u1 = Gridap.interpolate(u[1], u[2].fe_space)
+    u1 = u[1]
     u2 = u[2]
     if x[1] > Ω0
         return u1(-x) - u2(-x)
     else
         return u1(x) + u2(x)
     end
+end
+
+function (u::Gridap.MultiField.MultiFieldFEFunction)(x::Vector{<:VectorValue})
+    Ω0 = get_triangulation(u).model.grid.node_coords[end][1]
+    # u1 = Gridap.interpolate(u[1], u[2].fe_space)
+    u1 = u[1] # Gridap.interpolate(u[1], u[2].fe_space)
+    u2 = u[2]
+    res = zeros(length(x))
+    res[getindex.(x, 1) .>= Ω0] .= u1(-x[getindex.(x, 1) .>= Ω0]) .- u2(-x[getindex.(x, 1) .>= Ω0])
+    res[getindex.(x, 1) .<= Ω0] .= u1(x[getindex.(x, 1) .<= Ω0]) .+ u2(x[getindex.(x, 1) .<= Ω0])
+    return res
 end
 
 import Gridap:interpolate
@@ -98,9 +111,9 @@ using Gridap
 
 R = (-1, 1)
 u0 = 1.0
-order = 0
+order = 1
 N = 16
-models = [EvenOddModel(R, n÷2) for n ∈ 2 .^(2:24)]
+models = [EvenOddModel(R, n÷2) for n ∈ 2 .^(2:20)]
 
 
 Ωs = [Triangulation(model) for model in models]
@@ -125,57 +138,137 @@ function assemble_linear(b, args, U, V)
     return assemble_vector(SparseMatrixAssembler(U, V), data)
 end
 
-function interpolation_matrix((V1, dx1), (V2, dx2))
-    A = spzeros(num_free_dofs(V1), num_free_dofs(V2))
-    for i in 1:num_free_dofs(V2)
-        e_i = zeros(num_free_dofs(V2))
-        e_i[i] = 1.0
-        v2 = FEFunction(V2, e_i)
-        a(u, v) = ∫(⁺(u*v))*dx1
-        b(v) = ∫(⁺(v)*(x -> v2[1](x)) + ⁻(v)*(x -> v2[2](x)))*dx1
-        op = AffineFEOperator(a, b, TrialEvenOddFESpace(V1, order), V1)
-        A[:, i] = Gridap.solve(op).free_values
+function restriction_matrix((V1, dx1), (V2, dx2), order)
+    if order == 0
+        Is = Int64[]
+        Js = Int64[]
+        Vs = Float64[]
+        for i in 1:num_free_dofs(V1[1])
+            push!(Is, i)
+            push!(Js, 2(i-1)+1)
+            push!(Vs, 1.0)
+        end
+        for i in num_free_dofs(V1[1])+1:num_free_dofs(V1)
+            push!(Is, i)
+            push!(Js, 2(i-1))
+            push!(Vs, 0.5)
+            push!(Is, i)
+            push!(Js, 2(i-1)+1)
+            push!(Vs, 0.5)
+            # A[i, 2(i-1)] = 0.5
+            # A[i, 2(i-1)+1] = 0.5
+        end
+        return sparse(Is, Js, Vs)
+    elseif order == 1
+        Is = Int64[]
+        Js = Int64[]
+        Vs = Float64[]
+        for i in 1:num_free_dofs(V1[1])
+            push!(Is, i)
+            push!(Js, 2(i-1)+1)
+            push!(Vs, 1.0)
+        end
+        for i in num_free_dofs(V1[1])+1:num_free_dofs(V1)
+            push!(Is, i)
+            push!(Js, 2(i-1)+1)
+            push!(Vs, 1.0)
+        end
+        return sparse(Is, Js, Vs)
     end
-    return A
 end
 
-function smoothing_matrix((V1, dx1), (V2, dx2))
-    #A = spzeros(num_free_dofs(V1), num_free_dofs(V2))
-    Is = Float64[]
-    Js = Float64[]
-    Vs = Float64[]
-    # @show num_free_dofs(V2)
-    for i in 1:num_free_dofs(V2[1])
-        push!(Is, 2*(i-1)+1)
-        push!(Js, i)
-        push!(Vs, 1.0)
-        # A[2*(i-1)+1, i] = 1.0
-        if 2*(i-1)+1-1 >= 1
+# function restriction_matrix2((V1, dx1), (V2, dx2))
+#     A = spzeros(num_free_dofs(V1), num_free_dofs(V2))
+#     for i in 1:num_free_dofs(V2)
+#         e_i = zeros(num_free_dofs(V2))
+#         e_i[i] = 1.0
+#         v2 = FEFunction(V2, e_i)
+#         a(u, v) = ∫(⁺(u*v))*dx1
+#         b(v) = ∫(⁺(v)*(x -> v2[1](x)) + ⁻(v)*(x -> v2[2](x)))*dx1
+#         op = AffineFEOperator(a, b, TrialEvenOddFESpace(V1, order), V1)
+#         A[:, i] = Gridap.solve(op).free_values
+#     end
+#     return A
+# end
+
+function prolongation_matrix((V1, dx1), (V2, dx2), order)
+    if order == 0
+        Is = Int64[]
+        Js = Int64[]
+        Vs = Float64[]
+        for i in 1:num_free_dofs(V2[1])
+            push!(Is, 2*(i-1)+1)
+            push!(Js, i)
+            push!(Vs, 1.0)
+            # A[2*(i-1)+1, i] = 1.0
+            if 2*(i-1)+1-1 >= 1
+                push!(Is, 2*(i-1)+1-1)
+                push!(Js, i)
+                push!(Vs, 0.5)
+                # A[2*(i-1)+1-1, i] = 0.5
+            end
+            if 2*(i-1)+1+1 < num_free_dofs(V1[1])
+                push!(Is, 2*(i-1)+1+1)
+                push!(Js, i)
+                push!(Vs, 0.5)
+                # A[2*(i-1)+1+1, i] = 0.5
+            end
+        end
+        for i in num_free_dofs(V2[1])+1:num_free_dofs(V2)
+            push!(Is, 2*(i-1)+1)
+            push!(Js, i)
+            push!(Vs, 1.0)
+
+            # A[2*(i-1)+1, i] = 1.0
             push!(Is, 2*(i-1)+1-1)
             push!(Js, i)
-            push!(Vs, 0.5)
-            # A[2*(i-1)+1-1, i] = 0.5
+            push!(Vs, 1.0)
+            
+            # A[2*(i-1)+1-1, i] = 1.0
         end
-        if 2*(i-1)+1+1 < num_free_dofs(V1[1])
-            push!(Is, 2*(i-1)+1+1)
+        return sparse(Is, Js, Vs)
+    elseif order == 1
+        Is = Int64[]
+        Js = Int64[]
+        Vs = Float64[]
+        for i in 1:num_free_dofs(V2[1])
+            push!(Is, 2*(i-1)+1)
             push!(Js, i)
-            push!(Vs, 0.5)
-            # A[2*(i-1)+1+1, i] = 0.5
+            push!(Vs, 1.0)
+            # A[2*(i-1)+1, i] = 1.0
+            if 2*(i-1)+1-1 >= 1
+                push!(Is, 2*(i-1)+1-1)
+                push!(Js, i)
+                push!(Vs, 0.5)
+                # A[2*(i-1)+1-1, i] = 0.5
+            end
+            if 2*(i-1)+1+1 < num_free_dofs(V1[1])
+                push!(Is, 2*(i-1)+1+1)
+                push!(Js, i)
+                push!(Vs, 0.5)
+                # A[2*(i-1)+1+1, i] = 0.5
+            end
         end
+        for i in num_free_dofs(V2[1])+1:num_free_dofs(V2)
+            push!(Is, 2*(i-1))
+            push!(Js, i)
+            push!(Vs, 1.0)
+            # A[2*(i-1)+1, i] = 1.0
+            if 2*(i-1)-1 > num_free_dofs(V1[1])+1
+                push!(Is, 2*(i-1)-1)
+                push!(Js, i)
+                push!(Vs, 0.5)
+                # A[2*(i-1)+1-1, i] = 0.5
+            end
+            if 2*(i-1)+1 <= num_free_dofs(V1)
+                push!(Is, 2*(i-1)+1)
+                push!(Js, i)
+                push!(Vs, 0.5)
+                # A[2*(i-1)+1+1, i] = 0.5
+            end
+        end
+        return sparse(Is, Js, Vs)
     end
-    for i in num_free_dofs(V2[1])+1:num_free_dofs(V2)
-        push!(Is, 2*(i-1)+1)
-        push!(Js, i)
-        push!(Vs, 1.0)
-
-        # A[2*(i-1)+1, i] = 1.0
-        push!(Is, 2*(i-1)+1-1)
-        push!(Js, i)
-        push!(Vs, 1.0)
-        
-        # A[2*(i-1)+1-1, i] = 1.0
-    end
-    return sparse(Is, Js, Vs)
 end
 
 function smoothing_matrix2((V1, dx1), (V2, dx2))
@@ -199,20 +292,11 @@ function smoothing_matrix2((V1, dx1), (V2, dx2))
     return A
 end
 
+# restriction matrix maps from fine grid into a coarser grid 
+# prolongation matrix maps from a coarse grid into a finer grid
 
-#As = [interpolation_matrix((Vs[i], dxs[i]), (Vs[i+1], dxs[i+1])) for i in 1:length(Vs)-1]
-Bs = [smoothing_matrix((Vs[i+1], dxs[i+1]), (Vs[i], dxs[i])) for i in 1:length(Vs)-1]
-
-u2 = interpolate(x -> sin(3*x[1]) + 1.0, Vs[end])
-u1 = interpolate(x -> sin(3*x[1]) + 1.0, Vs[end-1])
-#u1 = FEFunction(Vs[end-1], As[end]*u2.free_values)
-u3 = FEFunction(Vs[end], Bs[end]*u1.free_values)
-
-plotly()
-plot(range(R..., length=100), x -> u2(Point(x)))
-plot!(range(R..., length=100), x -> u1(Point(x)))
-plot!(range(R..., length=100), x -> u3(Point(x)))
-plot!(range(R..., length=100), x -> sin(3*x) + 1)
+# As = [restriction_matrix((Vs[i], dxs[i]), (Vs[i+1], dxs[i+1]), 1) for i in 1:length(Vs)-1]
+Bs = [prolongation_matrix((Vs[i+1], dxs[i+1]), (Vs[i], dxs[i]), order) for i in 1:length(Vs)-1]
 
 Γ = BoundaryTriangulation(models[end])
 dΓ = Measure(Γ, 2*order)
@@ -221,7 +305,10 @@ U = TrialEvenOddFESpace(Vs[end], order)
 δ⁻(x) = isapprox(x[1], R[1])
 
 # a(u, v) = ∫(∂(⁺(u)) * ⁻(v) - ⁻(u)*∂(⁺(v)) + ⁺(u*v))dxs[end] + ∫(⁺(u)* ⁺(v)*δ⁻)dΓ
-a((up, um), (vp, vm)) = ∫(-∂(up) * vm - um*∂(vp) + up*vp - um*vm)dxs[end] + ∫(up * vp*δ⁻)dΓ
+γ(x) = sin(20*x[1]) + ((x[1] > 0.1) ? 10.0 : 0.0)
+
+ΩR0 = center(R)
+a((up, um), (vp, vm)) = ∫(- ∂(up) * vm - ∂(vp) * um + ⁺(γ, ΩR0)*up*vp + ⁻(γ, ΩR0)*um*vp - ⁻(γ, ΩR0)*up*vm - ⁺(γ, ΩR0)*um*vm)dxs[end] + ∫(up * vp*δ⁻)dΓ
 b(v) = ∫(u0* ⁺(v) *δ⁻)dΓ
 
 op = AffineFEOperator(a, b, U, Vs[end])
@@ -238,7 +325,7 @@ end
 Ms = reverse(Ms)
 bs = reverse(bs)
 
-
+xs = range(-1, 1, length=500)
 
 function multigrid()
     us = [zeros(size(Ms[1], 1))]
@@ -251,7 +338,8 @@ function multigrid()
         # p = plot!(range(R..., length=100), x -> FEFunction(Vs[i], us[i])(Point(x)), label="projection")
         # usi = copy(us[i])
         # usi2 = copy(us[i])
-        _, log = minres!(us[i], Ms[i], bs[i], log=true, reltol=1e-3)
+        # _, log = minres!(us[i], Ms[i], bs[i], log=true, abstol=1e-7, reltol=1e-7)
+        _, log = bicgstabl!(us[i], Ms[i], bs[i], log=true, max_mv_products=3*size(Ms[i], 2), abstol=1e-4, reltol=1e-4)
         # _, log2 = minres!(zeros(size(Ms[i], 2)), Ms[i], bs[i], log=true, reltol=1e-3)
         # p = plot!(range(R..., length=100), x -> FEFunction(Vs[i], us[i])(Point(x)), label="corrected")
         # p = plot!(range(R..., length=100), x -> FEFunction(Vs[i], Ms[i] \ bs[i])(Point(x)), label="direct")
@@ -259,8 +347,8 @@ function multigrid()
         # p1 = plot(range(R..., length=100), x -> exp(-x-1) - FEFunction(Vs[i], Ms[i] \ bs[i])(Point(x)), label="direct")
         # p1 = plot!(range(R..., length=100), x -> exp(-x-1) - FEFunction(Vs[i], us[i])(Point(x)), label="corrected")
         # display(plot(p, p1))
-
-        @show log
+        # plot!(xs, FEFunction(Vs[i], us[i])(Point.(xs)))
+        # @show log
         # @show log2
         # @show sum((us[i] .- Ms[i] \ bs[i]).^2)
         if i != length(Vs)
@@ -270,28 +358,43 @@ function multigrid()
     return us[end]
 end
 
-@benchmark uh_multigrid = multigrid()
+plotly()
+plot()
+@time uh_multigrid = multigrid()
+plot!()
 
-uh_minres = minres!(zeros(size(Ms[end], 2)), Ms[end], bs[end], log=true, reltol=1e-3)
+@time uh_minres, logs = minres!(zeros(size(Ms[end], 2)), Ms[end], bs[end], log=true, reltol=1e-2, maxiter=500)
 
 using Pardiso
 ps = MKLPardisoSolver()
 
-@benchmark uh_pardiso = Pardiso.solve(ps, Ms[end], bs[end])
+@time uh_pardiso = Pardiso.solve(ps, Ms[end], bs[end])
 
-plot(range(R..., length=100), x -> FEFunction(Vs[end], uh_pardiso)(Point(x)))
-plot!(range(R..., length=100), x -> FEFunction(Vs[end], uh_multigrid)(Point(x)))
-plot!(range(R..., length=100), x -> exp(-x-1))
+norm(uh_multigrid .- uh_pardiso)
 
+plotly()
+xs = range(R..., length=500)
+plot(xs, FEFunction(Vs[end], uh_pardiso)(Point.(xs)))
+plot!(xs, FEFunction(Vs[end], uh_multigrid)(Point.(xs)))
+plot!(sol)
 
+using OrdinaryDiffEq
+
+function ode(du, u, p, t)
+    du[1] = -γ(t)*u[1]
+end
+
+@time OrdinaryDiffEq.solve(ODEProblem(ode, [u0], (-1, 1)), DP5(), dt=2/(2^20), save_everystep=true, adaptive=false, maxiters=1e10)
+
+plot(sol)
+
+#plot!(xs, FEFunction(Vs[end], uh_minres)(Point.(xs)))
+plot!(xs, x -> exp(-x-1))
 
 Ms[end]*us[end] .- bs[end]
 
 cond(Matrix(inv(Diagonal(diag(Ms[end])))*Ms[end]))
 cond(Matrix(Ms[end]))
-
-
-
 
 plot()
 for i in 1:length(Vs)
