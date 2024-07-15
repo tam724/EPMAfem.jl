@@ -72,27 +72,27 @@ function eltype(A::PNMatrix)
     return eltype(first(A.ρp))
 end
 
-function cuda(A::PNMatrix)
+function cuda(A::PNMatrix, T=Float32)
     return PNMatrix(
         A.size,
-        cu.(A.ρp),
-        cu.(A.ρm),
-        cu.(A.∂p),
+        CUDA.CUSPARSE.CuSparseMatrixCOO{T}.(A.ρp),
+        SVector([Diagonal(CuVector{T}(ρmz.diag)) for ρmz ∈ A.ρm]),
 
-        cu.(A.∇pm),
+        CUDA.CUSPARSE.CuSparseMatrixCOO{T}.(A.∂p),
+        CUDA.CUSPARSE.CuSparseMatrixCOO{T}.(A.∇pm),
         A.α,
-        cu(A.Ip),
-        cu(A.Im),
+        Diagonal(CuVector{T}(A.Ip.diag)),
+        Diagonal(CuVector{T}(A.Im.diag)),
 
         A.γ,
-        SVector([cu.(kz) for kz ∈ A.kp]),
-        SVector([cu.(kz) for kz ∈ A.km]),
+        SVector([SVector([Diagonal(CuVector{Float64}(kpzi.diag)) for kpzi ∈ kpz]) for kpz ∈ A.kp]),
+        SVector([SVector([Diagonal(CuVector{Float64}(kmzi.diag)) for kmzi ∈ kmz]) for kmz ∈ A.km]),
 
         A.β, # βpp, βpm, βmp
-        cu.(A.absΩp),
-        cu.(A.Ωpm),
-        cu(A.tmp),
-        cu(A.tmp2)
+        CuMatrix{T}.(A.absΩp),
+        CuMatrix{T}.(A.Ωpm),
+        CuVector{T}(A.tmp),
+        CuVector{T}(A.tmp2)
         )
 end
 
@@ -207,11 +207,11 @@ struct PNProblem{PNM, Tb}
     btmp::Tb
 end
 
-function cuda(pn_prob)
+function cuda(pn_prob, T=Float32)
     return PNProblem(
-        cuda(pn_prob.A),
-        cu(pn_prob.b),
-        cu(pn_prob.btmp),
+        cuda(pn_prob.A, T),
+        CuVector{T}(pn_prob.b),
+        CuVector{T}(pn_prob.btmp),
     )
 end
 
