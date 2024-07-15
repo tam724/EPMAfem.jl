@@ -20,7 +20,7 @@ include("epma-fem.jl")
 #some fixed physics:
 scattering_kernel_(μ) = 0.0 #exp(-4.0*(μ-(1))^2)
 scattering_norm_factor = 2*π*hquadrature(x -> scattering_kernel_(x), -1.0, 1.0, rtol=1e-8, atol=1e-8, maxevals=100000)[1]
-scattering_kernel(μ) = scattering_kernel_(μ) / scattering_norm_factor
+scattering_kernel(μ) = 0.0 # scattering_kernel_(μ) / scattering_norm_factor
 
 ss(ϵ) = [1.0, 0.0]
 ∂ss(ϵ) = Enzyme.autodiff(Forward, ss, Duplicated(ϵ, 1.0))[1]
@@ -32,7 +32,7 @@ s(ϵ) = 0.5 .* ss(ϵ)
 
 physics = (s=s, τ=τ, σ=σ)
 
-model = CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (321, 321))
+model = CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5, -1.5, 1.5), (100, 100, 100))
 model = DiscreteModelFromFile("square.msh")
 
 M = material_space(model)
@@ -44,10 +44,43 @@ end
 mass_concentrations = [interpolate(x -> ρ(x)[1], M), interpolate(x -> ρ(x)[2], M)]
 # build solver:
 
-solver = build_solver(model, 3)
+solver = build_solver(model, 21)
+nd(solver)
 n_basis = number_of_basis_functions(solver)
 X = assemble_space_matrices(solver, mass_concentrations)
 Ω = assemble_direction_matrices(solver, scattering_kernel)
+
+function sparsity(S)
+    return length(S.nzval) / (size(S, 1)*size(S, 2))
+end
+
+sparsity.(X.Xpp)
+sparsity.(X.Xmm)
+sparsity.(X.dXmp)
+sparsity.(X.dXpm)
+sparsity.(X.∂Xpp)
+
+sparsity.(Ω.dAmp)
+sparsity.(Ω.dApm)
+sparsity.(Ω.∂App)
+
+∂App_dense = Matrix.(Ω.∂App)
+using CUDA
+
+
+test = rand(n_basis.x.p, n_basis.Ω.p)
+temp = zeros(n_basis.x.p, n_basis.Ω.p)
+
+test2 = rand(n_basis.Ω.p, n_basis.x.p)
+temp2 = zeros(n_basis.Ω.p, n_basis.x.p)
+using BenchmarkTools
+
+using MKLSparse
+@benchmark mul!(temp, X.Xpp[1], test)
+@benchmark mul!(temp2, test2,  X.Xpp[1])
+
+@benchmark mul!(temp, test, ∂App_dense[2])
+@benchmark mul!(temp2, ∂App_dense[2], test2)
 
 # reduced number of experiments
 g = (ϵ = [(ϵ -> 0.0)],
@@ -75,7 +108,7 @@ function solve_forward_initial(solver, X, Ω, physics, (ϵ0, ϵ1), N, gh)
     ϵs = range(ϵ1, ϵ0, length=N)
     ψs = [initial_condition(solver)]
     @show length(ψs[1])
-    for k in 2:length(ϵs)
+    for k in 2:5#length(ϵs)
         @show k
         A, b = Ab_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], physics, X, Ω, gh)
         ψk = copy(ψs[k-1])
@@ -87,8 +120,45 @@ function solve_forward_initial(solver, X, Ω, physics, (ϵ0, ϵ1), N, gh)
     return reverse(ϵs), reverse(ψs)
 end
 
-ψs = solve_forward_initial(solver, X, Ω, physics, (0.0, 1.0), 321, ghϵ)
+using BenchmarkTools
+ψ0 = initial_condition(solver)
+ψ0p = ψ0[1:n_basis.x.p*n_basis.Ω.p]
 
+temp = reshape(@view(ψ0[1:n_basis.x.p*n_basis.Ω.p]), (n_basis.x.p, n_basis.Ω.p))
+
+temp * Ω.dAmp[1]
+
+function test1(dX, dA, test, n)
+    temp = dX ⊗ₓ dA
+    @show size(temp)
+    res = temp * test
+    for _ in 1:n
+        res .= temp * res
+    end
+    return temp * test
+end
+
+temp = rand(size(Ω.dAmp[2], 2), size(X.dXmp[1], 2))
+@benchmark res1 = test1(X.dXmp, Ω.dAmp, vec(temp), 10)
+@benchmark res2 = test2(X.dXmp, Ω.dAmp, temp)
+
+maximum(abs.(res1 .- res2))
+
+function test2(dX, dA, test)
+    temp = dA[1] * test * transpose(dX[1]) .+ dA[2] * test * transpose(dX[2])
+    return vec(temp)
+end
+
+test2(d)
+
+@time A, b = Ab_midpoint(1.0, 0.9, ψ0, physics, X, Ω, ghϵ)
+A, b = Abx_midpoint(0.9, 1.0, ψ0, physics, X, Ω, ghϵ)
+
+@profview ψs = solve_forward_initial(solver, X, Ω, physics, (0.0, 1.0), 321, ghϵ)
+
+
+X.dXmp[1]
+Ω.dAmp[1]
 
 z_coords = range(-1.5, 1.5, length=321)
 x_coords = range(-1.5, 1.5, length=321)
