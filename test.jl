@@ -20,18 +20,26 @@ using StaticArrays
 
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
-include("kroneckerblockmatrix.jl")
-include("pnsystemmatrix.jl")
+#include("kroneckerblockmatrix.jl")
+#include("pnsystemmatrix.jl")
 include("epma-fem.jl")
+include("pnequations.jl")
+include("overrides.jl")
+
+include("pnsemidiscretization.jl")
+include("pnexplicitimplicit.jl")
+# include("pnimplicitmidpoint.jl")
 
 #some fixed physics:
-scattering_kernel_(μ) = exp(-4.0*(μ-(1))^2)
+scattering_kernel_(μ) = exp(-20.0*(μ-0.0)^2)
 scattering_norm_factor = 2*π*hquadrature(x -> scattering_kernel_(x), -1.0, 1.0, rtol=1e-8, atol=1e-8, maxevals=100000)[1]
 scattering_kernel(μ) = scattering_kernel_(μ) / scattering_norm_factor
 
-ss(ϵ) = [1.0 + 0.1*exp(-ϵ), 1.0 + 0.2*exp(-ϵ)]
+plot(-1:0.01:1, scattering_kernel_)
+
+ss(ϵ) = [1.0 + 0.1*exp(-ϵ), 1.0 + 0.01*exp(-ϵ)]
 ∂ss(ϵ) = Enzyme.autodiff(Forward, ss, Duplicated(ϵ, 1.0))[1]
-σ(ϵ) = [0.5 + 0.1*exp(-3*ϵ), 0.5 + 0.1*exp(-4*ϵ)]
+σ(ϵ) = [3.0, 3.0] #1.5 + 0.1*exp(-3*ϵ), 1.5 + 0.1*exp(-4*ϵ)]
 ττ(ϵ) = σ(ϵ)
 
 s(ϵ) = 0.5 .* ss(ϵ)
@@ -40,7 +48,9 @@ s(ϵ) = 0.5 .* ss(ϵ)
 physics = (s=s, τ=τ, σ=σ)
 
 n_z = 100
+# model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
 model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
+# model = CartesianDiscreteModel((0.0, 1.0), (n_z))
 
 M = material_space(model)
 
@@ -87,14 +97,24 @@ true_ρ_vals = [mass_concentrations[1].free_values mass_concentrations[2].free_v
 contourf(-1:0.01:1, 0:0.01:1, (x, z) -> mass_concentrations[2](Point(z, x)))
 plot!(ellipse_points(p_ellipse)..., color=:gray, linestyle=:dash, label=nothing)
 
-solver = build_solver(model, 21, 2)
+solver = build_solver(model, 15, 2)
 # X = assemble_space_matrices(solver, mass_concentrations)
 # Ω = assemble_direction_matrices(solver, scattering_kernel)
 
-g = (ϵ = [(ϵ -> pdf(Normal(ϵpos, 0.04), ϵ[1])) for ϵpos ∈ [0.85, 0.75, 0.65, 0.55, 0.45, 0.35]],
-    x = [(x -> isapprox(x[1], 1.0) ? (pdf(MultivariateNormal([xpos, 0.0], [0.05, 0.05]), [(length(x)>1) ? x[2] : 0.0, (length(x)>2) ? x[3] : 0.0])) : 0.0) for xpos ∈ range(-0.5, 0.5, length=40)], 
-    Ω = [(Ω -> pdf(VonMisesFisher(normalize(Ωpos), 10.0), [Ω...])) for Ωpos ∈ [[-0.5, 0.0, -1.0], [0.0, 0.0, -1.0], [0.5, 0.0, -1.0]]])
+function expm2(x::Number, μ::Number, σ::Number)
+    return exp(-0.5*(x - μ)^2 / σ^2)
+end
 
+function expm2(x, μ, σ)
+    # try to iterate x and μ
+    return exp(-sum((0.5*(x_ - μ_)^2/σ_ for (x_, μ_, σ_) in zip(x, μ, σ))))
+end
+
+g = (ϵ = [(ϵ -> expm2(ϵ, ϵpos, 0.04)) for ϵpos ∈ [0.85, 0.75, 0.65, 0.55, 0.45, 0.35]],
+    x = [(x -> isapprox(x[1], 1.0) ? expm2([(length(x)>1) ? x[2] : 0.0, (length(x)>2) ? x[3] : 0.0], [xpos, 0.0], [0.0025, 0.0025]) : 0.0) for xpos ∈ range(-0.5, 0.5, length=40)], 
+    Ω = [(Ω -> pdf(VonMisesFisher(normalize(Ωpos), 50.0), [Ω...])) for Ωpos ∈ [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]]])
+
+    
 # reduced number of experiments
 # g = (ϵ = [(ϵ -> pdf(Normal(ϵpos, 0.04), ϵ[1])) for ϵpos ∈ [0.85]],
 #     x = [(x -> isapprox(x[1], 1.0) ? (pdf(MultivariateNormal([xpos, 0.0], [0.05, 0.05]), [(length(x)>1) ? x[2] : 0.0, (length(x)>2) ? x[3] : 0.0])) : 0.0) for xpos ∈ range(-0.5, 0.5, length=5)], 
@@ -108,7 +128,7 @@ plot!()
 
 plot()
 for gx ∈ g.x
-    plot!(range(-1, 1, nhx), x -> gx(Point(1.0, x)))
+    plot!(range(-1, 1, 2*n_z), x -> gx(Point(1.0, x)))
 end
 plot!()
 
@@ -123,6 +143,8 @@ plot!()
 μ = (ϵ = [(ϵ -> (ϵ[1]-0.1 > 0) ? sqrt(ϵ[1]-0.1) : 0.0), (ϵ -> (ϵ[1]-0.2 > 0) ? sqrt(ϵ[1]-0.2) : 0.0)],
     x = [(ρ -> ρ), (ρ -> ρ)],
     Ω = [(Ω -> 1.0)])
+
+eq = dummy_equations([0.85, 0.75, 0.65, 0.55, 0.45, 0.35], range(-0.5, 0.5, length=40), [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]], [0.1, 0.2])
 
 plot()
 for μϵ ∈ μ.ϵ
@@ -144,6 +166,21 @@ gh = semidiscretize_boundary(solver, g)
 
 # param = (mass_concentrations=mass_concentrations, solver=solver, X=X, Ω=Ω, physics=physics, ϵ=(0.0, 1.0), N=100, gh=gh, μh=μh, proj=projection_matrix(solver), gram=gram_matrix(solver))
 
+function normalization_factors(solver)
+    return 1.0, 1.0
+
+    # U = solver.U    
+    # V = solver.V
+    # model = solver.model
+
+    # norm_m = 1.0/sqrt(mean(Vector(diag(assemble_bilinear(∫uv, (model, ), U[2], V[2])))))
+    # norm_p = 1.0/sqrt(mean([assemble_bilinear(∫uv, (model, ), U[1], V[1]).nzval;
+    #     [assemble_bilinear(a, (model, ), U[1], V[1]).nzval*norm_m for a ∈ ∫absn_uv(model.model)]...
+    #     ]))
+
+    # return norm_p, norm_m
+end
+
 function pn_matrix(solver)
     U = solver.U    
     V = solver.V
@@ -158,21 +195,24 @@ function pn_matrix(solver)
 
     # TODO: for speed: we know that ρm is Diagonal
 
+    # odd (m) space basis functions normalization
     return PNMatrix(
         ((n_basis.x.p, n_basis.x.m), (n_basis.Ω.p, n_basis.Ω.m)),
-        SVector{NE}([assemble_bilinear(∫uv, (model, ), U[1], V[1]) for _ in 1:solver.n_elem]),
-        SVector{NE}([Diagonal(Vector(diag(assemble_bilinear(∫uv, (model, ), U[2], V[2])))) for _ in 1:solver.n_elem]),
+        SVector{NE}([norm_p^2*assemble_bilinear(∫uv, (model, ), U[1], V[1]) for _ in 1:solver.n_elem]),
+        SVector{NE}([norm_m^2*Diagonal(Vector(diag(assemble_bilinear(∫uv, (model, ), U[2], V[2])))) for _ in 1:solver.n_elem]),
 
-        SVector{ND}([assemble_bilinear(a, (model, ), U[1], V[1]) for a ∈ ∫absn_uv(model.model)]),
-        SVector{ND}([assemble_bilinear(a, (model, ), U[1], V[2]) for a ∈ ∫∂u_v(model.model)]),
+        SVector{ND}([norm_p^2*assemble_bilinear(a, (model, ), U[1], V[1]) for a ∈ ∫absn_uv(model.model)]),
+        SVector{ND}([norm_m*norm_p*assemble_bilinear(a, (model, ), U[1], V[2]) for a ∈ ∫∂u_v(model.model)]),
 
         @MVector[1.0, 1.0],
 
         Diagonal(ones(n_basis.Ω.p)),
+        # we use negative odd basis function for direction (resulting matrix is symmetric)
         Diagonal(ones(n_basis.Ω.m)),
 
         @SVector[@MVector[1.0], @MVector[1.0]],
         @SVector[@SVector[Kpp], @SVector[Kpp]],
+        # we use negative odd basis function for direction (so the resulting matrix is symmetric)
         @SVector[@SVector[Kmm], @SVector[Kmm]],
 
         @MVector[1.0],
@@ -184,14 +224,21 @@ function pn_matrix(solver)
     )
 end
 
-function pn_problem(solver)
+function pn_problem(solver) 
     n_basis = number_of_basis_functions(solver)
-    return PNProblem(pn_matrix(solver), zeros(n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m), zeros(n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m))
+    return PNSemidiscretization(pn_matrix(solver), zeros(n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m), zeros(n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m))
 end
 
-mat = pn_matrix(solver)
+pn_semi = pn_semidiscretization(solver, g, μ)
+
+A = pn_explicitimplicitmatrix(pn_semi, Vector{Float64})
+
+# mat = pn_matrix(solver)
 
 pn_prob = pn_problem(solver)
+# pn_prob.A.ρp[1].nzval |> unique
+# pn_prob.A.∂p[1].nzval |> unique
+# pn_prob.A.∇pm[1].nzval |> unique
 
 # size(mat)
 
@@ -212,44 +259,51 @@ function solve_forward(pn_prob, physics, (ϵ0, ϵ1), N, gh)
     ψs_rev = [Vector(ψ)]
     mat = pn_prob.A
 
-    solver = Krylov.GmresSolver(mat, pn_prob.b)
+    # solver = Krylov.GmresSolver(mat, pn_prob.b)
+    solver = Krylov.MinresSolver(mat, pn_prob.b)
     copyto!(pn_prob.btmp, Vector(gh[2]))
 
-    temp = zeros(size(pn_prob.b))
+    # temp = zeros(size(pn_prob.b))
 
+    T = eltype(pn_prob.A)
 
     for k in 1:N-1
         i = N - k
         ϵi = ϵs[i]
         ϵip1 = ϵs[i+1]
+
+        ## update the rhs according to the implicit midpoint rule
         ϵ2 = 0.5*(ϵi + ϵip1)
         @show k
         # compute rhs
         # rhs .= -gh(ϵ2)
         _update_b(pn_prob, -gh[1](ϵ2)*Δϵ)
         mat.α .= -1.0 .* physics.s(ϵip1) - 1.0 .* physics.s(ϵ2) + Δϵ/2.0 .* physics.τ(ϵ2)
-        mat.γ[1] .= [-Δϵ*physics.σ(ϵ2)[1]]
-        mat.γ[2] .= [-Δϵ*physics.σ(ϵ2)[2]]
+        mat.γ[1] .= [-Δϵ/2.0*physics.σ(ϵ2)[1]]
+        mat.γ[2] .= [-Δϵ/2.0*physics.σ(ϵ2)[2]]
         mat.β .= [Δϵ*0.5]
         mul!(pn_prob.b, mat, ψ, -1.0, 1.0)
         # run iterative solver
 
         mat.α .= 1.0 .* physics.s(ϵi) + 1.0 .* physics.s(ϵ2) + Δϵ/2.0 .* physics.τ(ϵ2)
-        mat.γ[1] .= [-Δϵ*physics.σ(ϵ2)[1]]
-        mat.γ[2] .= [-Δϵ*physics.σ(ϵ2)[2]]
+        mat.γ[1] .= [-Δϵ/2.0*physics.σ(ϵ2)[1]]
+        mat.γ[2] .= [-Δϵ/2.0*physics.σ(ϵ2)[2]]
         mat.β .= [Δϵ*0.5]
         #A, b = Ab_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], physics, X, Ω, gh)
 
         #ψk = copy(last(ψs_rev))
         # ψk, log = IterativeSolvers.bicgstabl!(ψk, mat, rhs, 2, log=true, abstol=1e-3, reltol=1e-3)
         # @show log
-        Krylov.gmres!(solver, mat, pn_prob.b, restart=true)
+        @show maximum(abs.(pn_prob.b))
+
+        # Krylov.gmres!(solver, mat, pn_prob.b, restart=true, rtol=T(1e-8), atol=T(1e-8))
+        Krylov.minres!(solver, mat, pn_prob.b, rtol=T(1e-7), atol=T(1e-7))
         copyto!(ψ, solver.x)
 
-        mul!(temp, pn_prob.A, solver.x, true, false)
-        temp .= temp .- pn_prob.b
-        @show extrema(temp)
-        @show norm(temp)
+        # mul!(temp, pn_prob.A, solver.x, true, false)
+        # temp .= temp .- pn_prob.b
+        # @show extrema(temp)
+        # @show norm(temp)
         @show solver.stats
 
         push!(ψs_rev, Vector(solver.x))
@@ -299,6 +353,7 @@ end
 # end
 
 function solve_forward_schur(schur_pn_prob, physics, (ϵ0, ϵ1), N, gh)
+    ((nLp, nLm), (nRp, nRm)) = pn_prob.A.size
     ϵs = range(ϵ0, ϵ1, length=N)
     Δϵ = ϵs[2] - ϵs[1]
     #ψ_schur = zero(schur_pn_prob.b)
@@ -309,17 +364,22 @@ function solve_forward_schur(schur_pn_prob, physics, (ϵ0, ϵ1), N, gh)
     
     # mat_schur = PNSchurComplement(mat, zeros(mat.size[1][2]*mat.size[2][2]), zeros(mat.size[1][2]*mat.size[2][2]))
     # rhs_schur = zeros(n_basis.x.p*n_basis.Ω.p)
-    solver_schur = Krylov.GmresSolver(schur_pn_prob.A, schur_pn_prob.b)
+    
+    # solver_schur = Krylov.GmresSolver(schur_pn_prob.A, schur_pn_prob.b)
+
+    solver_schur = Krylov.MinresSolver(schur_pn_prob.A, schur_pn_prob.b)
+
     # solver = Krylov.GmresSolver(mat, rhs)
     # full_solution_schur = zeros(n_basis.x.p*n_basis.Ω.p + n_basis.x.m*n_basis.Ω.m)
     copyto!(schur_pn_prob.prob.btmp, Vector(gh[2]))
 
     mat = schur_pn_prob.prob.A
 
-    #integral = zero(schur_pn_prob.full_solution)
+    integral = zero(schur_pn_prob.full_solution)
 
-    temp = zeros(size(schur_pn_prob.prob.b))
+    # temp = zeros(size(schur_pn_prob.prob.b))
 
+    T = eltype(schur_pn_prob.prob.A)
 
     for k in 1:N-1
         i = N - k
@@ -331,15 +391,15 @@ function solve_forward_schur(schur_pn_prob, physics, (ϵ0, ϵ1), N, gh)
         _update_b(schur_pn_prob.prob, -gh[1](ϵ2)*Δϵ)
 
         mat.α .= -1.0 .* physics.s(ϵip1) - 1.0 .* physics.s(ϵ2) + Δϵ/2.0 .* physics.τ(ϵ2)
-        mat.γ[1] .= [-Δϵ*physics.σ(ϵ2)[1]]
-        mat.γ[2] .= [-Δϵ*physics.σ(ϵ2)[2]]
+        mat.γ[1] .= [-Δϵ/2.0*physics.σ(ϵ2)[1]]
+        mat.γ[2] .= [-Δϵ/2.0*physics.σ(ϵ2)[2]]
         mat.β .= [Δϵ*0.5]
         mul!(schur_pn_prob.prob.b, mat, schur_pn_prob.full_solution, -1.0, 1.0)
         # run iterative solver
 
         mat.α .= 1.0 .* physics.s(ϵi) + 1.0 .* physics.s(ϵ2) + Δϵ/2.0 .* physics.τ(ϵ2)
-        mat.γ[1] .= [-Δϵ*physics.σ(ϵ2)[1]]
-        mat.γ[2] .= [-Δϵ*physics.σ(ϵ2)[2]]
+        mat.γ[1] .= [-Δϵ/2.0*physics.σ(ϵ2)[1]]
+        mat.γ[2] .= [-Δϵ/2.0*physics.σ(ϵ2)[2]]
         mat.β .= [Δϵ*0.5]
         #A, b = Ab_midpoint(ϵs[k-1], ϵs[k], ψs[k-1], physics, X, Ω, gh)
 
@@ -348,44 +408,79 @@ function solve_forward_schur(schur_pn_prob, physics, (ϵ0, ϵ1), N, gh)
         # @show log
         _update_D(schur_pn_prob.A)
         _compute_schur_rhs(schur_pn_prob.b, schur_pn_prob.A, schur_pn_prob.prob.b)
-        Krylov.gmres!(solver_schur, schur_pn_prob.A, schur_pn_prob.b)
+        @show maximum(abs.(schur_pn_prob.b))
+        @show maximum(abs.(schur_pn_prob.prob.b))
+        # the krylov solver allocates..
+        # Krylov.gmres!(solver_schur, schur_pn_prob.A, schur_pn_prob.b, restart=true)
+        Krylov.minres!(solver_schur, schur_pn_prob.A, schur_pn_prob.b, rtol=T(1e-7), atol=T(1e-7))
         _compute_full_solution_schur(schur_pn_prob.full_solution, schur_pn_prob.A, schur_pn_prob.prob.b, solver_schur.x)
 
-        mul!(temp, schur_pn_prob.prob.A, schur_pn_prob.full_solution, true, false)
-        temp .= temp .- schur_pn_prob.prob.b
-        @show extrema(temp)
-        @show norm(temp)
-        @show solver_schur.stats
-        
+        # mul!(temp, schur_pn_prob.prob.A, schur_pn_prob.full_solution, true, false)
+        # temp .= temp .- schur_pn_prob.prob.b
+        # @show extrema(temp)
+        # @show norm(temp)
         # @show solver_schur.stats
+        
+        @show solver_schur.stats
         
         #Krylov.gmres!(solver, mat, rhs, M=I*Δϵ)
 
         #@show solver.x[1:10]
-        push!(ψs_rev, Vector(schur_pn_prob.full_solution))
-        #integral .+= Δϵ .*schur_pn_prob.full_solution
+        push!(ψs_rev, Vector(@view(schur_pn_prob.full_solution[1:nLp])))
+        integral .+= Δϵ .*schur_pn_prob.full_solution
     end
 
 
     #return ϵs, Vector(integral)
-    return ϵs, reverse(ψs_rev)
+    return ϵs, reverse(ψs_rev), Vector(integral)
 end
 
 using MKLSparse
-ϵs, ψs = solve_forward(pn_prob, physics, (0.0, 1.0), 100, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
+ϵs, ψs = solve_forward(pn_prob, physics, (-1.0, 1.0), 200, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
 
 schur_pn_prob = schur_complement(pn_prob)
-ϵs, ψs_schur = solve_forward_schur(schur_pn_prob, physics, (0.0, 1.0), 100, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
+ϵs, ψs_schur = solve_forward_schur(schur_pn_prob, physics, (-1.0, 1.0), 200, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
+
+pn_prob_cu = cuda(pn_prob, Float32)
+ϵs, ψs_cu = solve_forward(pn_prob_cu, physics, (-1.0, 1.0), 200, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
+
+schur_pn_prob_cu = schur_complement(cuda(pn_prob, Float32))
+ϵs, ψs_cu_schur, integral =  solve_forward_schur(schur_pn_prob_cu, physics, (-1.0, 1.0), 200,
+    (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[1].p⊗gh.x[10].p, gh.Ω[1].m⊗gh.x[10].m) + vcat(gh.Ω[3].p⊗gh.x[30].p, gh.Ω[3].m⊗gh.x[30].m)))
+ϵs, ψs_cu_schur, integral =  solve_forward_schur(schur_pn_prob_cu, physics, (-1.0, 1.0), 200,
+    (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
+# @profview ϵs, ψs_schur_cu = solve_forward_schur(schur_pn_prob_cu, physics, (0.0, 1.0), 100, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
+
+n_basis = number_of_basis_functions(solver)
+
+Plots.heatmap(x_coords, z_coords, reshape(@view(integral[1:n_basis.x.p]), (n_z+1, 2*n_z+1)))
+
+@gif for (ψ1, ψ2, ψ3, ψ4) in zip(reverse(ψs), reverse(ψs_schur), reverse(ψs_cu), reverse(ψs_cu_schur))
+    z_coords = range(0.0, 1.0, length=n_z+1)
+    Plots.plot(z_coords, @view(ψ1[1:n_basis.x.p]))
+    Plots.plot!(z_coords, @view(ψ2[1:n_basis.x.p]))
+    Plots.plot!(z_coords, @view(ψ3[1:n_basis.x.p]))
+    Plots.plot!(z_coords, @view(ψ4[1:n_basis.x.p]))
+    # Plots.ylims!((-1, 7))
+end
 
 
-## double check schur solver, the plots dont look the same.. (on gpu!)
+@gif for ψ_schur_cu in reverse(ψs_cu_schur)
+    # temp = reshape(@view(ψ[1:n_basis.x.p]), (n_z+1, 2*n_z+1))
+    z_coords = range(0.0, 1.0, length=n_z+1)
+    x_coords = range(-1.0, 1.0, length=2*n_z+1)
+    temp = reshape(@view(ψ_schur_cu[1:n_basis.x.p]), (n_z+1, 2*n_z+1))
 
-pn_prob_cu = cuda(pn_prob, Float64)
-ϵs, ψs_cu = solve_forward(pn_prob_cu, physics, (0.0, 1.0), 100, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
+    Plots.heatmap(x_coords, z_coords, temp)
 
-
-schur_pn_prob_cu = schur_complement(cuda(pn_prob, Float64))
-ϵs, ψs_schur_cu = solve_forward_schur(schur_pn_prob_cu, physics, (0.0, 1.0), 100, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
+    # temp = Vector(ψ_cu[1:n_basis.x.p])
+    # temp = reshape(temp, (n_z+1, 2*n_z+1))
+    # z_coords = range(0.0, 1.0, length=n_z+1)
+    # x_coords = range(-1.0, 1.0, length=2*n_z+1)
+    # #vals = reshape(temp.(Point.(z_coords, x_coords')[:]), length(z_coords), length(x_coords))
+    # p2 = heatmap(x_coords, z_coords, temp)
+    # plot(p1, p2)
+end fps=20
 
 function integrate(ψs)
     integral = zeros(size(ψs[1][1:n_basis.x.p]))
@@ -406,7 +501,8 @@ p2 = heatmap(x_coords, z_coords, reshape(@view(ψs_schur_cu_int[1:n_basis.x.p]),
 p3 = heatmap(x_coords, z_coords, reshape(@view(ψs_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1)))
 p4 = heatmap(x_coords, z_coords, reshape(@view(ψs_schur_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1)))
 
-heatmap(x_coords, z_coords, 1e4.*(reshape(@view(ψs_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1)) .- reshape(@view(ψs_schur_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1))))
+heatmap(x_coords, z_coords, (reshape(@view(ψs_cu_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1)) .- reshape(@view(ψs_schur_cu_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1))))
+
 abs.(reshape(@view(ψs_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1)) .- reshape(@view(ψs_schur_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1))) |> extrema
 # abs.(reshape(@view(ψs_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1)) .- reshape(@view(ψs_cu_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1))) |> extrema
 # abs.(reshape(@view(ψs_schur_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1)) .- reshape(@view(ψs_schur_cu_int[1:n_basis.x.p]), (n_z+1, 2*n_z+1))) |> extrema
@@ -422,16 +518,24 @@ plot(p1, p2, p3, p4, layout=(2, 2))
 # ψs = solve_forward_cu(solver, mat, physics, (0.0, 1.0), 100, (ϵ -> 2*gh.ϵ[1](ϵ), vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m)))
 # # @profview ϵs, ψs = solve_forward(solver, mat, physics, (0.0, 1.0), 100, ϵ -> 2*gh.ϵ[1](ϵ)*vcat(gh.Ω[2].p⊗gh.x[20].p, gh.Ω[2].m⊗gh.x[20].m))
 
-n_basis = number_of_basis_functions(solver)
 
 plotly()
 
-temp = reshape(ψs_schur[end][1:n_basis.x.p], (n_z+1, 2*n_z+1, 2*n_z+1))
-heatmap()
+@gif for i in 200:-1:1
+    full_p = ψs_cu_schur[i][1:n_basis.x.p*n_basis.Ω.p]
+    full_pm = reshape(full_p, (n_basis.x.p, n_basis.Ω.p))
+    U, S, Vt = svd(full_pm)
+    Plots.plot(S, yaxis=:log)
+    Plots.title!("$(i)")
+end fps=10
+
+
+temp = reshape(ψs_cu_schur[1:n_basis.x.p], (n_z+1, 2*n_z+1))
+heatmap(temp)
 
 using GLMakie
-temp = reshape(ψs_schur[end-40][1:n_basis.x.p], (n_z+1, 2*n_z+1, 2*n_z+1))
-GLMakie.contour(integral, alpha=0.1)
+temp = reshape(ψs_cu_schur[1:n_basis.x.p], (n_z+1, 2*n_z+1, 2*n_z+1))
+GLMakie.contour(reshape(ψs_cu_schur, (n_z+1, 2*n_z+1, 2*n_z+1)), alpha=0.3)
 
 gr()
 # @gif for (ψ_cu, ψ, ψ_schur_cu, ψ_schur) in zip(reverse(ψs_cu), reverse(ψs), reverse(ψs_schur_cu), reverse(ψs_schur))

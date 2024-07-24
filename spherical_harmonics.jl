@@ -281,7 +281,7 @@ module SphericalHarmonicsMatrices
         end
         b = hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π))[1]
         # return [b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)], [b[i] for (i, m) ∈ enumerate(eo_moms) if is_odd(m...)]
-        return (p=round.(sparse([b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)]), digits=8), m=spzeros(length([m for m in eo_moms if is_odd(m...)])))
+        return (p=[b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)], m=spzeros(length([m for m in eo_moms if is_odd(m...)])))
     end
     
     export assemble_transport_matrix, assemble_boundary_matrix, assemble_scattering_matrices, assemble_direction_source, assemble_direction_boundary

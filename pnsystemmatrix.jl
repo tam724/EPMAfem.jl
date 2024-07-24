@@ -91,6 +91,7 @@ function cuda(A::PNMatrix, T=Float32)
         A.β, # βpp, βpm, βmp
         CuMatrix{T}.(A.absΩp),
         CuMatrix{T}.(A.Ωpm),
+        # CUDA.CUSPARSE.CuSparseMatrixCOO{T}.(sparse.(A.Ωpm)),
         CuVector{T}(A.tmp),
         CuVector{T}(A.tmp2)
         )
@@ -198,9 +199,15 @@ function mul!(C::AbstractVector, A::PNMatrix, B::AbstractVector, α::Number, β:
     _mul_pm!(Cm, A, Bp, α, tmp_mp)
 end
 
+## PNSolver
+
+struct PNImplicitMidpoint{Tψ}
+    ψ::Tψ # current 
+end
+
 ## PNProblem
 
-struct PNProblem{PNM, Tb}
+struct PNSemidiscretization{PNM, Tb}
     A::PNM # PNMatrix{...}
 
     b::Tb
@@ -208,7 +215,7 @@ struct PNProblem{PNM, Tb}
 end
 
 function cuda(pn_prob, T=Float32)
-    return PNProblem(
+    return PNSemidiscretization(
         cuda(pn_prob.A, T),
         CuVector{T}(pn_prob.b),
         CuVector{T}(pn_prob.btmp),
@@ -230,7 +237,7 @@ struct SchurPNProblem{Tprob, TA, Tb, Tfs}
     full_solution::Tfs
 end
 
-function schur_complement(pn_prob::PNProblem)
+function schur_complement(pn_prob::PNSemidiscretization)
     ((nLp, nLm), (nRp, nRm)) = pn_prob.A.size
 
     return SchurPNProblem(
@@ -284,18 +291,12 @@ function _update_D(A::SchurPNMatrix)
                     axpy!(-γzi, kmzi.diag, tmp2_m)
                 end
             end
-            # a = reshape(@view(tmp_m[:]), (nLm*nRm, 1))
-            # b = reshape(@view(tmp2_m[:]), (nRm, 1))
-            # c = reshape(@view(ρmz.diag[:]), (nLm, 1)) # without the view this allocates.. 
-            # kron!(a, b, c)
 
             a = reshape(@view(tmp_m[:]), (nLm, nRm))
             b = reshape(@view(tmp2_m[:]), (1, nRm))
             c = reshape(@view(ρmz.diag[:]), (nLm, 1)) # without the view this allocates.. 
             # @show size.((a, b, c))
             mul!(a, c, b, true, false)
-            # CUDA.@allowscalar kron!(tmp_m, tmp2_m, ρmz.diag)
-
             axpy!(1.0, tmp_m, A.D)
         end
     end
@@ -361,7 +362,7 @@ function mul!(C::AbstractVector, A::SchurPNMatrix, B::AbstractVector, α::Number
 
     fill!(A_tmp_m, zero(eltype(A_tmp_m)))
     _mul_pm!(A_tmp_m, A.A, Bp, 1.0, tmp_mp)
-    @view(A.tmp[1:nLm*nRm]) .= @view(A.tmp[1:nLm*nRm]) ./ A.D
+    @view(A.tmp[1:nLm*nRm]) ./= A.D
     _mul_mp!(Cp, A.A, A_tmp_m, -α, tmp_pm)
     _mul_pp!(Cp, A.A, Bp, α, tmp_pp, tmp2_p)
 end

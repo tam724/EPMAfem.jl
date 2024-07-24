@@ -64,6 +64,7 @@ end
 
 ∫ρuv(u, v, ρ, (model, R, dx, ∂R, dΓ, n)) = ∫(ρ*u*v)dx
 ∫uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(u*v)dx
+∫uvp∇u∇v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(0.9999*u*v + 0.0001*dot(∇(u), ∇(v)))dx
 ∫v(v, (model, R, dx, ∂R, dΓ, n)) = ∫(v)dx
 
 ∫∂zu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂z(u, model)*v)dx
@@ -130,7 +131,8 @@ function assemble_space_matrices(solver, mass_concentrations)
 end
 
 ∫μv(v, μ, (model, R, dx, ∂R, dΓ, n)) = ∫(μ*v)dx
-∫ngv(v, g, (model, R, dx, ∂R, dΓ, n)) = ∫(nz(n, model)*g*v)dΓ
+∫v(v, (model, R, dx, ∂R, dΓ, n)) = ∫(v)dx
+∫nzgv(v, g, (model, R, dx, ∂R, dΓ, n)) = ∫(nz(n, model)*g*v)dΓ
 
 function assemble_space_source((U, V, model), μ_x)
     return (p=assemble_linear(∫μv, (μ_x, model), U[1], V[1]), m=assemble_linear(∫μv, (μ_x, model), U[2], V[2]))
@@ -139,7 +141,8 @@ end
 function assemble_space_boundary((U, V, model), g_x)
     # since we only reqire the even moments on the boundary, the second here is 0
     # return assemble_linear(∫ngv, (g_x, model), U[1], V[1]), assemble_linear(∫ngv, (g_x, model), U[2], V[2])
-    return (p=round.(sparse(assemble_linear(∫ngv, (g_x, model), U[1], V[1])), digits=8), m=spzeros(num_free_dofs(U[2])))
+    norm_p, _ = normalization_factors(solver)
+    return (p=round.(norm_p*sparse(assemble_linear(∫nzgv, (g_x, model), U[1], V[1])), digits=8), m=spzeros(num_free_dofs(U[2])))
 end
 
 ## direction assembly
