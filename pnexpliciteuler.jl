@@ -15,17 +15,14 @@ function step_forward!(pn_solv::PNExplicitEulerSolver{T}, ϵi, ϵip1, g_idx) whe
     nm = nLm*nRm
     Δϵ = ϵip1 - ϵi
 
+    # this is hacked !! (can be made much more efficient)
+
     # Bp = reshape(@view(B[1:np]), (nLp, nRp))
     # Bm = reshape(@view(B[np+1:np+nm]), (nLm, nRm))
+
+    # cache all
     copyto!(pn_solv.cache, current_solution(pn_solv))
-    # HALF STEP ODD
-    update_rhs_forward!(pn_solv, ϵi+0.5*Δϵ, ϵip1, g_idx)
-    update_mat_forward!(pn_solv, ϵi+0.5*Δϵ, ϵip1)
-    Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
-    # recover evens
-    copyto!(@view(current_solution(pn_solv)[1:np]), @view(pn_solv.cache[1:np]))
-    # cache odds
-    copyto!(@view(pn_solv.cache[np+1:np+nm]), @view(current_solution(pn_solv)[np+1:np+nm]))
+
     # FULL STEP EVEN
     update_rhs_forward!(pn_solv, ϵi, ϵip1, g_idx)
     update_mat_forward!(pn_solv, ϵi, ϵip1)
@@ -34,12 +31,37 @@ function step_forward!(pn_solv::PNExplicitEulerSolver{T}, ϵi, ϵip1, g_idx) whe
     copyto!(@view(current_solution(pn_solv)[np+1:np+nm]), @view(pn_solv.cache[np+1:np+nm]))
     # cache evens
     copyto!(@view(pn_solv.cache[1:np]), @view(current_solution(pn_solv)[1:np]))
-    # HALF STEP ODD
-    update_rhs_forward!(pn_solv, ϵi, ϵip1-0.5*Δϵ, g_idx)
-    update_mat_forward!(pn_solv, ϵi, ϵip1-0.5*Δϵ)
+    # FULL STEP ODD
+    update_rhs_forward!(pn_solv, ϵi-0.5*Δϵ, ϵip1-0.5*Δϵ, g_idx)
+    update_mat_forward!(pn_solv, ϵi-0.5*Δϵ, ϵip1-0.5*Δϵ)
     Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
     # recover evens
     copyto!(@view(current_solution(pn_solv)[1:np]), @view(pn_solv.cache[1:np]))
+
+
+    ## OLD STUFF:
+    # # HALF STEP ODD
+    # update_rhs_forward!(pn_solv, ϵi+0.5*Δϵ, ϵip1, g_idx)
+    # update_mat_forward!(pn_solv, ϵi+0.5*Δϵ, ϵip1)
+    # Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
+    # # recover evens
+    # copyto!(@view(current_solution(pn_solv)[1:np]), @view(pn_solv.cache[1:np]))
+    # # cache odds
+    # copyto!(@view(pn_solv.cache[np+1:np+nm]), @view(current_solution(pn_solv)[np+1:np+nm]))
+    # # FULL STEP EVEN
+    # update_rhs_forward!(pn_solv, ϵi, ϵip1, g_idx)
+    # update_mat_forward!(pn_solv, ϵi, ϵip1)
+    # Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
+    # # recover odds
+    # copyto!(@view(current_solution(pn_solv)[np+1:np+nm]), @view(pn_solv.cache[np+1:np+nm]))
+    # # cache evens
+    # copyto!(@view(pn_solv.cache[1:np]), @view(current_solution(pn_solv)[1:np]))
+    # # HALF STEP ODD
+    # update_rhs_forward!(pn_solv, ϵi, ϵip1-0.5*Δϵ, g_idx)
+    # update_mat_forward!(pn_solv, ϵi, ϵip1-0.5*Δϵ)
+    # Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
+    # # recover evens
+    # copyto!(@view(current_solution(pn_solv)[1:np]), @view(pn_solv.cache[1:np]))
 end
 
 function energy_step(pn_solv::PNExplicitEulerSolver)
