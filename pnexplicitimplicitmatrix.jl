@@ -152,6 +152,29 @@ function mul!(C::AbstractVector, A::PNExplicitImplicitMatrix, B::AbstractVector,
     _mul_pm!(Cm, A, Bp, α)
 end
 
+function mul_only!(C::AbstractVector, A::PNExplicitImplicitMatrix, B::AbstractVector, α::Number, β::Number, onlypm)
+    ((nLp, nLm), (nRp, nRm)) = A.pn_semi.size
+    np = nLp*nRp
+    nm = nLm*nRm
+
+    rmul!(C, β)
+
+    Bp = reshape(@view(B[1:np]), (nLp, nRp))
+    Bm = reshape(@view(B[np+1:np+nm]), (nLm, nRm))
+
+    Cp = reshape(@view(C[1:np]), (nLp, nRp))
+    Cm = reshape(@view(C[np+1:np+nm]), (nLm, nRm))
+
+    if onlypm == :p
+        _mul_pp!(Cp, A, Bp, α)
+        _mul_mp!(Cp, A, Bm, α)
+    end
+    if onlypm == :m
+        _mul_mm!(Cm, A, Bm, α)
+        _mul_pm!(Cm, A, Bp, α)
+    end
+end
+
 ## SCHUR STUFF
 struct PNSchurImplicitMatrix{T, V<:AbstractVector{T}, TA<:PNExplicitImplicitMatrix{T, V}} <: AbstractMatrix{T}
     A::TA
@@ -234,3 +257,73 @@ function mul!(C::AbstractVector, A::PNSchurImplicitMatrix, B::AbstractVector, α
     _mul_mp!(Cp, A.A, A_tmp_m, -α)
     _mul_pp!(Cp, A.A, Bp, α)
 end
+
+## EXPLICIT STUFF
+struct PNExplicitMatrixP{T, V<:AbstractVector{T}, TA<:PNExplicitImplicitMatrix{T, V}} <: AbstractMatrix{T}
+    A::TA
+end
+
+function Base.getindex(A_schur::PNExplicitMatrixP{T}, I::Vararg{Int, 2}) where T
+    return NaN
+end
+
+function pn_pnexplicitmatrixp(A::PNExplicitImplicitMatrix{T, V}) where {T, V}
+    return PNExplicitMatrixP(
+        A
+    )
+end
+
+function Base.size(A::PNExplicitMatrixP, i)
+    i < 1 && error("dimension index out of range")
+    if i == 1 || i == 2
+        ((nLp, _), (_, _)) = A.A.pn_semi.size
+        return nLp
+    else
+        return 1
+    end
+end
+Base.size(A::PNExplicitMatrixP) = (size(A, 1), size(A, 2))
+
+function mul!(cp::AbstractVector, A::PNExplicitMatrixP, bp::AbstractVector, α::Number, β::Number)
+    rmul!(cp, β)
+
+    for (ρpz, αz) in zip(A.A.pn_semi.ρp, A.A.α)
+        mul!(cp, ρpz, bp, α*αz, true)
+    end
+end
+
+# struct PNExplicitMatrixM{T, V<:AbstractVector{T}, TA<:PNExplicitImplicitMatrix{T, V}} <: AbstractMatrix{T}
+#     A::TA
+# end
+
+# function Base.getindex(A_schur::PNExplicitMatrixM{T}, I::Vararg{Int, 2}) where T
+#     return NaN
+# end
+
+# function pn_pnexplicitmatrixm(A::PNExplicitImplicitMatrix{T, V}) where {T, V}
+#     return PNExplicitMatrixM(
+#         A
+#     )
+# end
+
+# function Base.size(A::PNExplicitMatrixM, i)
+#     i < 1 && error("dimension index out of range")
+#     if i == 1 || i == 2
+#         ((_, nLm), (_, nRm)) = A.A.pn_semi.size
+#         return nLm*nRm
+#     else
+#         return 1
+#     end
+# end
+# Base.size(A::PNExplicitMatrixM) = (size(A, 1), size(A, 2))
+
+# function mul!(C::AbstractVector, A::PNExplicitMatrixM, B::AbstractVector, α::Number, β::Number)
+#     ((nLp, nLm), (nRp, nRm)) = A.A.pn_semi.size
+
+#     Bm = reshape(@view(B[:]), (nLm, nRm))
+#     Cm = reshape(@view(C[:]), (nLm, nRm))
+
+#     rmul!(Cm, β)
+    
+#     _mul_mm!(Cm, A.A, Bm, α)
+# end

@@ -1,14 +1,16 @@
-struct PNExplicitEulerSolver{T, V<:AbstractVector{T}, Tmat<:PNExplicitImplicitMatrix{T, V}, Tsolv} <: PNSolver{T}
+struct PNExplicitEulerSolver{T, V<:AbstractVector{T}, Tmat<:PNExplicitImplicitMatrix{T, V}, TLU, Tmatp} <: PNSolver{T}
     A::Tmat
+    Ap::Tmatp
+    Dm::V
+    Dp::TLU
     b::V
-    # sol::V
-    lin_solver::Tsolv
+    sol::V
     N::Int64
     ϵ_interval::Tuple{Float64, Float64}
-    cache::V
 end
 
 function step_forward!(pn_solv::PNExplicitEulerSolver{T}, ϵi, ϵip1, g_idx) where T
+    pn_mat, pn_b, pn_semi, pn_equ = get_mat_b_semi_equ(pn_solv)
     ((nLp, nLm), (nRp, nRm)) = pn_semi.size
 
     np = nLp*nRp
@@ -20,55 +22,83 @@ function step_forward!(pn_solv::PNExplicitEulerSolver{T}, ϵi, ϵip1, g_idx) whe
     # Bp = reshape(@view(B[1:np]), (nLp, nRp))
     # Bm = reshape(@view(B[np+1:np+nm]), (nLm, nRm))
 
-    # cache all
-    copyto!(pn_solv.cache, current_solution(pn_solv))
+    # HALF STEP ODD (m)
+    update_rhs_forward!(pn_solv, ϵi+0.5*Δϵ, ϵip1, g_idx, :m)
+    update_mat_forward!(pn_solv, ϵi+0.5*Δϵ, ϵip1)
+    _update_Dm(pn_solv)
+    ldiv!(reshape(@view(pn_solv.sol[np+1:np+nm]), (nLm, nRm)), Diagonal(pn_solv.Dm), reshape(@view(pn_solv.b[np+1:np+nm]), (nLm, nRm)))
 
-    # FULL STEP EVEN
-    update_rhs_forward!(pn_solv, ϵi, ϵip1, g_idx)
+    # FULL STEP EVEN (p)
+    update_rhs_forward!(pn_solv, ϵi, ϵip1, g_idx, :p)
     update_mat_forward!(pn_solv, ϵi, ϵip1)
-    Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
-    # recover odds
-    copyto!(@view(current_solution(pn_solv)[np+1:np+nm]), @view(pn_solv.cache[np+1:np+nm]))
-    # cache evens
-    copyto!(@view(pn_solv.cache[1:np]), @view(current_solution(pn_solv)[1:np]))
-    # FULL STEP ODD
-    update_rhs_forward!(pn_solv, ϵi-0.5*Δϵ, ϵip1-0.5*Δϵ, g_idx)
-    update_mat_forward!(pn_solv, ϵi-0.5*Δϵ, ϵip1-0.5*Δϵ)
-    Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
-    # recover evens
-    copyto!(@view(current_solution(pn_solv)[1:np]), @view(pn_solv.cache[1:np]))
+    _update_solve_Dp(pn_solv)
+    # _update_Dp(pn_solv)
+    # SparseArrays.UMFPACK.umfpack_numeric!(pn_solv.Dp)
+    # ldiv!(reshape(@view(pn_solv.sol[1:np]), (nLp, nRp)), pn_solv.Dp, reshape(@view(pn_solv.b[1:np]), (nLp, nRp)))
+    
+    # HALF STEP ODD (m)
+    update_rhs_forward!(pn_solv, ϵi, ϵip1-0.5*Δϵ, g_idx, :m)
+    update_mat_forward!(pn_solv, ϵi, ϵip1-0.5*Δϵ)
+    _update_Dm(pn_solv)
+    ldiv!(reshape(@view(pn_solv.sol[np+1:np+nm]), (nLm, nRm)), Diagonal(pn_solv.Dm), reshape(@view(pn_solv.b[np+1:np+nm]), (nLm, nRm)))
+end
 
+function _update_solve_Dp(pn_solv::PNExplicitEulerSolver{T, V}) where {T, V}
+    pn_mat, pn_b, pn_semi, pn_equ = get_mat_b_semi_equ(pn_solv)
+    ((nLp, nLm), (nRp, nRm)) = pn_semi.size
 
-    ## OLD STUFF:
-    # # HALF STEP ODD
-    # update_rhs_forward!(pn_solv, ϵi+0.5*Δϵ, ϵip1, g_idx)
-    # update_mat_forward!(pn_solv, ϵi+0.5*Δϵ, ϵip1)
-    # Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
-    # # recover evens
-    # copyto!(@view(current_solution(pn_solv)[1:np]), @view(pn_solv.cache[1:np]))
-    # # cache odds
-    # copyto!(@view(pn_solv.cache[np+1:np+nm]), @view(current_solution(pn_solv)[np+1:np+nm]))
-    # # FULL STEP EVEN
-    # update_rhs_forward!(pn_solv, ϵi, ϵip1, g_idx)
-    # update_mat_forward!(pn_solv, ϵi, ϵip1)
-    # Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
-    # # recover odds
-    # copyto!(@view(current_solution(pn_solv)[np+1:np+nm]), @view(pn_solv.cache[np+1:np+nm]))
-    # # cache evens
-    # copyto!(@view(pn_solv.cache[1:np]), @view(current_solution(pn_solv)[1:np]))
-    # # HALF STEP ODD
-    # update_rhs_forward!(pn_solv, ϵi, ϵip1-0.5*Δϵ, g_idx)
-    # update_mat_forward!(pn_solv, ϵi, ϵip1-0.5*Δϵ)
-    # Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
-    # # recover evens
-    # copyto!(@view(current_solution(pn_solv)[1:np]), @view(pn_solv.cache[1:np]))
+    np = nLp*nRp
+    nm = nLm*nRm
+    _update_Dp(pn_solv)
+    SparseArrays.UMFPACK.umfpack_numeric!(pn_solv.Dp)
+    ldiv!(reshape(@view(pn_solv.sol[1:np]), (nLp, nRp)), pn_solv.Dp, reshape(@view(pn_solv.b[1:np]), (nLp, nRp)))
+end
+
+function _update_solve_Dp(pn_solv::PNExplicitEulerSolver{T, V}) where {T, V<:AbstractGPUArray}
+    # there must be a better way for this ! use ala precompute the lu decomposition and apply it to the whole batch. (i dont know how to do it in cuda right now.)
+    pn_mat, pn_b, pn_semi, pn_equ = get_mat_b_semi_equ(pn_solv)
+    ((nLp, nLm), (nRp, nRm)) = pn_semi.size
+
+    np = nLp*nRp
+    nm = nLm*nRm
+
+    lin_solver, mat = pn_solv.Dp
+    Bmat = reshape(@view(pn_solv.b[1:np]), (nLp, nRp))
+    Solmat = reshape(@view(pn_solv.sol[1:np]), (nLp, nRp))
+    for r in 1:nRp
+        Krylov.solve!(lin_solver, mat, @view(Bmat[:, r]), rtol=T(1e-12), atol=T(1e-12))
+        copyto!(@view(Solmat[:, r]), lin_solver.x)
+    end
+
+    # SparseArrays.UMFPACK.umfpack_numeric!(pn_solv.Dp)
+    # ldiv!(, pn_solv.Dp, )
+end
+
+function _update_Dm(pn_solv::PNExplicitEulerSolver{T}) where T
+    fill!(pn_solv.Dm, zero(T))
+    for (ρmz, αz) in zip(pn_solv.A.pn_semi.ρm, pn_solv.A.α)
+        bα = αz != 0
+        if bα
+            axpy!(-αz, ρmz.diag, pn_solv.Dm)
+        end
+    end
+end
+
+function _update_Dp(pn_solv::PNExplicitEulerSolver{T}) where T
+    fill!(pn_solv.Dp.nzval, zero(T))
+    for (ρpz, αz) in zip(pn_solv.A.pn_semi.ρp, pn_solv.A.α)
+        bα = αz != 0
+        if bα
+            axpy!(αz, ρpz.nzval, pn_solv.Dp.nzval)
+        end
+    end
 end
 
 function energy_step(pn_solv::PNExplicitEulerSolver)
     return (pn_solv.ϵ_interval[2] - pn_solv.ϵ_interval[1])/(pn_solv.N-1)
 end
 
-function update_rhs_forward!(pn_solv::PNExplicitEulerSolver, ϵi, ϵip1, g_idx)
+function update_rhs_forward!(pn_solv::PNExplicitEulerSolver, ϵi, ϵip1, g_idx, onlypm)
     pn_mat, pn_b, pn_semi, pn_equ = get_mat_b_semi_equ(pn_solv)
 
     Δϵ = ϵip1 - ϵi
@@ -82,7 +112,7 @@ function update_rhs_forward!(pn_solv::PNExplicitEulerSolver, ϵi, ϵip1, g_idx)
     end
     pn_mat.β[1] = Δϵ
     # minus because we have to bring b to the right side of the equation 
-    mul!(pn_b, pn_mat, current_solution(pn_solv), -1.0, 1.0)
+    mul_only!(pn_b, pn_mat, current_solution(pn_solv), -1.0, 1.0, onlypm)
     return
 end
 
@@ -106,23 +136,40 @@ function get_mat_b_semi_equ(pn_solv::PNExplicitEulerSolver)
 end
 
 function initialize!(pn_solv::PNExplicitEulerSolver{T}) where T
-    fill!(pn_solv.lin_solver.x, zero(T))
+    fill!(pn_solv.sol, zero(T))
 end
 
 function current_solution(pn_solv::PNExplicitEulerSolver)
-    return pn_solv.lin_solver.x
+    return pn_solv.sol
 end
 
 function pn_expliciteulersolver(pn_semi::PNSemidiscretization{T, V}, ϵ_interval, N) where {T, V}
     ((nLp, nLm), (nRp, nRm)) = pn_semi.size
 
     n = nLp*nRp + nLm*nRm
+    mat = pn_explicitimplicitmatrix(pn_semi)
+
     return PNExplicitEulerSolver(
-        pn_explicitimplicitmatrix(pn_semi),
+        mat,
+        pn_pnexplicitmatrixp(mat),
+        V(undef, nLm),
+        construct_UMFPACK_solver(pn_semi, mat),
         V(undef, n),
-        Krylov.MinresSolver(n, n, V),
+        V(undef, n),
         N,
-        ϵ_interval,
-        V(undef, n)
+        ϵ_interval
     )
 end
+
+function construct_UMFPACK_solver(pn_semi::PNSemidiscretization{T, V}, _) where {T, V}
+    return SparseArrays.UMFPACK.UmfpackLU(pn_semi.ρp[1])
+end
+
+function construct_UMFPACK_solver(pn_semi::PNSemidiscretization{T, V}, mat) where {T, V<:AbstractGPUArray}
+    ((nLp, nLm), (nRp, nRm)) = pn_semi.size
+    return (MinresSolver(nLp, nLp, V), pn_pnexplicitmatrixp(mat))
+    # dummy = SparseMatrixCSC(pn_semi.ρp[1])
+    # dummy = Float64.(dummy)
+    # return (SparseArrays.UMFPACK.UmfpackLU(dummy), [Float64.(Vector(ρpe.nzVal)) for ρpe in pn_semi.ρp])
+end
+
