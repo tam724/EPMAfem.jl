@@ -253,7 +253,7 @@ module SphericalHarmonicsMatrices
             Y_eo = [Y[m] for m ∈ eo_moms]
             return qΩ(Ω)*Y_eo
         end
-        b = hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π))[1]
+        b = hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π), rtol=1e-8, atol=1e-8, maxevals=100000)[1]
         return (p=[b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)], m=[b[i] for (i, m) ∈ enumerate(eo_moms) if is_odd(m...)])
     end
 
@@ -279,7 +279,7 @@ module SphericalHarmonicsMatrices
             Y_eo_even = [is_even(m...) ? Y[m] : 0.0 for m ∈ eo_moms]
             return cut_pos(dot(Ω, n))*g_Ω(Ω)*Y_eo_even
         end
-        b = hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π))[1]
+        b = hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π), rtol=1e-8, atol=1e-8, maxevals=100000)[1]
         # return [b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)], [b[i] for (i, m) ∈ enumerate(eo_moms) if is_odd(m...)]
         return (p=[b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)], m=spzeros(length([m for m in eo_moms if is_odd(m...)])))
     end

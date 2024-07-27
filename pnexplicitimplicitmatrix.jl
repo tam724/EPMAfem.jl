@@ -261,6 +261,7 @@ end
 ## EXPLICIT STUFF
 struct PNExplicitMatrixP{T, V<:AbstractVector{T}, TA<:PNExplicitImplicitMatrix{T, V}} <: AbstractMatrix{T}
     A::TA
+    b::V
 end
 
 function Base.getindex(A_schur::PNExplicitMatrixP{T}, I::Vararg{Int, 2}) where T
@@ -268,8 +269,11 @@ function Base.getindex(A_schur::PNExplicitMatrixP{T}, I::Vararg{Int, 2}) where T
 end
 
 function pn_pnexplicitmatrixp(A::PNExplicitImplicitMatrix{T, V}) where {T, V}
+    ((nLp, nLm), (nRp, nRm)) = A.pn_semi.size
+
     return PNExplicitMatrixP(
-        A
+        A,
+        V(undef, nLp)
     )
 end
 

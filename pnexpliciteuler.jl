@@ -1,6 +1,5 @@
-struct PNExplicitEulerSolver{T, V<:AbstractVector{T}, Tmat<:PNExplicitImplicitMatrix{T, V}, TLU, Tmatp} <: PNSolver{T}
+struct PNExplicitEulerSolver{T, V<:AbstractVector{T}, Tmat<:PNExplicitImplicitMatrix{T, V}, TLU} <: PNSolver{T}
     A::Tmat
-    Ap::Tmatp
     Dm::V
     Dp::TLU
     b::V
@@ -49,8 +48,14 @@ function _update_solve_Dp(pn_solv::PNExplicitEulerSolver{T, V}) where {T, V}
 
     np = nLp*nRp
     nm = nLm*nRm
-    _update_Dp(pn_solv)
-    SparseArrays.UMFPACK.umfpack_numeric!(pn_solv.Dp)
+    fill!(pn_solv.Dp.nzval, zero(T))
+    for (ρpz, αz) in zip(pn_solv.A.pn_semi.ρp, pn_solv.A.α)
+        bα = αz != 0
+        if bα
+            axpy!(αz, ρpz.nzval, pn_solv.Dp.nzval)
+        end
+    end
+    SparseArrays.UMFPACK.umfpack_numeric!(pn_solv.Dp, reuse_numeric=false, q=pn_solv.Dp.q)
     ldiv!(reshape(@view(pn_solv.sol[1:np]), (nLp, nRp)), pn_solv.Dp, reshape(@view(pn_solv.b[1:np]), (nLp, nRp)))
 end
 
@@ -66,7 +71,8 @@ function _update_solve_Dp(pn_solv::PNExplicitEulerSolver{T, V}) where {T, V<:Abs
     Bmat = reshape(@view(pn_solv.b[1:np]), (nLp, nRp))
     Solmat = reshape(@view(pn_solv.sol[1:np]), (nLp, nRp))
     for r in 1:nRp
-        Krylov.solve!(lin_solver, mat, @view(Bmat[:, r]), rtol=T(1e-12), atol=T(1e-12))
+        copyto!(mat.b, @view(Bmat[:, r]))
+        Krylov.solve!(lin_solver, mat, mat.b, rtol=T(1e-14), atol=T(1e-14))
         copyto!(@view(Solmat[:, r]), lin_solver.x)
     end
 
@@ -80,16 +86,6 @@ function _update_Dm(pn_solv::PNExplicitEulerSolver{T}) where T
         bα = αz != 0
         if bα
             axpy!(-αz, ρmz.diag, pn_solv.Dm)
-        end
-    end
-end
-
-function _update_Dp(pn_solv::PNExplicitEulerSolver{T}) where T
-    fill!(pn_solv.Dp.nzval, zero(T))
-    for (ρpz, αz) in zip(pn_solv.A.pn_semi.ρp, pn_solv.A.α)
-        bα = αz != 0
-        if bα
-            axpy!(αz, ρpz.nzval, pn_solv.Dp.nzval)
         end
     end
 end
@@ -151,7 +147,6 @@ function pn_expliciteulersolver(pn_semi::PNSemidiscretization{T, V}, ϵ_interval
 
     return PNExplicitEulerSolver(
         mat,
-        pn_pnexplicitmatrixp(mat),
         V(undef, nLm),
         construct_UMFPACK_solver(pn_semi, mat),
         V(undef, n),

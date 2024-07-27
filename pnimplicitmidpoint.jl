@@ -170,7 +170,7 @@ end
 function solve!(pn_solv::PNSchurImplicitMidpointSolver{T}) where T
     _update_D(pn_solv.A_schur)
     _compute_schur_rhs(pn_solv)
-    Krylov.solve!(pn_solv.lin_solver, pn_solv.A_schur, pn_solv.b_schur)
+    Krylov.solve!(pn_solv.lin_solver, pn_solv.A_schur, pn_solv.b_schur, rtol=T(1e-14), atol=T(1e-14))
     _compute_full_solution_schur(pn_solv)
 end
 

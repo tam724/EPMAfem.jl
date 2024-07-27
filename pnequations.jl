@@ -77,7 +77,7 @@ function stopping_power(::DummyPNEquations, ϵ, e)
     return 0.0
 end
 
-scattering_cross_section(::DummyPNEquations, ϵ, e, i) = 0.0 # 1.0
+scattering_cross_section(::DummyPNEquations, ϵ, e, i) = 2.0
 total_scattering_cross_section(eq::DummyPNEquations, ϵ , e) = scattering_cross_section(eq, ϵ, e, 1)
 
 beam_energy(eq::DummyPNEquations, ϵ, i) = expm2(ϵ, eq.gϵpos[i], 0.04)
@@ -107,6 +107,13 @@ function mass_concentrations(::DummyPNEquations, x, e)
             return (0.8, 0.0)[e]
         end
         return 1.0
+    end
+    if length(x) == 3
+        if x[2]^2 + x[3]^2 < 0.5^2
+            return (0.0, 1.2)[e]
+        else
+            return (0.8, 0.0)[e]
+        end
     end
     error("")
 end
