@@ -70,7 +70,7 @@ function pn_semidiscretization(pn_sys, pn_equ)
     model = pn_sys.model
 
     n_basis = number_of_basis_functions(pn_sys)
-    # BIG TODO!!! (support multiple scattering kernels per element)
+    # TODO!!! (support multiple scattering kernels per element)
     Kpp, Kmm = assemble_scattering_matrices(pn_sys.PN, μ -> scattering_kernel(pn_equ, μ, 1, 1), nd(pn_sys))
 
     ρ_to_ρp = build_ρ_to_ρp_projection(pn_sys)
@@ -131,6 +131,8 @@ function update_mass_concentrations!(pn_semi, ρs)
     for e in 1:number_of_elements(equations(pn_semi))
         mul!(pn_semi.ρp[e].nzval, pn_semi.ρ_to_ρp, ρs[e])
         mul!(pn_semi.ρm[e].diag, pn_semi.ρ_to_ρm, ρs[e])
+
+        # also update the μs
     end
 end
 

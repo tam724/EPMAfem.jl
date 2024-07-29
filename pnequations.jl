@@ -117,3 +117,7 @@ function mass_concentrations(::DummyPNEquations, x, e)
     end
     error("")
 end
+
+function energy_interval(::DummyPNEquations)
+    return (0.0, 1.0)
+end

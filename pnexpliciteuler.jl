@@ -5,7 +5,6 @@ struct PNExplicitEulerSolver{T, V<:AbstractVector{T}, Tmat<:PNExplicitImplicitMa
     b::V
     sol::V
     N::Int64
-    ϵ_interval::Tuple{Float64, Float64}
 end
 
 function step_forward!(pn_solv::PNExplicitEulerSolver{T}, ϵi, ϵip1, g_idx) where T
@@ -91,7 +90,9 @@ function _update_Dm(pn_solv::PNExplicitEulerSolver{T}) where T
 end
 
 function energy_step(pn_solv::PNExplicitEulerSolver)
-    return (pn_solv.ϵ_interval[2] - pn_solv.ϵ_interval[1])/(pn_solv.N-1)
+    _, _, _, pn_equ = get_mat_b_semi_equ(pn_solv)
+    Iϵ = energy_inter(pn_equ)
+    return (Iϵ[2] - Iϵ[1])/(pn_solv.N-1)
 end
 
 function update_rhs_forward!(pn_solv::PNExplicitEulerSolver, ϵi, ϵip1, g_idx, onlypm)
@@ -139,7 +140,7 @@ function current_solution(pn_solv::PNExplicitEulerSolver)
     return pn_solv.sol
 end
 
-function pn_expliciteulersolver(pn_semi::PNSemidiscretization{T, V}, ϵ_interval, N) where {T, V}
+function pn_expliciteulersolver(pn_semi::PNSemidiscretization{T, V}, N) where {T, V}
     ((nLp, nLm), (nRp, nRm)) = pn_semi.size
 
     n = nLp*nRp + nLm*nRm
@@ -151,8 +152,7 @@ function pn_expliciteulersolver(pn_semi::PNSemidiscretization{T, V}, ϵ_interval
         construct_UMFPACK_solver(pn_semi, mat),
         V(undef, n),
         V(undef, n),
-        N,
-        ϵ_interval
+        N
     )
 end
 

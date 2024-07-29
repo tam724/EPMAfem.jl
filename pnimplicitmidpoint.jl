@@ -1,7 +1,9 @@
 abstract type PNImplicitMidpointSolver{T} <: PNSolver{T} end
 
 function energy_step(pn_solv::PNImplicitMidpointSolver)
-    return (pn_solv.ϵ_interval[2] - pn_solv.ϵ_interval[1])/(pn_solv.N-1)
+    _, _, _, pn_equ = get_mat_b_semi_equ(pn_solv)
+    Iϵ = energy_inter(pn_equ)
+    return (Iϵ[2] - Iϵ[1])/(pn_solv.N-1)
 end
 
 function step_forward!(pn_solv::PNImplicitMidpointSolver, ϵi, ϵip1, g_idx)
@@ -95,7 +97,6 @@ struct PNFullImplicitMidpointSolver{T, V<:AbstractVector{T}, Tmat<:PNExplicitImp
     b::V
     lin_solver::Tsolv
     N::Int64
-    ϵ_interval::Tuple{Float64, Float64}
 end
 
 function get_mat_b_semi_equ(pn_solv::PNFullImplicitMidpointSolver)
@@ -114,7 +115,7 @@ function solve!(pn_solv::PNFullImplicitMidpointSolver{T}) where T
     Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b)
 end
 
-function pn_fullimplicitmidpointsolver(pn_semi::PNSemidiscretization{T, V}, ϵ_interval, N) where {T, V}
+function pn_fullimplicitmidpointsolver(pn_semi::PNSemidiscretization{T, V}, N) where {T, V}
     ((nLp, nLm), (nRp, nRm)) = pn_semi.size
 
     n = nLp*nRp + nLm*nRm
@@ -123,7 +124,6 @@ function pn_fullimplicitmidpointsolver(pn_semi::PNSemidiscretization{T, V}, ϵ_i
         V(undef, n),
         Krylov.MinresSolver(n, n, V),
         N,
-        ϵ_interval,
     )
 end
 
@@ -134,10 +134,9 @@ struct PNSchurImplicitMidpointSolver{T, V<:AbstractVector{T}, Tmat<:PNSchurImpli
     sol::V
     lin_solver::Tsolv
     N::Int64
-    ϵ_interval::Tuple{Float64, Float64}
 end
 
-function pn_schurimplicitmidpointsolver(pn_semi::PNSemidiscretization{T, V}, ϵ_interval, N) where {T, V}
+function pn_schurimplicitmidpointsolver(pn_semi::PNSemidiscretization{T, V}, N) where {T, V}
     ((nLp, nLm), (nRp, nRm)) = pn_semi.size
 
     np = nLp*nRp
@@ -151,7 +150,6 @@ function pn_schurimplicitmidpointsolver(pn_semi::PNSemidiscretization{T, V}, ϵ_
         V(undef, n),
         Krylov.MinresSolver(np, np, V),
         N,
-        ϵ_interval,
     )
 end
 
@@ -206,7 +204,7 @@ function _compute_full_solution_schur(pn_solv::PNSchurImplicitMidpointSolver)
     # bm = reshape(@view(pn_solv.b[np+1:np+nm]), (nLm, nRm))
 
     full_p .= pn_solv.lin_solver.x
-    
+
     full_m .= @view(pn_solv.b[np+1:np+nm])
     _mul_pm!(full_mm, pn_solv.A_schur.A, reshape(@view(pn_solv.lin_solver.x[:]), (nLp, nRp)), -1.0)
     full_m .= full_m ./ pn_solv.A_schur.D
