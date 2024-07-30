@@ -18,12 +18,12 @@ end
 ## Naming Convention: lowercase: vector values, uppercase: matrix valued
 ##
 
-@parametric_type ZMatrix ρ k a c Tmp1 Tmp2
+@parametric_type ZMatrix ρ i k a c Tmp1 Tmp2
 
 """
-    computes Y = sum_z ρ[z] * X * (a[z] * I + sum_i c[z][i] k[z][i]) * α + β * Y
+    computes Y = sum_z ρ[z] * X * (a[z] * i + sum_i c[z][i] k[z][i]) * α + β * Y
 """
-function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMatrix{R, K, A, C, T1, T2}, x::AbstractVector, α::Number, β::Number) where {R, K, A, C, T1, T2<:Diagonal}
+function LinearAlgebra.mul!(y::AbstractVector, (; ρ, i, k, a, c, Tmp1, Tmp2)::ZMatrix{R, I, K, A, C, T1, T2}, x::AbstractVector, α::Number, β::Number) where {R, I<:Diagonal, K, A, C, T1, T2<:Diagonal}
     nL1, nL2 = size(first(ρ))
     nR1, nR2 = size(first(first(k)))
     rmul!(y, β)
@@ -31,7 +31,7 @@ function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMat
     for (ρz, kz, az, cz) in zip(ρ, k, a, c)
         mul!(Tmp1, ρz, reshape(x, (nL2, nR1)), true, false)
         # first compute the sum of the kps and I (should be Diagonal)
-        fill!(Tmp2.diag, az)
+        Tmp2.diag .= az .* i.diag
         for (kzi, czi) in zip(kz, cz)
             @assert kzi isa Diagonal
             axpy!(czi, kzi.diag, Tmp2.diag)
@@ -41,9 +41,9 @@ function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMat
 end
 
 """
-    computes Y = sum_z ρ[z] * X * (a[z] * I + sum_i c[z][i] k[z][i]) * α + β * Y
+    computes Y = sum_z ρ[z] * X * (a[z] * i + sum_i c[z][i] k[z][i]) * α + β * Y
 """
-function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMatrix{R, K, A, C, T1, T2}, x::AbstractVector, α::Number, β::Number) where {R, K, A, C, T1, T2}
+function LinearAlgebra.mul!(y::AbstractVector, (; ρ, i, k, a, c, Tmp1, Tmp2)::ZMatrix{R, I, K, A, C, T1, T2}, x::AbstractVector, α::Number, β::Number) where {R, I, K, A, C, T1, T2}
     nL1, nL2 = size(first(ρ))
     nR1, nR2 = size(first(first(k)))
     rmul!(y, β)
@@ -51,8 +51,7 @@ function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMat
     for (ρz, kz, az, cz) in zip(ρ, k, a, c)
         mul!(Tmp1, ρz, reshape(x, (nL2, nR1)), true, false)
         # first compute the sum of the kps and I
-        fill!(Tmp2, 0.0)
-        Tmp2 .+= az*I # lets see if this works...
+        Tmp2 .= az .* i
         for (kzi, czi) in zip(kz, cz)
             axpy!(czi, kzi, Tmp2)
         end
@@ -81,7 +80,7 @@ function mat_view(tmp, nL, nR)
     return reshape(@view(tmp[1:nL*nR]), (nL, nR))
 end
 
-@parametric_type FullBlockMat ρp ρm ∇pm ∂p kp km Ωpm absΩp a b c tmp tmp2
+@parametric_type FullBlockMat ρp ρm ∇pm ∂p Ip Im kp km Ωpm absΩp a b c tmp tmp2
 
 function block_size(FBM::FullBlockMat)
     nLm, nLp = size(first(FBM.∇pm))
@@ -95,7 +94,7 @@ function Base.size(FBM::FullBlockMat)
     return (n, n)
 end
 
-function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, kp, km, Ωpm, absΩp, a, b, c, tmp, tmp2)::FullBlockMat, x::AbstractVector, α::Number, β::Number)
+function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, kp, km, Ωpm, absΩp, a, b, c, tmp, tmp2)::FullBlockMat, x::AbstractVector, α::Number, β::Number)
     nLm, nLp = size(first(∇pm))
     nRm, nRp = size(first(Ωpm))
 
@@ -104,20 +103,20 @@ function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, kp, km, 
 
     # the first writes into Yp and Ym have to use β, the others add to the previous
     # pp
-    mul!(@view(y[1:np]), ZMatrix(ρp, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), @view(x[1:np]), α, β)
+    mul!(@view(y[1:np]), ZMatrix(ρp, Ip, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), @view(x[1:np]), α, β)
     mul!(@view(y[1:np]), DMatrix(∂p, absΩp, b, mat_view(tmp, nLp, nRp)), @view(x[1:np]), α, true)
     # mp
     mul!(@view(y[1:np]), DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b, mat_view(tmp, nLp, nRm)), @view(x[np+1:np+nm]), α, true)
 
-    # mm
-    mul!(@view(y[np+1:np+nm]), ZMatrix(ρm, km, (-a_ for a_ in a), ((-c_ for c_ in cz) for cz in c), mat_view(tmp, nLm, nRm), Diagonal(@view(tmp2[1:nRm]))), @view(x[np+1:np+nm]), α, β)
+    # mm (minus because we use negative basis functions for the odd direction )
+    mul!(@view(y[np+1:np+nm]), ZMatrix(ρm, Im, km, a, c, mat_view(tmp, nLm, nRm), Diagonal(@view(tmp2[1:nRm]))), @view(x[np+1:np+nm]), α, β)
     # pm
     mul!(@view(y[np+1:np+nm]), DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b, mat_view(tmp, nLm, nRp)), @view(x[1:np]), α, true)
 end
 
 ## SCHUR STUFF
-@parametric_type SchurBlockMat ρp ∇pm ∂p kp Ωpm absΩp D a b c tmp tmp2 tmp3
-function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, kp, Ωpm, absΩp, D, a, b, c, tmp, tmp2, tmp3)::SchurBlockMat, x::AbstractVector, α::Number, β::Number)
+@parametric_type SchurBlockMat ρp ∇pm ∂p Ip kp Ωpm absΩp D a b c tmp tmp2 tmp3
+function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, Ip, kp, Ωpm, absΩp, D, a, b, c, tmp, tmp2, tmp3)::SchurBlockMat, x::AbstractVector, α::Number, β::Number)
     nLm, nLp = size(first(∇pm))
     nRm, nRp = size(first(Ωpm))
 
@@ -137,7 +136,7 @@ function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, kp, Ωpm, absΩp, D, a, b, 
     mul!(y, DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b, mat_view(tmp, nLp, nRm)), tmp3, -α, β)
 
     #pp
-    mul!(y, ZMatrix(ρp, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), x, α, true)
+    mul!(y, ZMatrix(ρp, Ip, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), x, α, true)
     mul!(y, DMatrix(∂p, absΩp, b, mat_view(tmp, nLp, nRp)), x, α, true)
 end
 
@@ -243,7 +242,7 @@ function LinearAlgebra.mul!(C::AbstractVector, A::PNExplicitImplicitMatrix, B::A
     # mp
     mul!(Cp, DMatrix((transpose(∇pmd) for ∇pmd in A.pn_semi.∇pm), A.pn_semi.Ωpm, mat_view(A.tmp, nLp, nRm)), Bm, A.β[1]*α, true)
 
-    # mm
+    # mm (minus because we use negative basis functions for the direction, this makes the resulting matrices symmetric)
     mul!(Cm, ZMatrix(A.pn_semi.ρm, A.pn_semi.km, (-α for α in A.α), ((-γ for γ in γz) for γz in A.γ), mat_view(A.tmp, nLm, nRm), Diagonal(@view(A.tmp2[1:nRm]))), Bm, α, true)
     # pm
     mul!(Cm, DMatrix(A.pn_semi.∇pm, (transpose(Ωpmd) for Ωpmd in A.pn_semi.Ωpm), mat_view(A.tmp, nLm, nRp)), Bp, A.β[1]*α, true)

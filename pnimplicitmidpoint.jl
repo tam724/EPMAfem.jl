@@ -61,7 +61,7 @@ function update_rhs_forward!(pn_solv::PNImplicitMidpointSolver, ϵi, ϵ2, ϵip1,
     assemble_beam_rhs!(pn_solv.rhs, pn_semi, ϵ2, g_idx, -Δϵ)
     a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
     # minus because we have to bring b to the right side of the equation
-    A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+    A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
     mul!(pn_solv.rhs, A, current_solution(pn_solv), -1.0, 1.0)
     return
 end
@@ -73,7 +73,7 @@ function update_rhs_backward!(pn_solv::PNImplicitMidpointSolver, ϵi, ϵ2, ϵip1
     assemble_extraction_rhs!(pn_solv.rhs, pn_semi, ϵ2, μ_idx, -Δϵ)
     a, b, c = update_coefficients_rhs_backward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
     # minus because we have to bring b to the right side of the equation
-    A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+    A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
     mul!(pn_solv.rhs, A, current_solution(pn_solv), -1.0, 1.0)
     return
 end
@@ -110,7 +110,7 @@ function step_forward!(pn_solv::PNFullImplicitMidpointSolver{T}, ϵi, ϵip1, g_i
     update_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ, g_idx)
 
     a, b, c = update_coefficients_mat_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
-    A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+    A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
     Krylov.solve!(pn_solv.lin_solver, A, pn_solv.rhs, rtol=T(1e-14), atol=T(1e-14))
     # @show pn_solv.lin_solver.stats
 end
@@ -123,7 +123,7 @@ function step_backward!(pn_solv::PNFullImplicitMidpointSolver{T}, ϵi, ϵip1, μ
     update_rhs_backward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ, μ_idx)
 
     a, b, c = update_coefficients_mat_backward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
-    A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+    A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
     Krylov.solve!(pn_solv.lin_solver, A, pn_solv.rhs, rtol=T(1e-14), atol=T(1e-14))
     # @show pn_solv.lin_solver.stats
 end
@@ -203,7 +203,7 @@ function step_forward!(pn_solv::PNSchurImplicitMidpointSolver{T}, ϵi, ϵip1, g_
     a, b, c = update_coefficients_mat_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
     _update_D(pn_solv, a, b, c)
     _compute_schur_rhs(pn_solv, a, b, c)
-    A_schur = SchurBlockMat(pn_semi.ρp, pn_semi.∇pm, pn_semi.∂p, pn_semi.kp, pn_semi.Ωpm, pn_semi.absΩp, Diagonal(pn_solv.D), a, b, c, pn_solv.tmp, pn_solv.tmp2, pn_solv.tmp3)
+    A_schur = SchurBlockMat(pn_semi.ρp, pn_semi.∇pm, pn_semi.∂p, pn_semi.Ip, pn_semi.kp, pn_semi.Ωpm, pn_semi.absΩp, Diagonal(pn_solv.D), a, b, c, pn_solv.tmp, pn_solv.tmp2, pn_solv.tmp3)
     Krylov.solve!(pn_solv.lin_solver, A_schur, pn_solv.rhs_schur, rtol=T(1e-14), atol=T(1e-14))
     # @show pn_solv.lin_solver.stats
     _compute_full_solution_schur(pn_solv, a, b, c)
@@ -219,7 +219,7 @@ function step_backward!(pn_solv::PNSchurImplicitMidpointSolver{T}, ϵi, ϵip1, �
     a, b, c = update_coefficients_mat_backward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
     _update_D(pn_solv, a, b, c)
     _compute_schur_rhs(pn_solv, a, b, c)
-    A_schur = SchurBlockMat(pn_semi.ρp, pn_semi.∇pm, pn_semi.∂p, pn_semi.kp, pn_semi.Ωpm, pn_semi.absΩp, Diagonal(pn_solv.D), a, b, c, pn_solv.tmp, pn_solv.tmp2, pn_solv.tmp3)
+    A_schur = SchurBlockMat(pn_semi.ρp, pn_semi.∇pm, pn_semi.∂p, pn_semi.Ip, pn_semi.kp, pn_semi.Ωpm, pn_semi.absΩp, Diagonal(pn_solv.D), a, b, c, pn_solv.tmp, pn_solv.tmp2, pn_solv.tmp3)
     Krylov.solve!(pn_solv.lin_solver, A_schur, pn_solv.rhs_schur, rtol=T(1e-14), atol=T(1e-14))
     # @show pn_solv.lin_solver.stats
     _compute_full_solution_schur(pn_solv, a, b, c)
@@ -237,9 +237,9 @@ function _update_D(pn_solv::PNSchurImplicitMidpointSolver{T}, a, b, c) where T
 
     fill!(pn_solv.D, zero(T))
     for (ρmz, kmz, az, cz) in zip(pn_semi.ρm, pn_semi.km, a, c)
-        fill!(tmp2_m, -az)
+        tmp2_m .= az*pn_semi.Im.diag
         for (kmzi, czi) in zip(kmz, cz)
-            axpy!(-czi, kmzi.diag, tmp2_m)
+            axpy!(czi, kmzi.diag, tmp2_m)
         end
 
         mul!(reshape(pn_solv.D, (nLm, nRm)), reshape(@view(ρmz.diag[:]), (nLm, 1)), reshape(@view(tmp2_m[:]), (1, nRm)), true, true)

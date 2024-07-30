@@ -59,7 +59,7 @@ function dummy_equations(gϵpos, gxpos, gΩpos, μϵpos)
         μϵpos)
 end
 
-_scattering_kernel(μ) = exp(-20.0*(μ-0.0)^2)
+_scattering_kernel(μ) = exp(-100.0*(μ-1.0)^2)
 
 function scattering_kernel(eq::DummyPNEquations, μ, e, i)
     # for now we ignore e and i

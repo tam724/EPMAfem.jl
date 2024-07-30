@@ -139,7 +139,6 @@ doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
     # # savefig("plots/$(i).pdf")
 end fps=20
 
-
 @gif for i in 1:N
     z_coords = range(0.0, 1.0, length=n_z+1)
     x_coords = range(-1.0, 1.0, length=2*n_z+1)
@@ -154,7 +153,7 @@ end fps=20
     p3 = Plots.heatmap(x_coords, z_coords, temp_3)
     p4 = Plots.heatmap(x_coords, z_coords, temp_4)
     plot(p1, p2, p3, p4)
-    # savefig("plots/$(i).pdf")
+    savefig("plots/$(i).pdf")
 end fps=20
 
 @gif for i in 1:N
