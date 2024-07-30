@@ -27,11 +27,7 @@ function Base.iterate(pn_it::ForwardIterator, (ϵ, i))
         ϵip1 = ϵ
         ϵi = ϵ - Δϵ
         if (ϵi < ϵ_cutoff) ϵi = ϵ_cutoff end
-        # update_rhs_forward!(pn_solv, ϵi,  ϵip1, pn_it.g_idx)
-        # update_mat_forward!(pn_solv, ϵi, ϵip1)
         step_forward!(pn_solv, ϵi, ϵip1, pn_it.g_idx)
-        # Krylov.solve!(pn_solv.lin_solver, pn_solv.A, pn_solv.b, rtol=1e-8, atol=1e-8)
-        # new_state = (solution(pn_solv), ϵi, k-1)
         return ϵi, (ϵi, i+1)
     end
 end

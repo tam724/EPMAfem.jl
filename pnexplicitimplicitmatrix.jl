@@ -50,7 +50,7 @@ function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMat
 
     for (ρz, kz, az, cz) in zip(ρ, k, a, c)
         mul!(Tmp1, ρz, reshape(x, (nL2, nR1)), true, false)
-        # first compute the sum of the kps and I (should be Diagonal)
+        # first compute the sum of the kps and I
         fill!(Tmp2, 0.0)
         Tmp2 .+= az*I # lets see if this works...
         for (kzi, czi) in zip(kz, cz)
@@ -117,7 +117,6 @@ end
 
 ## SCHUR STUFF
 @parametric_type SchurBlockMat ρp ∇pm ∂p kp Ωpm absΩp D a b c tmp tmp2 tmp3
-
 function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, kp, Ωpm, absΩp, D, a, b, c, tmp, tmp2, tmp3)::SchurBlockMat, x::AbstractVector, α::Number, β::Number)
     nLm, nLp = size(first(∇pm))
     nRm, nRp = size(first(Ωpm))
@@ -131,20 +130,13 @@ function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, kp, Ωpm, absΩp, D, a, b, 
     # this operator Cp = mp ∘ D-1 ∘ pm(Bp) is still quite sparse. maybe it is reasonable to construct it once before the krylov loop
     fill!(mat_view(tmp3, nLm, nRm), zero(eltype(tmp3)))
     # pm 
-    # _mul_pm!(A_tmp_m, A.A, Bp, 1.0)
     mul!(tmp3, DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b, mat_view(tmp, nLm, nRp)), x, true, false)
-    
     # D^-1
-    # ldiv!(D, @view(tmp3[1:nLm*nRm]))
-    # @view(tmp3[1:nLm*nRm]) ./= D
     ldiv!(D, @view(tmp3[1:nLm*nRm]))
-    
     # mp
-    # _mul_mp!(Cp, A.A, A_tmp_m, -α)
     mul!(y, DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b, mat_view(tmp, nLp, nRm)), tmp3, -α, β)
 
-
-    # _mul_pp!(Cp, A.A, Bp, α)
+    #pp
     mul!(y, ZMatrix(ρp, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), x, α, true)
     mul!(y, DMatrix(∂p, absΩp, b, mat_view(tmp, nLp, nRp)), x, α, true)
 end
@@ -280,7 +272,6 @@ function mul_only!(C::AbstractVector, A::PNExplicitImplicitMatrix, B::AbstractVe
         _mul_pm!(Cm, A, Bp, α)
     end
 end
-
 
 struct PNExplicitMatrixP{T, V<:AbstractVector{T}, TA<:PNExplicitImplicitMatrix{T, V}} <: AbstractMatrix{T}
     A::TA
