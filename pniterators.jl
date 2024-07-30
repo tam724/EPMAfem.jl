@@ -10,12 +10,15 @@ end
 function Base.iterate(pn_it::ForwardIterator)
     pn_solv = pn_it.solver
     initialize!(pn_solv)
-    ϵ = pn_solv.ϵ_interval[2]
+    _, _, _, pn_equ = get_mat_b_semi_equ(pn_solv)
+    ϵ = energy_interval(pn_equ)[2]
     return ϵ, (ϵ, 1)
 end
 
 function Base.iterate(pn_it::ForwardIterator, (ϵ, i))
-    if isapprox(ϵ - pn_it.solver.ϵ_interval[1], 0.0, atol=1e-8)
+    _, _, _, pn_equ = get_mat_b_semi_equ(pn_it.solver)
+    ϵ_cutoff = energy_interval(pn_equ)[1]
+    if isapprox(ϵ - ϵ_cutoff, 0.0, atol=1e-8)
         return nothing
     else
         pn_solv = pn_it.solver
@@ -23,7 +26,7 @@ function Base.iterate(pn_it::ForwardIterator, (ϵ, i))
         # here we update the solver state from i+1 to i !!! NOTE: forward means from higher to lower energies
         ϵip1 = ϵ
         ϵi = ϵ - Δϵ
-        if (ϵi < pn_solv.ϵ_interval[1]) ϵi = pn_solv.ϵ_interval[1] end
+        if (ϵi < ϵ_cutoff) ϵi = ϵ_cutoff end
         # update_rhs_forward!(pn_solv, ϵi,  ϵip1, pn_it.g_idx)
         # update_mat_forward!(pn_solv, ϵi, ϵip1)
         step_forward!(pn_solv, ϵi, ϵip1, pn_it.g_idx)
@@ -45,7 +48,8 @@ end
 function Base.iterate(pn_it::BackwardIterator)
     pn_solv = pn_it.solver
     initialize!(pn_solv)
-    ϵ = pn_solv.ϵ_interval[1]
+    _, _, _, pn_equ = get_mat_b_semi_equ(pn_solv)
+    ϵ = energy_interval(pn_equ)[1]
     return ϵ, (ϵ, 1)
 end
 

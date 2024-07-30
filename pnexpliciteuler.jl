@@ -15,8 +15,6 @@ function step_forward!(pn_solv::PNExplicitEulerSolver{T}, ϵi, ϵip1, g_idx) whe
     nm = nLm*nRm
     Δϵ = ϵip1 - ϵi
 
-    # this is hacked !! (can be made much more efficient)
-
     # Bp = reshape(@view(B[1:np]), (nLp, nRp))
     # Bm = reshape(@view(B[np+1:np+nm]), (nLm, nRm))
 
