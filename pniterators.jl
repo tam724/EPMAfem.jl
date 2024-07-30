@@ -10,13 +10,13 @@ end
 function Base.iterate(pn_it::ForwardIterator)
     pn_solv = pn_it.solver
     initialize!(pn_solv)
-    _, _, _, pn_equ = get_mat_b_semi_equ(pn_solv)
+    pn_equ = get_pn_equ(pn_solv)
     ϵ = energy_interval(pn_equ)[2]
     return ϵ, (ϵ, 1)
 end
 
 function Base.iterate(pn_it::ForwardIterator, (ϵ, i))
-    _, _, _, pn_equ = get_mat_b_semi_equ(pn_it.solver)
+    pn_equ = get_pn_equ(pn_it.solver)
     ϵ_cutoff = energy_interval(pn_equ)[1]
     if isapprox(ϵ - ϵ_cutoff, 0.0, atol=1e-8)
         return nothing
@@ -48,20 +48,22 @@ end
 function Base.iterate(pn_it::BackwardIterator)
     pn_solv = pn_it.solver
     initialize!(pn_solv)
-    _, _, _, pn_equ = get_mat_b_semi_equ(pn_solv)
+    pn_equ = get_pn_equ(pn_solv)
     ϵ = energy_interval(pn_equ)[1]
     return ϵ, (ϵ, 1)
 end
 
 function Base.iterate(pn_it::BackwardIterator, (ϵ, i))
-    if isapprox(ϵ - pn_it.solver.ϵ_interval[2], 0.0, atol=1e-8)
+    pn_equ = get_pn_equ(pn_solv)
+    ϵ_initial = energy_interval(pn_equ)[2]
+    if isapprox(ϵ - ϵ_initial, 0.0, atol=1e-8)
         return nothing
     else
         pn_solv = pn_it.solver
         Δϵ = energy_step(pn_solv)
         ϵi = ϵ
         ϵip1 = ϵ + Δϵ
-        if (ϵip1 > pn_solv.ϵ_interval[2]) ϵip1 = pn_solv.ϵ_interval[2] end
+        if (ϵip1 > ϵ_initial) ϵip1 = ϵ_initial end
         step_backward!(pn_solv, ϵi, ϵip1, pn_it.μ_idx)
         return ϵip1, (ϵip1, i+1)
     end
