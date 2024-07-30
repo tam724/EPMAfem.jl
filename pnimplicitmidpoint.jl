@@ -119,7 +119,7 @@ end
 # end
 
 function update_mat_backward!(pn_solv::PNImplicitMidpointSolver, ϵi, ϵip1)
-    pn_equ = getpn_equ(pn_solv)
+    pn_equ = get_pn_equ(pn_solv)
 
     ϵ2 = 0.5*(ϵi + ϵip1)
     Δϵ = ϵip1 - ϵi

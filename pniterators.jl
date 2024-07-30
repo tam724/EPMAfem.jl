@@ -54,7 +54,7 @@ function Base.iterate(pn_it::BackwardIterator)
 end
 
 function Base.iterate(pn_it::BackwardIterator, (ϵ, i))
-    pn_equ = get_pn_equ(pn_solv)
+    pn_equ = get_pn_equ(pn_it.solver)
     ϵ_initial = energy_interval(pn_equ)[2]
     if isapprox(ϵ - ϵ_initial, 0.0, atol=1e-8)
         return nothing

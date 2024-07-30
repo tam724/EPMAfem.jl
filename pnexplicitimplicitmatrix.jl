@@ -51,7 +51,8 @@ function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMat
     for (ρz, kz, az, cz) in zip(ρ, k, a, c)
         mul!(Tmp1, ρz, reshape(x, (nL2, nR1)), true, false)
         # first compute the sum of the kps and I (should be Diagonal)
-        fill!(Tmp2, az)
+        fill!(Tmp2, 0.0)
+        Tmp2 .+= az*I # lets see if this works...
         for (kzi, czi) in zip(kz, cz)
             axpy!(czi, kzi, Tmp2)
         end
