@@ -280,13 +280,13 @@ function _compute_schur_rhs(pn_solv::PNSchurImplicitMidpointSolver)
 
     rhs_schurp = reshape(@view(pn_solv.rhs_schur[:]), (nLp, nRp))
 
-    A_tmp_m = reshape(@view(pn_solv.tmp3[1:nLm*nRm]), (nLm, nRm))
+    # A_tmp_m = reshape(@view(pn_solv.tmp3[1:nLm*nRm]), (nLm, nRm))
 
     rhs_schurp .= rhsp
     @view(pn_solv.tmp3[1:nLm*nRm]) .= @view(pn_solv.rhs[np+1:np+nm]) ./ pn_solv.D
     # _mul_mp!(rhs_schurp, pn_solv.A_schur.A, A_tmp_m, -1.0)
 
-    mul!(rhs_schurp, DMatrix((transpose(∇pmd) for ∇pmd in pn_semi.∇pm), pn_semi.Ωpm, mat_view(pn_solv.tmp, nLp, nRm)), A_tmp_m, -pn_solv.b[1], true)
+    mul!(pn_solv.rhs_schur, DMatrix((transpose(∇pmd) for ∇pmd in pn_semi.∇pm), pn_semi.Ωpm, pn_solv.b[1], mat_view(pn_solv.tmp, nLp, nRm)), @view(pn_solv.tmp3[1:nLm*nRm]), -1.0, true)
 
 end
 
@@ -300,7 +300,7 @@ function _compute_full_solution_schur(pn_solv::PNSchurImplicitMidpointSolver)
 
     full_p = @view(pn_solv.sol[1:np])
     full_m = @view(pn_solv.sol[np+1:np+nm])
-    full_mm = reshape(full_m, (nLm, nRm))
+    # full_mm = reshape(full_m, (nLm, nRm))
 
     # bp = reshape(@view(pn_solv.b[1:np]), (nLp, nRp))
     # bm = reshape(@view(pn_solv.b[np+1:np+nm]), (nLm, nRm))
@@ -310,7 +310,7 @@ function _compute_full_solution_schur(pn_solv::PNSchurImplicitMidpointSolver)
     full_m .= @view(pn_solv.rhs[np+1:np+nm])
 
     # _mul_pm!(full_mm, pn_solv.A_schur.A, reshape(@view(pn_solv.lin_solver.x[:]), (nLp, nRp)), -1.0)
-    mul!(full_mm, DMatrix(pn_semi.∇pm, (transpose(Ωpmd) for Ωpmd in pn_semi.Ωpm), mat_view(pn_solv.tmp, nLm, nRp)), reshape(@view(pn_solv.lin_solver.x[:]), (nLp, nRp)), -pn_solv.b[1], true)
+    mul!(full_m, DMatrix(pn_semi.∇pm, (transpose(Ωpmd) for Ωpmd in pn_semi.Ωpm), pn_solv.b[1], mat_view(pn_solv.tmp, nLm, nRp)), pn_solv.lin_solver.x, -1.0, true)
 
     full_m .= full_m ./ pn_solv.D
 end

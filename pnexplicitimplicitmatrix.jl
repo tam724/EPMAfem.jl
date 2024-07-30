@@ -1,6 +1,5 @@
 import LinearAlgebra: mul!
 
-
 # for less code..
 macro parametric_type(type_name, fields...)
     # Generate type parameters as symbols T1, T2, ...
@@ -24,54 +23,59 @@ end
 """
     computes Y = sum_z ρ[z] * X * (a[z] * I + sum_i c[z][i] k[z][i]) * α + β * Y
 """
-function LinearAlgebra.mul!(Y::AbstractMatrix, (; ρ, k, a, c, Tmp1, Tmp2)::ZMatrix{R, K, A, C, T1, T2}, X::AbstractMatrix, α::Number, β::Number) where {R, K, A, C, T1, T2<:Diagonal}
-    # Y = reshape()
-    rmul!(Y, β)
+function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMatrix{R, K, A, C, T1, T2}, x::AbstractVector, α::Number, β::Number) where {R, K, A, C, T1, T2<:Diagonal}
+    nL1, nL2 = size(first(ρ))
+    nR1, nR2 = size(first(first(k)))
+    rmul!(y, β)
 
     for (ρz, kz, az, cz) in zip(ρ, k, a, c)
-        mul!(Tmp1, ρz, X, true, false)
+        mul!(Tmp1, ρz, reshape(x, (nL2, nR1)), true, false)
         # first compute the sum of the kps and I (should be Diagonal)
         fill!(Tmp2.diag, az)
         for (kzi, czi) in zip(kz, cz)
             @assert kzi isa Diagonal
             axpy!(czi, kzi.diag, Tmp2.diag)
         end
-        mul!(Y, Tmp1, Tmp2, α, true)
+        mul!(reshape(y, (nL1, nR2)), Tmp1, Tmp2, α, true)
     end
 end
 
 """
     computes Y = sum_z ρ[z] * X * (a[z] * I + sum_i c[z][i] k[z][i]) * α + β * Y
 """
-function LinearAlgebra.mul!(Y::AbstractMatrix, (; ρ, k, a, c, Tmp1, Tmp2)::ZMatrix{R, K, A, C, T1, T2}, X::AbstractMatrix, α::Number, β::Number) where {R, K, A, C, T1, T2}
-    rmul!(Y, β)
+function LinearAlgebra.mul!(y::AbstractVector, (; ρ, k, a, c, Tmp1, Tmp2)::ZMatrix{R, K, A, C, T1, T2}, x::AbstractVector, α::Number, β::Number) where {R, K, A, C, T1, T2}
+    nL1, nL2 = size(first(ρ))
+    nR1, nR2 = size(first(first(k)))
+    rmul!(y, β)
 
     for (ρz, kz, az, cz) in zip(ρ, k, a, c)
-        mul!(Tmp1, ρz, X, true, false)
+        mul!(Tmp1, ρz, reshape(x, (nL2, nR1)), true, false)
         # first compute the sum of the kps and I (should be Diagonal)
         fill!(Tmp2, az)
         for (kzi, czi) in zip(kz, cz)
             axpy!(czi, kzi, Tmp2)
         end
-        mul!(Y, Tmp1, Tmp2, α, true)
+        mul!(reshape(y, (nL1, nR2)), Tmp1, Tmp2, α, true)
     end
 end
 
-@parametric_type DMatrix l r Tmp1
+@parametric_type DMatrix l r b Tmp1
 
 """
-    computes Y = sum_d l[d] * X  * r[d] * α + β * Y
+    computes Y = sum_d l[d] * X  * r[d] * b * α + β * Y
 """
-function LinearAlgebra.mul!(Y::AbstractMatrix, (; l, r, Tmp1)::DMatrix{L, R, T1}, X::AbstractMatrix, α::Number, β::Number) where {L, R, T1}
-    rmul!(Y, β)
+function LinearAlgebra.mul!(y::AbstractVector, (; l, r, b, Tmp1)::DMatrix{L, R, T1}, x::AbstractVector, α::Number, β::Number) where {L, R, T1}
+    nL1, nL2 = size(first(l))
+    nR1, nR2 = size(first(r))
 
+    rmul!(y, β)
     for (ld, rd) in zip(l, r)
-        mul!(Tmp1, ld, X, true, false)
-        mul!(Y, Tmp1, rd, α, true)
+        mul!(Tmp1, ld, reshape(x, (nL2, nR1)), true, false)
+        mul!(reshape(y, (nL1, nR2)), Tmp1, rd, b*α, true)
     end
 end
 
-""" Constructs a view into temp with matrix size (nL, nR)"""
+""" Constructs a view into tmp with matrix size (nL, nR)"""
 function mat_view(tmp, nL, nR)
     return reshape(@view(tmp[1:nL*nR]), (nL, nR))
 end
@@ -93,106 +97,41 @@ end
 function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, kp, km, Ωpm, absΩp, a, b, c, tmp, tmp2)::FullBlockMat, x::AbstractVector, α::Number, β::Number)
     nLm, nLp = size(first(∇pm))
     nRm, nRp = size(first(Ωpm))
-    # nLm = size(first(ρm), 1)
-    # nRm = size(first())
-    # ((nLp, nLm), (nRp, nRm)) = A.pn_semi.size
+
     np = nLp*nRp
     nm = nLm*nRm
 
-    Xp = reshape(@view(x[1:np]), (nLp, nRp))
-    Xm = reshape(@view(x[np+1:np+nm]), (nLm, nRm))
-
-    Yp = reshape(@view(y[1:np]), (nLp, nRp))
-    Ym = reshape(@view(y[np+1:np+nm]), (nLm, nRm))
-
     # the first writes into Yp and Ym have to use β, the others add to the previous
     # pp
-    mul!(Yp, ZMatrix(ρp, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), Xp, α, β)
-    mul!(Yp, DMatrix(∂p, absΩp, mat_view(tmp, nLp, nRp)), Xp, b*α, true)
+    mul!(@view(y[1:np]), ZMatrix(ρp, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), @view(x[1:np]), α, β)
+    mul!(@view(y[1:np]), DMatrix(∂p, absΩp, b, mat_view(tmp, nLp, nRp)), @view(x[1:np]), α, true)
     # mp
-    mul!(Yp, DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, mat_view(tmp, nLp, nRm)), Xm, b*α, true)
+    mul!(@view(y[1:np]), DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b, mat_view(tmp, nLp, nRm)), @view(x[np+1:np+nm]), α, true)
 
     # mm
-    mul!(Ym, ZMatrix(ρm, km, (-a_ for a_ in a), ((-c_ for c_ in cz) for cz in c), mat_view(tmp, nLm, nRm), Diagonal(@view(tmp2[1:nRm]))), Xm, α, β)
+    mul!(@view(y[np+1:np+nm]), ZMatrix(ρm, km, (-a_ for a_ in a), ((-c_ for c_ in cz) for cz in c), mat_view(tmp, nLm, nRm), Diagonal(@view(tmp2[1:nRm]))), @view(x[np+1:np+nm]), α, β)
     # pm
-    mul!(Ym, DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), mat_view(tmp, nLm, nRp)), Xp, b*α, true)
+    mul!(@view(y[np+1:np+nm]), DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b, mat_view(tmp, nLm, nRp)), @view(x[1:np]), α, true)
 end
 
 ## SCHUR STUFF
-# struct PNSchurImplicitMatrix{T, V<:AbstractVector{T}, TA<:PNExplicitImplicitMatrix{T, V}} <: AbstractMatrix{T}
-#     A::TA
-#     D::V
-#     tmp::V
-# end
-
-# function Base.getindex(A_schur::PNSchurImplicitMatrix{T}, I::Vararg{Int, 2}) where T
-#     return NaN
-# end
-
-# function pn_schurimplicitmatrix(A::PNExplicitImplicitMatrix{T, V}) where {T, V}
-#     ((nLp, nLm), (nRp, nRm)) = A.pn_semi.size
-#     return PNSchurImplicitMatrix(
-#         A,
-#         V(undef, nLm*nRm),
-#         V(undef, nLm*nRm)
-#     )
-# end
-
-# function Base.size(A_schur::PNSchurImplicitMatrix, i)
-#     i < 1 && error("dimension index out of range")
-#     if i == 1 || i == 2
-#         ((nLp, _), (nRp, _)) = A_schur.A.pn_semi.size
-#         return nLp*nRp
-#     else
-#         return 1
-#     end
-# end
-# Base.size(A_schur::PNSchurImplicitMatrix) = (size(A_schur, 1), size(A_schur, 2))
-
-
-
-# function mul!(C::AbstractVector, A::PNSchurImplicitMatrix, B::AbstractVector, α::Number, β::Number)
-#     ((nLp, nLm), (nRp, nRm)) = A.A.pn_semi.size
-
-#     Bp = reshape(@view(B[:]), (nLp, nRp))
-#     Cp = reshape(@view(C[:]), (nLp, nRp))
-
-#     rmul!(Cp, β)
-
-#     # tmp_pp = reshape(@view(A.A.tmp[1:nLp*nRp]), (nLp, nRp))
-#     # tmp_mp = reshape(@view(A.A.tmp[1:nLm*nRp]), (nLm, nRp))
-#     # tmp_pm = reshape(@view(A.A.tmp[1:nLp*nRm]), (nLp, nRm))
-#     # tmp_mm = reshape(@view(A.A.tmp[1:nLm*nRm]), (nLm, nRm))
-#     # tmp2_p = @view(A.A.tmp2[1:nRp])
-
-#     A_tmp_m = reshape(@view(A.tmp[1:nLm*nRm]), (nLm, nRm))
-
-#     # this operator Cp = mp ∘ D-1 ∘ pm(Bp) is still quite sparse. maybe it is reasonable to construct it once before the krylov loop
-#     fill!(A_tmp_m, zero(eltype(A_tmp_m)))
-#     _mul_pm!(A_tmp_m, A.A, Bp, 1.0)
-#     @view(A.tmp[1:nLm*nRm]) ./= A.D
-#     _mul_mp!(Cp, A.A, A_tmp_m, -α)
-
-#     _mul_pp!(Cp, A.A, Bp, α)
-# end
-
 @parametric_type SchurBlockMat ρp ∇pm ∂p kp Ωpm absΩp D a b c tmp tmp2 tmp3
 
 function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, kp, Ωpm, absΩp, D, a, b, c, tmp, tmp2, tmp3)::SchurBlockMat, x::AbstractVector, α::Number, β::Number)
     nLm, nLp = size(first(∇pm))
     nRm, nRp = size(first(Ωpm))
 
-    Xp = reshape(@view(x[:]), (nLp, nRp))
-    Yp = reshape(@view(y[:]), (nLp, nRp))
+    # Xp = reshape(@view(x[:]), (nLp, nRp))
+    # Yp = reshape(@view(y[:]), (nLp, nRp))
 
-    rmul!(Yp, β)
+    rmul!(y, β)
 
     
     # this operator Cp = mp ∘ D-1 ∘ pm(Bp) is still quite sparse. maybe it is reasonable to construct it once before the krylov loop
     fill!(mat_view(tmp3, nLm, nRm), zero(eltype(tmp3)))
     # pm 
     # _mul_pm!(A_tmp_m, A.A, Bp, 1.0)
-    mul!(mat_view(tmp3, nLm, nRm), DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), mat_view(tmp, nLm, nRp)), Xp, b, false)
+    mul!(tmp3, DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b, mat_view(tmp, nLm, nRp)), x, true, false)
     
     # D^-1
     # ldiv!(D, @view(tmp3[1:nLm*nRm]))
@@ -201,12 +140,12 @@ function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, kp, Ωpm, absΩp, D, a, b, 
     
     # mp
     # _mul_mp!(Cp, A.A, A_tmp_m, -α)
-    mul!(Yp, DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, mat_view(tmp, nLp, nRm)), mat_view(tmp3, nLm, nRm), -b*α, β)
+    mul!(y, DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b, mat_view(tmp, nLp, nRm)), tmp3, -α, β)
 
 
     # _mul_pp!(Cp, A.A, Bp, α)
-    mul!(Yp, ZMatrix(ρp, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), Xp, α, true)
-    mul!(Yp, DMatrix(∂p, absΩp, mat_view(tmp, nLp, nRp)), Xp, b*α, true)
+    mul!(y, ZMatrix(ρp, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), x, α, true)
+    mul!(y, DMatrix(∂p, absΩp, b, mat_view(tmp, nLp, nRp)), x, α, true)
 end
 
 function block_size(SBM::SchurBlockMat)
