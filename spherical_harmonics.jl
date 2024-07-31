@@ -5,6 +5,8 @@ module SphericalHarmonicsMatrices
     using HCubature
     using LinearAlgebra
     using LegendrePolynomials
+    using Serialization
+    using Logging
 
 
     ## advection matrices
@@ -224,7 +226,18 @@ module SphericalHarmonicsMatrices
         return A
     end
 
-    function assemble_boundary_matrix(N, ::Val{D}, parity, nd::Val{ND}) where {D, ND}
+    function compute_boundary_matrix_entry(D, m1, m2)
+        function integrand((θ, ϕ))
+            abs_Ω = abs((sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))[D])
+            # Y = computeYlm(θ, ϕ, lmax=max(m1[1], m2[1]), SHType=SphericalHarmonics.RealHarmonics())
+            Y1 = SphericalHarmonics.sphericalharmonic(θ, ϕ, m1[1], m1[2], SphericalHarmonics.RealHarmonics())
+            Y2 = SphericalHarmonics.sphericalharmonic(θ, ϕ, m2[1], m2[2], SphericalHarmonics.RealHarmonics())
+            return abs_Ω * (Y1 * Y2)
+        end
+        return hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π), rtol=1e-5, atol=1e-5)
+    end
+
+    function assemble_boundary_matrix_old(N, ::Val{D}, parity, nd::Val{ND}) where {D, ND}
         function integrand((θ, ϕ))
             abs_Ω = abs((sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))[D])
             Y = computeYlm(θ, ϕ, lmax=N, SHType=SphericalHarmonics.RealHarmonics())
@@ -271,7 +284,16 @@ module SphericalHarmonicsMatrices
         return x <= 0.0 ? x : 0.0
     end
 
-    function assemble_direction_boundary(N, g_Ω, n, nd::Val{ND}) where {ND}
+    function compute_direction_boundary_entry(n, g_Ω, m)
+        function integrand((θ, ϕ))
+            Ω = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
+            Y = SphericalHarmonics.sphericalharmonic(θ, ϕ, m[1], m[2], SphericalHarmonics.RealHarmonics())
+            return cut_pos(dot(Ω, n))*g_Ω(Ω)*Y
+        end
+        return hcubature(x -> integrand(x)*sin(x[1]), (0, 0), (π, 2π), rtol=1e-5, atol=1e-5)
+    end
+
+    function assemble_direction_boundary_old(N, g_Ω, n, nd::Val{ND}) where {ND}
         eo_moms = get_eo_moments(N, nd)
         function integrand((θ, ϕ))
             Ω = (sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
@@ -284,7 +306,59 @@ module SphericalHarmonicsMatrices
         return (p=[b[i] for (i, m) ∈ enumerate(eo_moms) if is_even(m...)], m=spzeros(length([m for m in eo_moms if is_odd(m...)])))
     end
     
-    export assemble_transport_matrix, assemble_boundary_matrix, assemble_scattering_matrices, assemble_direction_source, assemble_direction_boundary
+    export assemble_transport_matrix, assemble_scattering_matrices
+end
+
+
+function assemble_boundary_matrix(N, ::Val{D}, parity, nd::Val{ND}) where {D, ND}
+    filename = "boundary_matrix_dict.jls"
+    boundary_matrix_dict = isfile(filename) ? Serialization.deserialize(filename) : Dict{Tuple{Int64, Tuple{Int64, Int64}, Tuple{Int64, Int64}}, Float64}()
+    @assert parity == :pp
+    even_moments = [m for m ∈ SphericalHarmonicsMatrices.get_eo_moments(N, nd) if SphericalHarmonicsMatrices.is_even(m...)]
+    A = zeros(length(even_moments), length(even_moments))
+    for (i, (l, k)) = enumerate(even_moments)
+        for (j, (l_, k_)) = enumerate(even_moments)
+            if !haskey(boundary_matrix_dict, (D, (l, k), (l_, k_))) && !haskey(boundary_matrix_dict, (D, (l_, k_), (l, k)))
+                a, error = SphericalHarmonicsMatrices.compute_boundary_matrix_entry(D, (l, k), (l_, k_))
+                @info "computed and stored ∫_S^2 |Ω_$(D)| Y_$(l)^$k Y_$(l_)^$(k_) dΩ = $(a) with error of $(error)."
+                boundary_matrix_dict[(D, (l, k), (l_, k_))] = a
+                Serialization.serialize(filename, boundary_matrix_dict)
+            end
+            if haskey(boundary_matrix_dict, (D, (l, k), (l_, k_)))
+                A[i, j] = boundary_matrix_dict[(D, (l, k), (l_, k_))]
+            elseif haskey(boundary_matrix_dict, (D, (l_, k_), (l, k)))
+                A[i, j] = boundary_matrix_dict[(D, (l_, k_), (l, k))]
+            end
+        end
+    end
+    return A
+end
+
+function assemble_direction_boundary(N, g_Ω, n, nd::Val{ND}) where {ND}
+    even_moments = [m for m ∈ SphericalHarmonicsMatrices.get_eo_moments(N, nd) if SphericalHarmonicsMatrices.is_even(m...)]
+    odd_moments = [m for m ∈ SphericalHarmonicsMatrices.get_eo_moments(N, nd) if SphericalHarmonicsMatrices.is_odd(m...)]
+    filename = "direction_boundary_dict.jls"
+    direction_boundary_dict = isfile(filename) ? Serialization.deserialize(filename) : Dict{Tuple{BeamDirection, SVector{3, Float64}, Tuple{Int64, Int64}}, Float64}()
+    bp = zeros(length(even_moments))
+    for (i, (l, k)) = enumerate(even_moments)
+        if !haskey(direction_boundary_dict, (g_Ω, n, (l, k)))
+            a, error = SphericalHarmonicsMatrices.compute_direction_boundary_entry(n, g_Ω, (l, k))
+            @info "computed and stored $(a) with error of $(error)."
+            direction_boundary_dict[(g_Ω, n, (l, k))] = a
+            Serialization.serialize(filename, direction_boundary_dict)
+        end
+        bp[i] = direction_boundary_dict[(g_Ω, n, (l, k))]
+    end
+    return (p=bp, m=spzeros(length(odd_moments)))
+end
+
+# there is a legacy version of this in SphericalHarmonicsMatrices
+function assemble_direction_source(N, ::IsotropicExtraction, nd::Val{ND}) where ND
+    even_moments = [m for m ∈ SphericalHarmonicsMatrices.get_eo_moments(N, nd) if SphericalHarmonicsMatrices.is_even(m...)]
+    odd_moments = [m for m ∈ SphericalHarmonicsMatrices.get_eo_moments(N, nd) if SphericalHarmonicsMatrices.is_odd(m...)]
+    bp = zeros(length(even_moments))
+    bp[1] = 1.0
+    return (p=bp, m=zeros(length(odd_moments)))
 end
 #### FOR TESTING
 

@@ -19,12 +19,12 @@ using BenchmarkTools
 using StaticArrays
 using InteractiveUtils
 
+include("pnequations.jl")
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
 #include("kroneckerblockmatrix.jl")
 #include("pnsystemmatrix.jl")
 include("epma-fem.jl")
-include("pnequations.jl")
 include("overrides.jl")
 
 include("pnsemidiscretization.jl")
@@ -41,22 +41,22 @@ pn_equ = dummy_equations(
     [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]],    # beam direction. Careful, this is (x, y, z), not (z, x, y)
     [0.1, 0.2])                                                 # extraction energy 
 
-n_z = 100
-model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
-pn_sys = build_solver(model, 35, 2)
+n_z = 50
+model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
+pn_sys = build_solver(model, 11, 2)
 
-pn_semi = pn_semidiscretization(pn_sys, pn_equ)
+pn_semi = pn_semidiscretization(pn_sys, pn_equ, true)
 
 pn_semi_cu = cuda(pn_semi)
 
-N = 100
+N = 50
 pn_solver_exp = pn_expliciteulersolver(pn_semi, N)
 pn_solver_exp_cu = pn_expliciteulersolver(pn_semi_cu, N)
 
 # initialize!(pn_solver_exp)
 # @time step_forward!(pn_solver_exp, 0.86, 0.85, (1, 1, 1));
 
-pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi_cu, N, 20)
+pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi_cu, N, 10)
 pn_solver_imp = pn_fullimplicitmidpointsolver(pn_semi, N)
 pn_solver_imp_cu = pn_fullimplicitmidpointsolver(pn_semi_cu, N)
 pn_solver_imp_schur = pn_schurimplicitmidpointsolver(pn_semi, N)
@@ -115,12 +115,12 @@ end
 @time doit!(ψs1, pn_solver_exp, n_basis)
 using MKLSparse
 
-CUDA.@profile doit!(ψs1, pn_solver_dlr, n_basis)
+doit!(ψs1, pn_solver_dlr, n_basis)
 @time doit!(ψs2, pn_solver_imp_cu, n_basis)
 
-doit!(ψs3, pn_solver_imp_schur, n_basis)
-doit!(ψs2, pn_solver_imp, n_basis)
-@time doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
+@profview doit!(ψs3, pn_solver_imp_schur, n_basis)
+@profview doit!(ψs2, pn_solver_imp, n_basis)
+doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
 
 @time step_forward!(pn_solver_imp_schur, 0.9, 0.91, (1, 5, 2))
 @time step_forward!(pn_solver_imp, 0.9, 0.91, (1, 5, 2))
@@ -165,11 +165,30 @@ end fps=20
     z_coords = range(0.0, 1.0, length=n_z+1)
     x_coords = range(-1.0, 1.0, length=2*n_z+1)
     y_coords = range(-1.0, 1.0, length=2*n_z+1)
-    temp_4 = reshape(@view(ψs4[1:n_basis.x.p, i]), (n_z+1, 2*n_z+1, 2*n_z+1))
+    temp_4 = reshape(@view(ψs1[1:n_basis.x.p, i]), (n_z+1, 2*n_z+1, 2*n_z+1))
 
     heatmap(x_coords, y_coords, -temp_4[1, :, :], clim=(0, 0.8))
     savefig("plots/$(i).pdf")
 end
 
+using GLMakie
+Makie.inline!(false)
+temp_4 = reshape(@view(ψs4[1:n_basis.x.p, 10]), (n_z+1, 2*n_z+1, 2*n_z+1))
+# GLMakie.volume(temp_4)
+# _, _, pl = GLMakie.contour(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]))
+_, _, pl = GLMakie.contour(x_coords[1:51], y_coords[1:51], z_coords[:], max.(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]), 0.0), levels=range(0.01, 0.1, length=20))
+# _, _, pl = GLMakie.volume(x_coords[1:51], y_coords[1:51], z_coords[:], max.(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]), 0.0), algorithm=:iso, isorange=0.1, isovalue=0.1)
+
+pl2 = GLMakie.contour!(x_coords[52:end], y_coords[1:51], z_coords[:], permutedims(temp_4[:, 52:end, 1:51], [2, 3, 1]), levels=range(0.01, 0.1, length=20))
+pl3 = GLMakie.contour!(x_coords[1:51], y_coords[52:end], z_coords[:], permutedims(temp_4[:, 1:51,52:end], [2, 3, 1]), levels=range(0.01, 0.1, length=20))
+# _, _, pl = GLMakie.contour!(permutedims(temp_4[:, 52:end, 1:51], [2, 3, 1]))
+
+for i in repeat(1:50, 10)
+    temp_4 = reshape(@view(ψs4[1:n_basis.x.p, i]), (n_z+1, 2*n_z+1, 2*n_z+1))
+    pl[4] = max.(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]), 0.0)
+    pl2[4] = max.(permutedims(temp_4[:, 52:end, 1:51], [2, 3, 1]), 0.0)
+    pl3[4] = max.(permutedims(temp_4[:, 1:51,52:end], [2, 3, 1]), 0.0)
+    sleep(0.1)
+end
 surface(x_coords, y_coords, -reshape(@view(ψs4[1:n_basis.x.p, N÷ 2]), (n_z+1, 2*n_z+1, 2*n_z+1))[1, :, :])
 

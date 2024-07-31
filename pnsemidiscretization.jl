@@ -64,7 +64,7 @@ function cuda(pn_semi::PNSemidiscretization) # TODO: add type argument
     )
 end
 
-function pn_semidiscretization(pn_sys, pn_equ)
+function pn_semidiscretization(pn_sys, pn_equ, skip_projections=false)
     U = pn_sys.U    
     V = pn_sys.V
     model = pn_sys.model
@@ -73,22 +73,29 @@ function pn_semidiscretization(pn_sys, pn_equ)
     # TODO!!! (support multiple scattering kernels per element)
     Kpp, Kmm = assemble_scattering_matrices(pn_sys.PN, μ -> scattering_kernel(pn_equ, μ, 1, 1), nd(pn_sys))
 
-    ρ_to_ρp = build_ρ_to_ρp_projection(pn_sys)
-    ρ_to_ρm = build_ρ_to_ρm_projection(pn_sys)
+    ρ_to_ρp = sparse(zeros(1, 1))
+    ρ_to_ρm = Diagonal(zeros(1))
+    ρp = nothing
+    ρm = nothing
+    if !skip_projections
+        ρ_to_ρp = build_ρ_to_ρp_projection(pn_sys)
+        ρ_to_ρm = build_ρ_to_ρm_projection(pn_sys)
 
-    ρs = [project_function(U[2], model, x -> mass_concentrations(pn_equ, x, e)).free_values for e in 1:number_of_elements(pn_equ)]
+        ρs = [project_function(U[2], model, x -> mass_concentrations(pn_equ, x, e)).free_values for e in 1:number_of_elements(pn_equ)]
 
-    temp = assemble_bilinear(∫ρuv, (x -> 1.0, model), U[1], V[1]) # only get the sparsity pattern of ρp and reuse the colptr and rowval vectors
-    ρp_colptr = Vector(temp.colptr)
-    ρp_rowval = Vector(temp.rowval)
-    ρp = [SparseMatrixCSC{Float64, Int64}(n_basis.x.p, n_basis.x.p, ρp_colptr, ρp_rowval, zeros(Float64, length(temp.nzval))) for _ in 1:number_of_elements(pn_equ)]
-    ρm = [Diagonal(zeros(Float64, n_basis.x.m)) for _ in 1:number_of_elements(pn_equ)] 
-    for e in 1:number_of_elements(pn_equ)
-        mul!(ρp[e].nzval, ρ_to_ρp, ρs[e])
-        mul!(ρm[e].diag, ρ_to_ρm, ρs[e])
+        temp = assemble_bilinear(∫ρuv, (x -> 1.0, model), U[1], V[1]) # only get the sparsity pattern of ρp and reuse the colptr and rowval vectors
+        ρp_colptr = Vector(temp.colptr)
+        ρp_rowval = Vector(temp.rowval)
+        ρp = [SparseMatrixCSC{Float64, Int64}(n_basis.x.p, n_basis.x.p, ρp_colptr, ρp_rowval, zeros(Float64, length(temp.nzval))) for _ in 1:number_of_elements(pn_equ)]
+        ρm = [Diagonal(zeros(Float64, n_basis.x.m)) for _ in 1:number_of_elements(pn_equ)] 
+        for e in 1:number_of_elements(pn_equ)
+            mul!(ρp[e].nzval, ρ_to_ρp, ρs[e])
+            mul!(ρm[e].diag, ρ_to_ρm, ρs[e])
+        end
+    else
+        ρp = [assemble_bilinear(∫ρuv, (x -> mass_concentrations(pn_equ, x, e), model), U[1], V[1]) for e in 1:number_of_elements(pn_equ)]
+        ρm = [Diagonal(Vector(diag(assemble_bilinear(∫ρuv, (x -> mass_concentrations(pn_equ, x, e), model), U[2], V[2])))) for e in 1:number_of_elements(pn_equ)] 
     end
-
-    # odd (m) space basis functions normalization
     return PNSemidiscretization(
         ((n_basis.x.p, n_basis.x.m), (n_basis.Ω.p, n_basis.Ω.m)),
         pn_equ,
@@ -112,11 +119,10 @@ function pn_semidiscretization(pn_sys, pn_equ)
 
         # only discretize the even parts (and store as matrices (with 1x or x1 dimension) then CUDA works):
         [sparse(reshape(assemble_linear(∫nzgv, ((x -> beam_position(pn_equ, x, j)), model), U[1], V[1]), (n_basis.x.p, 1),)) for j in 1:number_of_beam_positions(pn_equ)],
-        [Matrix(reshape(assemble_direction_boundary(pn_sys.PN, (Ω -> beam_direction(pn_equ, Ω, k)), [0.0, 0.0, 1.0], nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_beam_directions(pn_equ)],
+        [Matrix(reshape(assemble_direction_boundary(pn_sys.PN, beam_direction(pn_equ, k), @SVector[0.0, 0.0, 1.0], nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_beam_directions(pn_equ)],
 
-        # this is a placeholder for μ+ with ρ = 1
         [Matrix(reshape(assemble_linear(∫μv, (x -> extraction_position(pn_equ, x, e), model), U[1], V[1]), (n_basis.x.p, 1))) for e in 1:number_of_extraction_positions(pn_equ)],
-        [Matrix(reshape(assemble_direction_source(pn_sys.PN, (Ω -> extraction_direction(pn_equ, Ω, k)), nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_extraction_directions(pn_equ)],
+        [Matrix(reshape(assemble_direction_source(pn_sys.PN, extraction_direction(pn_equ, k), nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_extraction_directions(pn_equ)],
 
         ρ_to_ρp,
         ρ_to_ρm
@@ -179,7 +185,7 @@ end
 
 
 function build_ρ_to_ρp_projection(pn_sys)
-    f = project_function(pn_sys.U[2], pn_sys.model, x -> 0.0)
+    f = FEFunction(pn_sys.U[2], zeros(num_free_dofs(pn_sys.U[2])))
     I = Int64[]
     J = Int64[]
     V = Float64[]

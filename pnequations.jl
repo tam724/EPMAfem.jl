@@ -25,8 +25,6 @@ number_of_beam_directions(::PNEquations{NE, Ni, Ngϵ, Ngx, NgΩ}) where {NE, Ni,
 number_of_extraction_positions(::PNEquations{NE}) where NE = NE
 number_of_extraction_directions(::PNEquations) = 1
 
-extraction_direction(::PNEquations, Ω, k) = 1
-
 # SOME FUNCTIONS
 
 function expm2(x::Number, μ::Number, σ::Number)
@@ -38,13 +36,25 @@ function expm2(x, μ, σ)
     return exp(-sum((0.5*(x_ - μ_)^2/σ_ for (x_, μ_, σ_) in zip(x, μ, σ))))
 end
 
+# use a struct that we can dispatch on (to precompute stuff)
+abstract type BeamDirection end
+struct VMFBeam <: BeamDirection
+    direction::SVector{3, Float64}
+    κ::Float64
+end
+(vmf_beam::VMFBeam)(Ω) = pdf(VonMisesFisher(Vector(vmf_beam.direction), vmf_beam.κ), [Ω...])
+
+abstract type ExtractionDirection end
+struct IsotropicExtraction <: ExtractionDirection end
+(::IsotropicExtraction)(Ω) = 1.0
+
 # SOME DUMMY VALUES TO TEST THE CODE WITH
 
 struct DummyPNEquations{Ngx, Ngϵ, NgΩ} <: PNEquations{2, 1, Ngx, Ngϵ, NgΩ, 2}
     scattering_norm_factor::Float64
     gϵpos::Vector{Float64}
     gxpos::Vector{Float64}
-    gΩpos::Vector{Vector{Float64}}
+    gΩ::Vector{BeamDirection}
 
     μϵpos::Vector{Float64}
 end
@@ -55,7 +65,7 @@ function dummy_equations(gϵpos, gxpos, gΩpos, μϵpos)
         scattering_norm_factor,
         gϵpos,
         gxpos,
-        normalize.(gΩpos),
+        [VMFBeam(normalize(gΩp), 10.0) for gΩp ∈ gΩpos],
         μϵpos)
 end
 
@@ -88,11 +98,13 @@ function beam_position(eq::DummyPNEquations, x, j)
         return 0.0
     end
 end
-beam_direction(eq::DummyPNEquations, Ω, k) = pdf(VonMisesFisher(normalize(eq.gΩpos[k]), 10.0), [Ω...])
+
+beam_direction(eq::DummyPNEquations, k) = eq.gΩ[k]
 
 extraction_energy(eq::DummyPNEquations, ϵ, e) = (ϵ-eq.μϵpos[e] > 0.0) ? sqrt(ϵ-eq.μϵpos[e]) : 0.0
 
 extraction_position(eq::DummyPNEquations, x, e) = mass_concentrations(eq, x, e) # add absorption here !
+extraction_direction(::PNEquations, k) = IsotropicExtraction()
 
 function mass_concentrations(::DummyPNEquations, x, e)
     z_ = x[1]
