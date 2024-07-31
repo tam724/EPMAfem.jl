@@ -94,7 +94,7 @@ function Base.size(FBM::FullBlockMat)
     return (n, n)
 end
 
-function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, kp, km, Ωpm, absΩp, a, b, c, tmp, tmp2)::FullBlockMat, x::AbstractVector, α::Number, β::Number)
+function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, kp, km, Ωpm, absΩp, a, b, c, tmp, tmp2)::FullBlockMat{Tρp, Tρm, T∇pm, T∂p, TIp, TIm}, x::AbstractVector, α::Number, β::Number) where {Tρp, Tρm, T∇pm, T∂p, TIp<:Diagonal, TIm<:Diagonal}
     nLm, nLp = size(first(∇pm))
     nRm, nRp = size(first(Ωpm))
 
@@ -108,8 +108,28 @@ function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, 
     # mp
     mul!(@view(y[1:np]), DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b, mat_view(tmp, nLp, nRm)), @view(x[np+1:np+nm]), α, true)
 
-    # mm (minus because we use negative basis functions for the odd direction )
+    # mm
     mul!(@view(y[np+1:np+nm]), ZMatrix(ρm, Im, km, a, c, mat_view(tmp, nLm, nRm), Diagonal(@view(tmp2[1:nRm]))), @view(x[np+1:np+nm]), α, β)
+    # pm
+    mul!(@view(y[np+1:np+nm]), DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b, mat_view(tmp, nLm, nRp)), @view(x[1:np]), α, true)
+end
+
+function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, kp, km, Ωpm, absΩp, a, b, c, tmp, tmp2)::FullBlockMat, x::AbstractVector, α::Number, β::Number)
+    nLm, nLp = size(first(∇pm))
+    nRm, nRp = size(first(Ωpm))
+
+    np = nLp*nRp
+    nm = nLm*nRm
+
+    # the first writes into Yp and Ym have to use β, the others add to the previous
+    # pp
+    mul!(@view(y[1:np]), ZMatrix(ρp, Ip, kp, a, c, mat_view(tmp, nLp, nRp), reshape(@view(tmp2[1:nRp*nRp]), (nRp, nRp))), @view(x[1:np]), α, β)
+    mul!(@view(y[1:np]), DMatrix(∂p, absΩp, b, mat_view(tmp, nLp, nRp)), @view(x[1:np]), α, true)
+    # mp
+    mul!(@view(y[1:np]), DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b, mat_view(tmp, nLp, nRm)), @view(x[np+1:np+nm]), α, true)
+
+    # mm
+    mul!(@view(y[np+1:np+nm]), ZMatrix(ρm, Im, km, a, c, mat_view(tmp, nLm, nRm), reshape(@view(tmp2[1:nRm*nRm]), (nRm, nRm))), @view(x[np+1:np+nm]), α, β)
     # pm
     mul!(@view(y[np+1:np+nm]), DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b, mat_view(tmp, nLm, nRp)), @view(x[1:np]), α, true)
 end

@@ -127,6 +127,10 @@ function equations(pn_semi::PNSemidiscretization)
     return pn_semi.pn_equ
 end
 
+mat_type(pn_semi::PNSemidiscretization{T, V, M}) where {T, V, M} = M
+vec_type(pn_semi::PNSemidiscretization{T, V, M}) where {T, V, M} = V
+base_type(pn_semi::PNSemidiscretization{T, V, M}) where {T, V, M} = T
+
 function update_mass_concentrations!(pn_semi, ρs)
     for e in 1:number_of_elements(equations(pn_semi))
         mul!(pn_semi.ρp[e].nzval, pn_semi.ρ_to_ρp, ρs[e])
@@ -136,7 +140,14 @@ function update_mass_concentrations!(pn_semi, ρs)
     end
 end
 
-# i: energy, j: space, k: direction 
+# i: energy, j: space, k: direction
+function assemble_rhs!(b, vx, vΩ, d)
+    nLp = size(vx, 1)
+    nRp = size(vΩ, 2)
+    mul!(reshape(@view(b[1:nLp*nRp]), (nLp, nRp)), vx, vΩ, d, false)
+    fill!(@view(b[nLp*nRp+1:end]), zero(eltype(b)))
+end
+
 function assemble_beam_rhs!(b, pn_semi::PNSemidiscretization, ϵ, (i, j, k), α)
     ((nLp, nLm), (nRp, nRm)) = pn_semi.size
     np = nLp*nRp

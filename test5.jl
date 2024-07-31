@@ -33,6 +33,7 @@ include("pnsolver.jl")
 include("pnimplicitmidpoint.jl")
 include("pnexpliciteuler.jl")
 include("pniterators.jl")
+include("pnlowrank.jl")
 
 pn_equ = dummy_equations(
     [0.85],                                                     # beam energy
@@ -40,21 +41,22 @@ pn_equ = dummy_equations(
     [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]],    # beam direction. Careful, this is (x, y, z), not (z, x, y)
     [0.1, 0.2])                                                 # extraction energy 
 
-n_z = 60
+n_z = 100
 model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
-pn_sys = build_solver(model, 11, 2)
+pn_sys = build_solver(model, 35, 2)
 
 pn_semi = pn_semidiscretization(pn_sys, pn_equ)
 
 pn_semi_cu = cuda(pn_semi)
 
-N = 50
+N = 100
 pn_solver_exp = pn_expliciteulersolver(pn_semi, N)
 pn_solver_exp_cu = pn_expliciteulersolver(pn_semi_cu, N)
 
 # initialize!(pn_solver_exp)
 # @time step_forward!(pn_solver_exp, 0.86, 0.85, (1, 1, 1));
 
+pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi_cu, N, 20)
 pn_solver_imp = pn_fullimplicitmidpointsolver(pn_semi, N)
 pn_solver_imp_cu = pn_fullimplicitmidpointsolver(pn_semi_cu, N)
 pn_solver_imp_schur = pn_schurimplicitmidpointsolver(pn_semi, N)
@@ -112,10 +114,13 @@ end
 
 @time doit!(ψs1, pn_solver_exp, n_basis)
 using MKLSparse
-doit!(ψs1, pn_solver_imp_cu, n_basis)
+
+CUDA.@profile doit!(ψs1, pn_solver_dlr, n_basis)
+@time doit!(ψs2, pn_solver_imp_cu, n_basis)
+
 doit!(ψs3, pn_solver_imp_schur, n_basis)
 doit!(ψs2, pn_solver_imp, n_basis)
-doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
+@time doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
 
 @time step_forward!(pn_solver_imp_schur, 0.9, 0.91, (1, 5, 2))
 @time step_forward!(pn_solver_imp, 0.9, 0.91, (1, 5, 2))
