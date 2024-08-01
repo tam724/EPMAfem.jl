@@ -40,40 +40,29 @@ pn_equ = dummy_equations(
     [0.85],                                                     # beam energy
     range(-0.5, 0.5, length=10),                                # beam position
     [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]],    # beam direction. Careful, this is (x, y, z), not (z, x, y)
+    50.0,                                                      # beam concentration
     [0.1, 0.2])                                                 # extraction energy 
 
-n_z = 30
+n_z = 100
 model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
-pn_sys = build_solver(model, 11, 2)
+pn_sys = build_solver(model, 23, 2)
 
 pn_semi = pn_semidiscretization(pn_sys, pn_equ, true)
 pn_semi_cu = cuda(pn_semi)
 
-N = 50
+N = 100
 pn_solver_exp = pn_expliciteulersolver(pn_semi, N)
 pn_solver_exp_cu = pn_expliciteulersolver(pn_semi_cu, N)
 
 # initialize!(pn_solver_exp)
 # @time step_forward!(pn_solver_exp, 0.86, 0.85, (1, 1, 1));
 
-pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi, N, 10)
+pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi_cu, N, 40)
 
 pn_solver_imp = pn_fullimplicitmidpointsolver(pn_semi, N)
 pn_solver_imp_cu = pn_fullimplicitmidpointsolver(pn_semi_cu, N)
 pn_solver_imp_schur = pn_schurimplicitmidpointsolver(pn_semi, N)
 pn_solver_imp_schur_cu = pn_schurimplicitmidpointsolver(pn_semi_cu, N)
-
-initialize!(pn_solver_dlr)
-step_forward!(pn_solver_dlr, 0.86, 0.85, (1, 1, 1))
-
-# pn_solver_imp = pn_fullimplicitmidpointsolver(pn_semi_cu, (0.0, 1.0), N)
-
-# pn_semi_cu = cuda(pn_semi)
-# #pn_semi = pn_semid(pn_sys, pn_equ)
-
-# pn_solver = pn_implicitmidpointsolver(pn_semi, (0.0, 1.0))
-# pn_solver_cu = pn_implicitmidpointsolver(pn_semi_cu, (0.0, 1.0))
-
 
 n_basis = number_of_basis_functions(pn_sys)
 
@@ -99,6 +88,23 @@ end
 update_mass_concentrations!(pn_semi, ρs)
 
 ψ_cpu = zeros(n_basis.x.p)
+pranks = zeros(Int64, N)
+mranks = zeros(Int64, N)
+
+function doit!(storage, solver::PNDLRFullImplicitMidpointSolver, n_basis)
+    for (i, ϵ) in enumerate(forward(solver, (1, 5, 2)))
+        ψ = current_solution(solver)
+        pranks[i] = solver.ranks[1]
+        mranks[i] = solver.ranks[2]
+        #p = heatmap(reshape(pn_solver.b[1:n_basis.x.p], (n_z+1, 2*n_z+1)))
+        #display(p)
+        @show ϵ
+        copyto!(ψ_cpu, @view(ψ[1:n_basis.x.p]))
+        copyto!(@view(storage[:, i]), ψ_cpu)
+        # unsafe_copyto!(pointer(@view(storage[:, i])), pointer(ψ[1:n_basis.x.p]), n_basis.x.p)
+            # ϵs[i÷10] = ϵ 
+    end
+end
 
 function doit!(storage, solver, n_basis)
     for (i, ϵ) in enumerate(forward(solver, (1, 5, 2)))
@@ -114,14 +120,15 @@ function doit!(storage, solver, n_basis)
 end
 
 
+
 @time doit!(ψs1, pn_solver_exp, n_basis)
 using MKLSparse
 
-pn_solver_dlr.ranks .= [20, 20]
-@profview doit!(ψs1, pn_solver_dlr, n_basis)
-@time doit!(ψs2, pn_solver_imp_cu, n_basis)
+pn_solver_dlr.ranks .= [1, 1]
+doit!(ψs1, pn_solver_dlr, n_basis)
+doit!(ψs2, pn_solver_imp_cu, n_basis)
 
-@profview doit!(ψs3, pn_solver_imp_schur, n_basis)
+doit!(ψs3, pn_solver_imp_schur, n_basis)
 doit!(ψs2, pn_solver_imp, n_basis)
 doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
 
@@ -146,6 +153,8 @@ doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
     #plot(p1, p2)
     # # savefig("plots/$(i).pdf")
 end fps=20
+plot(pranks)
+plot!(mranks)
 
 @gif for i in 1:N
     z_coords = range(0.0, 1.0, length=n_z+1)
@@ -156,6 +165,8 @@ end fps=20
     temp_3 = reshape(@view(ψs3[1:n_basis.x.p, i]), (n_z+1, 2*n_z+1))
     temp_4 = reshape(@view(ψs4[1:n_basis.x.p, i]), (n_z+1, 2*n_z+1))
 
+
+    clims = (0, 0.15)
     p1 = Plots.heatmap(x_coords, z_coords, temp_1)
     p2 = Plots.heatmap(x_coords, z_coords, temp_2)
     p3 = Plots.heatmap(x_coords, z_coords, temp_3)

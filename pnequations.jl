@@ -59,17 +59,17 @@ struct DummyPNEquations{Ngx, Ngϵ, NgΩ} <: PNEquations{2, 1, Ngx, Ngϵ, NgΩ, 2
     μϵpos::Vector{Float64}
 end
 
-function dummy_equations(gϵpos, gxpos, gΩpos, μϵpos)
+function dummy_equations(gϵpos, gxpos, gΩpos, κ, μϵpos)
     scattering_norm_factor = 2*π*hquadrature(x -> _scattering_kernel(x), -1.0, 1.0, rtol=1e-8, atol=1e-8, maxevals=100000)[1]
     return DummyPNEquations{length(gϵpos), length(gxpos), length(gΩpos)}(
         scattering_norm_factor,
         gϵpos,
         gxpos,
-        [VMFBeam(normalize(gΩp), 10.0) for gΩp ∈ gΩpos],
+        [VMFBeam(normalize(gΩp), κ) for gΩp ∈ gΩpos],
         μϵpos)
 end
 
-_scattering_kernel(μ) = exp(-100.0*(μ-1.0)^2)
+_scattering_kernel(μ) = exp(-5.0*(μ-1.0)^2)
 
 function scattering_kernel(eq::DummyPNEquations, μ, e, i)
     # for now we ignore e and i
@@ -78,16 +78,16 @@ end
 
 function stopping_power(::DummyPNEquations, ϵ, e)
     if e == 1
-        return 1.0 + 0.1*exp(-ϵ)
+        return 1.0# + 0.1*exp(-ϵ)
     elseif e == 2
-        return 1.0 + 0.01*exp(-ϵ)
+        return 1.0# + 0.01*exp(-ϵ)
     else
         error("index too high")
     end
     return 0.0
 end
 
-scattering_cross_section(::DummyPNEquations, ϵ, e, i) = 2.0
+scattering_cross_section(::DummyPNEquations, ϵ, e, i) = 10.0
 total_scattering_cross_section(eq::DummyPNEquations, ϵ , e) = scattering_cross_section(eq, ϵ, e, 1)
 
 beam_energy(eq::DummyPNEquations, ϵ, i) = expm2(ϵ, eq.gϵpos[i], 0.04)

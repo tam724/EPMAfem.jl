@@ -419,13 +419,11 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         # K1, stats = Krylov.minres(A, rhs_K, rtol=T(1e-14), atol=T(1e-14))
         @show lin_solver_K.stats
         K = view_U(lin_solver_K.x, (nLp, nLm), (rp, rm))
-        @show size(K.Up), size(U.Up)
-        U1p = qr(K.Up).Q |> mat_type(pn_solv.pn_semi)
-        U1m = qr(K.Um).Q |> mat_type(pn_solv.pn_semi)
+        U_hatp = qr([K.Up U.Up]).Q |> mat_type(pn_solv.pn_semi)
+        U_hatm = qr([K.Um U.Um]).Q |> mat_type(pn_solv.pn_semi)
 
-        Mp = transpose(U1p)*U.Up
-        @show size(Mp)
-        Mm = transpose(U1m)*U.Um
+        M_hatp = transpose(U_hatp)*U.Up
+        M_hatm = transpose(U_hatm)*U.Um
 
     #L-step
     U = view_U(pn_solv.sol[1], (nLp, nLm), (rp, rm))
@@ -454,19 +452,19 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         Krylov.minres!(lin_solver_L, A, rhs_U, rtol=T(1e-14), atol=T(1e-14))
         # @show stats
         Lt = view_Vt(lin_solver_L.x, (nRp, nRm), (rp, rm))
-        V1p = qr(transpose(Lt.Vtp)).Q |> mat_type(pn_solv.pn_semi)
-        V1m = qr(transpose(Lt.Vtm)).Q |> mat_type(pn_solv.pn_semi)
-        Ntp = Vt.Vtp*V1p
-        Ntm = Vt.Vtm*V1m
+        V_hatp = qr([transpose(Lt.Vtp) transpose(Vt.Vtp)]).Q |> mat_type(pn_solv.pn_semi)
+        V_hatm = qr([transpose(Lt.Vtm) transpose(Vt.Vtm)]).Q |> mat_type(pn_solv.pn_semi)
+        N_hatTp = Vt.Vtp*V_hatp
+        N_hatTm = Vt.Vtm*V_hatm
         
     #S-step
-    update_Vt!(pn_proj_semi, pn_semi, (Vtp=transpose(V1p), Vtm=transpose(V1m)))
+    update_Vt!(pn_proj_semi, pn_semi, (Vtp=transpose(V_hatp), Vtm=transpose(V_hatm)))
     VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, _, _ = V_views(pn_proj_semi)
-    update_U!(pn_proj_semi, pn_semi, (Up=U1p, Um=U1m))
+    update_U!(pn_proj_semi, pn_semi, (Up=U_hatp, Um=U_hatm))
     UtρpU, UtρmU, Ut∂pU, Ut∇pmU, _, _ = U_views(pn_proj_semi)
-    lin_solver_S = get_lin_solver(pn_solv.lin_solver, rp*rp+rm*rm, rp*rp+rm*rm)
+    lin_solver_S = get_lin_solver(pn_solv.lin_solver, 2*rp*2*rp+2*rm*2*rm, 2*rp*2*rp+2*rm*2*rm)
     # assemble rhs
-        rhs_S = cuview(pn_solv.rhs, 1:rp*rp+rm*rm)
+        rhs_S = cuview(pn_solv.rhs, 1:2*rp*2*rp+2*rm*2*rm)
         # minus because we have to bring b to the right side of the equation
         gΩV = gΩV_view(pn_proj_semi, gk)
         gxU = gxU_view(pn_proj_semi, gj)
@@ -474,10 +472,10 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
         S0_vec = lin_solver_S.x
-        S0 = view_S(S0_vec, (rp, rm))
+        S0 = view_S(S0_vec, (2*rp, 2*rm))
         S0_prev = view_S(pn_solv.sol[2], (rp, rm))
-        S0.Sp .= Mp*S0_prev.Sp*Ntp
-        S0.Sm .= Mm*S0_prev.Sm*Ntm
+        S0.Sp .= M_hatp*S0_prev.Sp*N_hatTp
+        S0.Sm .= M_hatm*S0_prev.Sm*N_hatTm
         # minus because we have to bring b to the right side of the equation
         mul!(rhs_S, A, S0_vec, -1.0, 1.0)
         S0_vec = nothing
@@ -486,19 +484,34 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
         Krylov.minres!(lin_solver_S, A, rhs_S, rtol=T(1e-14), atol=T(1e-14))
         # @show stats
-        S_new = view_S(lin_solver_S.x, (rp, rm))
+        S_new = view_S(lin_solver_S.x, (2*rp, 2*rm))
+
+        P_hatp, Σ_hatp, Q_hatp = svd(S_new.Sp)
+        P_hatm, Σ_hatm, Q_hatm = svd(S_new.Sm)
+        r1p, r1m = compute_new_rank(Σ_hatp, pn_solv.max_rank), compute_new_rank(Σ_hatm, pn_solv.max_rank)
 
     # update the current solution
-    U = view_U(pn_solv.sol[1], (nLp, nLm), (rp, rm))
-    S = view_S(pn_solv.sol[2], (rp, rm))
-    Vt = view_Vt(pn_solv.sol[3], (nRp, nRm), (rp, rm))
-    U.Up .= U1p
-    U.Um .= U1m
-    S.Sp .= S_new.Sp
-    S.Sm .= S_new.Sm
-    Vt.Vtp .= transpose(V1p)
-    Vt.Vtm .= transpose(V1m)
+    U = view_U(pn_solv.sol[1], (nLp, nLm), (r1p, r1m))
+    S = view_S(pn_solv.sol[2], (r1p, r1m))
+    Vt = view_Vt(pn_solv.sol[3], (nRp, nRm), (r1p, r1m))
+    U.Up .= U_hatp*(P_hatp[:, 1:r1p])
+    U.Um .= U_hatm*(P_hatm[:, 1:r1m])
+    S.Sp .= Diagonal(Σ_hatp[1:r1p])
+    S.Sm .= Diagonal(Σ_hatm[1:r1m])
+    Vt.Vtp .= transpose(V_hatp*(Q_hatp[:, 1:r1p]))
+    Vt.Vtm .= transpose(V_hatm*(Q_hatm[:, 1:r1m]))
+    pn_solv.ranks .= [r1p, r1m]
+    @show pn_solv.ranks
     return 
+end
+
+function compute_new_rank(Σ, max_rank)
+    r1 = 1
+    Σ = Vector(Σ)
+    while sqrt(sum([σ^2 for σ ∈ Σ[r1+1:end]])) > 1e-2
+        r1 += 1
+    end
+    return min(r1, max_rank)
 end
 
 # function step_backward!(pn_solv::PNFullImplicitMidpointSolver{T}, ϵi, ϵip1, μ_idx) where T
