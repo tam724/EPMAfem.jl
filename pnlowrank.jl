@@ -104,6 +104,13 @@ function mul_buf!(Y, A, B, C, buf)
     mul!(Y, buf_mat, C, true, false)
 end
 
+function mul_buf!(Y, A, B::Diagonal, C, buf)
+    buf_mat = reshape(@view(buf[1:size(A, 1)*size(B, 2)]), (size(A, 1), size(B, 2)))
+    # mul!(buf_mat, A, B, true, false)
+    buf_mat .= A .* transpose(B.diag)
+    mul!(Y, buf_mat, C, true, false)
+end
+
 function update_Vt!(pn_proj_semi, pn_semi, (; Vtp, Vtm))
     rankp = size(Vtp, 1)
     rankm = size(Vtm, 1)

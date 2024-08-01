@@ -206,6 +206,7 @@ function step_forward!(pn_solv::PNSchurImplicitMidpointSolver{T}, ϵi, ϵip1, g_
     Krylov.solve!(pn_solv.lin_solver, A_schur, pn_solv.rhs_schur, rtol=T(1e-14), atol=T(1e-14))
     # @show pn_solv.lin_solver.stats
     _compute_full_solution_schur(pn_solv, a, b, c)
+    return
 end
 
 function step_backward!(pn_solv::PNSchurImplicitMidpointSolver{T}, ϵi, ϵip1, μ_idx) where T
@@ -222,6 +223,7 @@ function step_backward!(pn_solv::PNSchurImplicitMidpointSolver{T}, ϵi, ϵip1, �
     # @show pn_solv.lin_solver.stats
     _compute_full_solution_schur(pn_solv, a, b, c)
     # @show pn_solv.lin_solver.stats
+    return
 end
 
 function _update_D(pn_solv::PNSchurImplicitMidpointSolver{T}, a, b, c) where T
@@ -292,8 +294,6 @@ function _compute_full_solution_schur(pn_solv::PNSchurImplicitMidpointSolver, a,
 
     full_m .= full_m ./ pn_solv.D
 end
-
-
 
 struct PNDLRFullImplicitMidpointSolver{T, V<:AbstractVector{T}, Tpnsemi<:PNSemidiscretization{T, V}, Tppnsemi, Tsolv} <: PNImplicitMidpointSolver{T}
     pn_semi::Tpnsemi
@@ -403,14 +403,15 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
         # we use the solution buffer of the solver for K0
-        K0 = lin_solver_K.x
+        K0_vec = lin_solver_K.x
         U = view_U(pn_solv.sol[1], (nLp, nLm), (rp, rm))
         S = view_S(pn_solv.sol[2], (rp, rm))
-        K = view_U(K0, (nLp, nLm), (rp, rm))
-        mul!(K.Up, U.Up, S.Sp)
-        mul!(K.Um, U.Um, S.Sm)
+        K0 = view_U(K0_vec, (nLp, nLm), (rp, rm))
+        mul!(K0.Up, U.Up, S.Sp)
+        mul!(K0.Um, U.Um, S.Sm)
         # minus because we have to bring b to the right side of the equation
-        mul!(rhs_K, A, K0, -1.0, 1.0)
+        mul!(rhs_K, A, K0_vec, -1.0, 1.0)
+        K0 = nothing # forget about K0, it will be overwritten by the solve
     # solve the system 
         a, b, c = update_coefficients_mat_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
@@ -418,6 +419,7 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         # K1, stats = Krylov.minres(A, rhs_K, rtol=T(1e-14), atol=T(1e-14))
         @show lin_solver_K.stats
         K = view_U(lin_solver_K.x, (nLp, nLm), (rp, rm))
+        @show size(K.Up), size(U.Up)
         U1p = qr(K.Up).Q |> mat_type(pn_solv.pn_semi)
         U1m = qr(K.Um).Q |> mat_type(pn_solv.pn_semi)
 
@@ -437,14 +439,15 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         assemble_rhs!(rhs_U, gxU, pn_semi.gΩ[gk], -Δϵ*beam_energy(pn_equ, ϵ2, gi))
         a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
-        Lt0 = lin_solver_L.x
+        Lt0_vec = lin_solver_L.x
         Vt = view_Vt(pn_solv.sol[3], (nRp, nRm), (rp, rm))
         S = view_S(pn_solv.sol[2], (rp, rm))
-        Lt = view_Vt(Lt0, (nRp, nRm), (rp, rm))
-        mul!(Lt.Vtp, S.Sp, Vt.Vtp)
-        mul!(Lt.Vtm, S.Sm, Vt.Vtm)
+        Lt0 = view_Vt(Lt0_vec, (nRp, nRm), (rp, rm))
+        mul!(Lt0.Vtp, S.Sp, Vt.Vtp)
+        mul!(Lt0.Vtm, S.Sm, Vt.Vtm)
         # minus because we have to bring b to the right side of the equation
-        mul!(rhs_U, A, Lt0, -1.0, 1.0)
+        mul!(rhs_U, A, Lt0_vec, -1.0, 1.0)
+        Lt0 = nothing
     # solve the system 
         a, b, c = update_coefficients_mat_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
@@ -470,13 +473,14 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         assemble_rhs!(rhs_S, gxU, gΩV, -Δϵ*beam_energy(pn_equ, ϵ2, gi))
         a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
-        S0 = lin_solver_S.x
-        S0_ = view_S(pn_solv.sol[2], (rp, rm))
-        S = view_S(S0, (rp, rm))
-        S.Sp .= Mp*S0_.Sp*Ntp
-        S.Sm .= Mm*S0_.Sm*Ntm
+        S0_vec = lin_solver_S.x
+        S0 = view_S(S0_vec, (rp, rm))
+        S0_prev = view_S(pn_solv.sol[2], (rp, rm))
+        S0.Sp .= Mp*S0_prev.Sp*Ntp
+        S0.Sm .= Mm*S0_prev.Sm*Ntm
         # minus because we have to bring b to the right side of the equation
-        mul!(rhs_S, A, S0, -1.0, 1.0)
+        mul!(rhs_S, A, S0_vec, -1.0, 1.0)
+        S0_vec = nothing
     # solve the system 
         a, b, c = update_coefficients_mat_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)

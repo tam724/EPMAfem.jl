@@ -64,12 +64,7 @@ pn_solver_imp_schur = pn_schurimplicitmidpointsolver(pn_semi, N)
 pn_solver_imp_schur_cu = pn_schurimplicitmidpointsolver(pn_semi_cu, N)
 
 initialize!(pn_solver_dlr)
-@time step_forward!(pn_solver_dlr, 0.99, 1.0, (1, 1, 1))
-
-@time get_solver(pn_solver_dlr.lin_solver, 10, 10);
-
-# initialize!(pn_solver_imp_schur)
-# @time step_forward!(pn_solver_imp_schur, 0.86, 0.85, (1, 1, 1));
+step_forward!(pn_solver_dlr, 0.86, 0.85, (1, 1, 1))
 
 # pn_solver_imp = pn_fullimplicitmidpointsolver(pn_semi_cu, (0.0, 1.0), N)
 
@@ -122,13 +117,13 @@ end
 @time doit!(ψs1, pn_solver_exp, n_basis)
 using MKLSparse
 
-pn_solver_dlr.ranks .= [5, 10]
-doit!(ψs1, pn_solver_dlr, n_basis)
+pn_solver_dlr.ranks .= [20, 20]
+@profview doit!(ψs1, pn_solver_dlr, n_basis)
 @time doit!(ψs2, pn_solver_imp_cu, n_basis)
 
 @profview doit!(ψs3, pn_solver_imp_schur, n_basis)
 doit!(ψs2, pn_solver_imp, n_basis)
-@time doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
+doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
 
 @time step_forward!(pn_solver_imp_schur, 0.9, 0.91, (1, 5, 2))
 @time step_forward!(pn_solver_imp, 0.9, 0.91, (1, 5, 2))
