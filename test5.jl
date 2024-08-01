@@ -8,6 +8,7 @@ using LinearAlgebra
 using Enzyme
 using Distributions
 using Plots
+using UnsafeArrays
 
 using IterativeSolvers
 using Krylov
@@ -41,12 +42,11 @@ pn_equ = dummy_equations(
     [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]],    # beam direction. Careful, this is (x, y, z), not (z, x, y)
     [0.1, 0.2])                                                 # extraction energy 
 
-n_z = 50
-model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
+n_z = 30
+model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
 pn_sys = build_solver(model, 11, 2)
 
 pn_semi = pn_semidiscretization(pn_sys, pn_equ, true)
-
 pn_semi_cu = cuda(pn_semi)
 
 N = 50
@@ -56,11 +56,17 @@ pn_solver_exp_cu = pn_expliciteulersolver(pn_semi_cu, N)
 # initialize!(pn_solver_exp)
 # @time step_forward!(pn_solver_exp, 0.86, 0.85, (1, 1, 1));
 
-pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi_cu, N, 10)
+pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi, N, 10)
+
 pn_solver_imp = pn_fullimplicitmidpointsolver(pn_semi, N)
 pn_solver_imp_cu = pn_fullimplicitmidpointsolver(pn_semi_cu, N)
 pn_solver_imp_schur = pn_schurimplicitmidpointsolver(pn_semi, N)
 pn_solver_imp_schur_cu = pn_schurimplicitmidpointsolver(pn_semi_cu, N)
+
+initialize!(pn_solver_dlr)
+@time step_forward!(pn_solver_dlr, 0.99, 1.0, (1, 1, 1))
+
+@time get_solver(pn_solver_dlr.lin_solver, 10, 10);
 
 # initialize!(pn_solver_imp_schur)
 # @time step_forward!(pn_solver_imp_schur, 0.86, 0.85, (1, 1, 1));
@@ -72,6 +78,7 @@ pn_solver_imp_schur_cu = pn_schurimplicitmidpointsolver(pn_semi_cu, N)
 
 # pn_solver = pn_implicitmidpointsolver(pn_semi, (0.0, 1.0))
 # pn_solver_cu = pn_implicitmidpointsolver(pn_semi_cu, (0.0, 1.0))
+
 
 n_basis = number_of_basis_functions(pn_sys)
 
@@ -115,12 +122,13 @@ end
 @time doit!(ψs1, pn_solver_exp, n_basis)
 using MKLSparse
 
+pn_solver_dlr.ranks .= [5, 10]
 doit!(ψs1, pn_solver_dlr, n_basis)
 @time doit!(ψs2, pn_solver_imp_cu, n_basis)
 
 @profview doit!(ψs3, pn_solver_imp_schur, n_basis)
-@profview doit!(ψs2, pn_solver_imp, n_basis)
-doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
+doit!(ψs2, pn_solver_imp, n_basis)
+@time doit!(ψs4, pn_solver_imp_schur_cu, n_basis)
 
 @time step_forward!(pn_solver_imp_schur, 0.9, 0.91, (1, 5, 2))
 @time step_forward!(pn_solver_imp, 0.9, 0.91, (1, 5, 2))
@@ -157,8 +165,8 @@ end fps=20
     p2 = Plots.heatmap(x_coords, z_coords, temp_2)
     p3 = Plots.heatmap(x_coords, z_coords, temp_3)
     p4 = Plots.heatmap(x_coords, z_coords, temp_4)
-    plot(p1, p2, p3, p4)
-    savefig("plots/$(i).pdf")
+    Plots.plot(p1, p2, p3, p4)
+    # savefig("plots/$(i).pdf")
 end fps=20
 
 @gif for i in 1:N
@@ -173,10 +181,10 @@ end
 
 using GLMakie
 Makie.inline!(false)
-temp_4 = reshape(@view(ψs4[1:n_basis.x.p, 10]), (n_z+1, 2*n_z+1, 2*n_z+1))
+temp_4 = reshape(@view(ψs1[1:n_basis.x.p, 10]), (n_z+1, 2*n_z+1, 2*n_z+1))
 # GLMakie.volume(temp_4)
 # _, _, pl = GLMakie.contour(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]))
-_, _, pl = GLMakie.contour(x_coords[1:51], y_coords[1:51], z_coords[:], max.(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]), 0.0), levels=range(0.01, 0.1, length=20))
+_, _, pl = GLMakie.contour(x_coords[1:30], y_coords[1:end], z_coords[:], permutedims(temp_4[:, 1:30, :], (2, 3, 1)))
 # _, _, pl = GLMakie.volume(x_coords[1:51], y_coords[1:51], z_coords[:], max.(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]), 0.0), algorithm=:iso, isorange=0.1, isovalue=0.1)
 
 pl2 = GLMakie.contour!(x_coords[52:end], y_coords[1:51], z_coords[:], permutedims(temp_4[:, 52:end, 1:51], [2, 3, 1]), levels=range(0.01, 0.1, length=20))
@@ -184,10 +192,10 @@ pl3 = GLMakie.contour!(x_coords[1:51], y_coords[52:end], z_coords[:], permutedim
 # _, _, pl = GLMakie.contour!(permutedims(temp_4[:, 52:end, 1:51], [2, 3, 1]))
 
 for i in repeat(1:50, 10)
-    temp_4 = reshape(@view(ψs4[1:n_basis.x.p, i]), (n_z+1, 2*n_z+1, 2*n_z+1))
-    pl[4] = max.(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]), 0.0)
-    pl2[4] = max.(permutedims(temp_4[:, 52:end, 1:51], [2, 3, 1]), 0.0)
-    pl3[4] = max.(permutedims(temp_4[:, 1:51,52:end], [2, 3, 1]), 0.0)
+    temp_4 = reshape(@view(ψs1[1:n_basis.x.p, i]), (n_z+1, 2*n_z+1, 2*n_z+1))
+    pl[4] = max.(permutedims(temp_4[:, 1:30, :], (2, 3, 1)), 0.0)
+    # pl2[4] = max.(permutedims(temp_4[:, 52:end, 1:51], [2, 3, 1]), 0.0)
+    # pl3[4] = max.(permutedims(temp_4[:, 1:51,52:end], [2, 3, 1]), 0.0)
     sleep(0.1)
 end
 surface(x_coords, y_coords, -reshape(@view(ψs4[1:n_basis.x.p, N÷ 2]), (n_z+1, 2*n_z+1, 2*n_z+1))[1, :, :])

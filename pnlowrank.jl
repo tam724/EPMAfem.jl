@@ -3,113 +3,195 @@
 struct PNProjectedSemidiscretization{T, V<:AbstractVector{T}, M<:AbstractMatrix{T}}
     max_rank::Int64
 
-    UtρpU::Vector{M}
-    UtρmU::Vector{M}
-    Ut∂pU::Vector{M}
-    Ut∇pmU::Vector{M}
+    Uranks::Vector{Int64}
+    Vranks::Vector{Int64}
 
-    VtIpV::M
-    VtImV::M
+    UtρpU::Vector{V}
+    UtρmU::Vector{V}
+    Ut∂pU::Vector{V}
+    Ut∇pmU::Vector{V}
 
-    VtkpV::Vector{Vector{M}}
-    VtkmV::Vector{Vector{M}}
+    VtIpV::V
+    VtImV::V
 
-    VtabsΩpV::Vector{M}
-    VtΩpmV::Vector{M}
+    VtkpV::Vector{Vector{V}}
+    VtkmV::Vector{Vector{V}}
+
+    VtabsΩpV::Vector{V}
+    VtΩpmV::Vector{V}
 
     # # For source (g) and extraction (μ) we only discretize the even parts (the odd parts should always be zero.)
-    gxU::Vector{M}
-    gΩV::Vector{M}
+    gxU::Vector{V}
+    gΩV::Vector{V}
 
-    μxU::Vector{M}
-    μΩV::Vector{M}
+    μxU::Vector{V}
+    μΩV::Vector{V}
 
-    # ρ_to_ρp::SM
-    # ρ_to_ρm::Diagonal{T, V}
-    #temp::V
+    buf::V
 end
 
 function pn_projectedsemidiscretization(pn_semi::PNSemidiscretization{T, V, M}, max_rank) where {T, V, M}
     ((nLp, nLm), (nRp, nRm)) = pn_semi.size
     return PNProjectedSemidiscretization{T, V, M}(
         max_rank,
-        [M(undef, 2*max_rank, 2*max_rank) for _ in pn_semi.ρp],
-        [M(undef, 2*max_rank, 2*max_rank) for _ in pn_semi.ρm],
-        [M(undef, 2*max_rank, 2*max_rank) for _ in pn_semi.∂p],
-        [M(undef, 2*max_rank, 2*max_rank) for _ in pn_semi.∇pm],
+        [0, 0],
+        [0, 0],
 
-        M(undef, 2*max_rank,  2*max_rank),
-        M(undef, 2*max_rank,  2*max_rank),
+        [V(undef, 2*max_rank*2*max_rank) for _ in pn_semi.ρp],
+        [V(undef, 2*max_rank*2*max_rank) for _ in pn_semi.ρm],
+        [V(undef, 2*max_rank*2*max_rank) for _ in pn_semi.∂p],
+        [V(undef, 2*max_rank*2*max_rank) for _ in pn_semi.∇pm],
 
-        [[M(undef, 2*max_rank, 2*max_rank) for _ in kpz] for kpz in pn_semi.kp],
-        [[M(undef, 2*max_rank, 2*max_rank) for _ in kmz] for kmz in pn_semi.km],
+        V(undef, 2*max_rank*2*max_rank),
+        V(undef, 2*max_rank*2*max_rank),
 
-        [M(undef, 2*max_rank, 2*max_rank) for _ in pn_semi.absΩp],
-        [M(undef, 2*max_rank, 2*max_rank) for _ in pn_semi.Ωpm],
+        [[V(undef, 2*max_rank*2*max_rank) for _ in kpz] for kpz in pn_semi.kp],
+        [[V(undef, 2*max_rank*2*max_rank) for _ in kmz] for kmz in pn_semi.km],
+
+        [V(undef, 2*max_rank*2*max_rank) for _ in pn_semi.absΩp],
+        [V(undef, 2*max_rank*2*max_rank) for _ in pn_semi.Ωpm],
         
-        [M(undef, 2*max_rank, 1) for _ in pn_semi.gx],
-        [M(undef, 1, 2*max_rank) for _ in pn_semi.gΩ],
+        [V(undef, 2*max_rank*1) for _ in pn_semi.gx],
+        [V(undef, 1*2*max_rank) for _ in pn_semi.gΩ],
 
-        [M(undef, 2*max_rank, 1) for _ in pn_semi.μx],
-        [M(undef, 1, 2*max_rank) for _ in pn_semi.μΩ]
+        [V(undef, 2*max_rank*1) for _ in pn_semi.μx],
+        [V(undef, 1*2*max_rank) for _ in pn_semi.μΩ],
         
-        #V(undef, 2*max_rank * max(nLp, nLm, nRp, nRm))
+        V(undef, 2*max_rank * max(nLp, nLm, nRp, nRm))
 
     )
+end
+
+function U_views(pn_proj_semi::PNProjectedSemidiscretization)
+    rankp, rankm = pn_proj_semi.Uranks[1], pn_proj_semi.Uranks[2]
+
+    UtρpU = (reshape(@view(UtρpzU[1:rankp*rankp]), (rankp, rankp)) for UtρpzU in pn_proj_semi.UtρpU)
+    UtρmU = (reshape(@view(UtρmzU[1:rankm*rankm]), (rankm, rankm)) for UtρmzU in pn_proj_semi.UtρmU)
+    Ut∂pU = (reshape(@view(Ut∂pdU[1:rankp*rankp]), (rankp, rankp)) for Ut∂pdU in pn_proj_semi.Ut∂pU)
+    Ut∇pmU = (reshape(@view(Ut∇pmdU[1:rankm*rankp]), (rankm, rankp)) for Ut∇pmdU in pn_proj_semi.Ut∇pmU)
+    gxU = (reshape(@view(gxjU[1:rankp]), (rankp, 1)) for gxjU in pn_proj_semi.gxU)
+    μxU = (reshape(@view(μxjU[1:rankp]), (rankp, 1)) for μxjU in pn_proj_semi.μxU)
+    return UtρpU, UtρmU, Ut∂pU, Ut∇pmU, gxU, μxU
+end
+
+function gxU_view(pn_proj_semi::PNProjectedSemidiscretization, gj)
+    rankp, rankm = pn_proj_semi.Uranks[1], pn_proj_semi.Uranks[2]
+    return reshape(@view(pn_proj_semi.gxU[gj][1:rankp]), (rankp, 1))
+end
+
+function V_views(pn_proj_semi::PNProjectedSemidiscretization)
+    rankp, rankm = pn_proj_semi.Vranks[1], pn_proj_semi.Vranks[2]
+
+    VtIpV = reshape(@view(pn_proj_semi.VtIpV[1:rankp*rankp]), (rankp, rankp))
+    VtImV = reshape(@view(pn_proj_semi.VtImV[1:rankm*rankm]), (rankm, rankm))
+    VtkpV = ((reshape(@view(VtkpziV[1:rankp*rankp]), (rankp, rankp)) for VtkpziV in VtkpzV) for VtkpzV in pn_proj_semi.VtkpV)
+    VtkmV = ((reshape(@view(VtkmziV[1:rankm*rankm]), (rankm, rankm)) for VtkmziV in VtkmzV) for VtkmzV in pn_proj_semi.VtkmV)
+    VtabsΩpV = (reshape(@view(VtabsΩpdV[1:rankp*rankp]), (rankp, rankp)) for VtabsΩpdV in pn_proj_semi.VtabsΩpV)
+    VtΩpmV = (reshape(@view(VtΩpmdV[1:rankm*rankp]), (rankm, rankp)) for VtΩpmdV in pn_proj_semi.VtΩpmV)
+    gΩV = (reshape(@view(gΩkV[1:rankp]), (1, rankp)) for gΩkV in pn_proj_semi.gΩV)
+    μΩV = (reshape(@view(μΩkV[1:rankp]), (1, rankp)) for μΩkV in pn_proj_semi.μΩV)
+    return VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, gΩV, μΩV
+end
+
+function gΩV_view(pn_proj_semi::PNProjectedSemidiscretization, gk)
+    rankp, rankm = pn_proj_semi.Vranks[1], pn_proj_semi.Vranks[2]
+    return reshape(@view(pn_proj_semi.gΩV[gk][1:rankp]), (1, rankp))
+end
+
+function mul_buf!(Y, A, B, C, buf)
+    buf_mat = reshape(@view(buf[1:size(A, 1)*size(B, 2)]), (size(A, 1), size(B, 2)))
+    mul!(buf_mat, A, B, true, false)
+    mul!(Y, buf_mat, C, true, false)
 end
 
 function update_Vt!(pn_proj_semi, pn_semi, (; Vtp, Vtm))
     rankp = size(Vtp, 1)
     rankm = size(Vtm, 1)
-    ((nLp, nLm), (nRp, nRm)) = pn_semi.size
+    pn_proj_semi.Vranks[1] = rankp
+    pn_proj_semi.Vranks[2] = rankm
+
+    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, gΩV, μΩV = V_views(pn_proj_semi)
+
+    buf = pn_proj_semi.buf
 
     # TODO: make inplace matrix multiplications
 
-    pn_proj_semi.VtIpV .= Vtp*pn_semi.Ip*transpose(Vtp)
-    pn_proj_semi.VtImV .= Vtm*pn_semi.Im*transpose(Vtm)
+    # VtIpV .= Vtp*pn_semi.Ip*transpose(Vtp)
+    mul_buf!(VtIpV, Vtp, pn_semi.Ip, transpose(Vtp), buf)
+    # VtImV .= Vtm*pn_semi.Im*transpose(Vtm)
+    mul_buf!(VtImV, Vtm, pn_semi.Im, transpose(Vtm), buf)
 
-    for e in 1:number_of_elements(equations(pn_semi))
-        for i in 1:number_of_scatterings(equations(pn_semi))
-            pn_proj_semi.VtkpV[e][i] .= Vtp*pn_semi.kp[e][i]*transpose(Vtp)
-            pn_proj_semi.VtkmV[e][i] .= Vtm*pn_semi.km[e][i]*transpose(Vtm)
+    for (VtkpzV, kpz) in zip(VtkpV, pn_semi.kp)
+        for (Vtkpzi, kpzi) in zip(VtkpzV, kpz)
+            # Vtkpzi .= Vtp*kpzi*transpose(Vtp)
+            mul_buf!(Vtkpzi, Vtp, kpzi, transpose(Vtp), buf)
         end
     end
 
-    for d in 1:length(pn_semi.absΩp)
-        pn_proj_semi.VtabsΩpV[d] .= Vtp*pn_semi.absΩp[d]*transpose(Vtp)
-        pn_proj_semi.VtΩpmV[d] .= Vtm*pn_semi.Ωpm[d]*transpose(Vtp)
+    for (VtkmzV, kmz) in zip(VtkmV, pn_semi.km)
+        for (Vtkmzi, kmzi) in zip(VtkmzV, kmz)
+            # Vtkmzi .= Vtm*kmzi*transpose(Vtm)
+            mul_buf!(Vtkmzi, Vtm, kmzi, transpose(Vtm), buf)
+        end
     end
 
-    for k in 1:length(pn_semi.gΩ)
-        pn_proj_semi.gΩV[k] .= pn_semi.gΩ[k] * transpose(Vtp)
+    for (VtabsΩpdV, absΩpd) in zip(VtabsΩpV, pn_semi.absΩp)
+        # VtabsΩpdV .= Vtp*absΩpd*transpose(Vtp)
+        mul_buf!(VtabsΩpdV, Vtp, absΩpd, transpose(Vtp), buf)
     end
 
-    for k in 1:length(pn_semi.μΩ)
-        pn_proj_semi.μΩV[k] .= pn_semi.μΩ[k] * transpose(Vtp)
+    for (VtΩpmdV, Ωpmd) in zip(VtΩpmV, pn_semi.Ωpm)
+        # VtΩpmdV .= Vtm*Ωpmd*transpose(Vtp)
+        mul_buf!(VtΩpmdV, Vtm, Ωpmd, transpose(Vtp), buf)
     end
+
+    for (gΩkV, gΩk) in zip(gΩV, pn_semi.gΩ)
+        mul!(gΩkV, gΩk, transpose(Vtp))
+    end
+
+    for (μΩkV, μΩk) in zip(μΩV, pn_semi.μΩ)
+        mul!(μΩkV, μΩk, transpose(Vtp))
+    end
+    return
 end
 
 function update_U!(pn_proj_semi, pn_semi, (; Up, Um))
     rankp = size(Up, 2)
     rankm = size(Um, 2)
+    pn_proj_semi.Uranks[1] = rankp
+    pn_proj_semi.Uranks[2] = rankm
 
-    ((nLp, nLm), (nRp, nRm)) = pn_semi.size
-    # temp = reshape(@view(pn_proj_semi.temp[1:rankp*nLp]), )
-    for e in 1:number_of_elements(equations(pn_semi))
-        pn_proj_semi.UtρpU[e] .= transpose(Up)*pn_semi.ρp[e]*Up
-        pn_proj_semi.UtρmU[e] .= transpose(Um)*pn_semi.ρm[e]*Um
+    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, gxU, μxU = U_views(pn_proj_semi)
+    
+    buf = pn_proj_semi.buf
+
+    for (UtρpzU, ρpz) in zip(UtρpU, pn_semi.ρp)
+        # UtρpzU .= transpose(Up)*ρpz*Up
+        mul_buf!(UtρpzU, transpose(Up), ρpz, Up, buf)
     end
 
-    for d in 1:length(pn_semi.∂p)
-        pn_proj_semi.Ut∂pU[d] .=  transpose(Up)*pn_semi.∂p[d]*Up
-        pn_proj_semi.Ut∇pmU[d] .=  transpose(Um)*pn_semi.∇pm[d]*Up
+    for (UtρmzU, ρmz) in zip(UtρmU, pn_semi.ρm)
+        # UtρmzU .= transpose(Um)*ρmz*Um
+        mul_buf!(UtρmzU, transpose(Um), ρmz, Um, buf)
     end
 
-    for j in 1:length(pn_semi.gx)
-        pn_proj_semi.gxU[j] .= transpose(Up) * pn_semi.gx[j]
+    for (Ut∂pdU, ∂pd) in zip(Ut∂pU, pn_semi.∂p)
+        # Ut∂pdU .= transpose(Up)*∂pd*Up
+        mul_buf!(Ut∂pdU, transpose(Up), ∂pd, Up, buf)
+
     end
 
-    for j in 1:length(pn_semi.μx)
-        pn_proj_semi.μxU[j] .= transpose(Up) * pn_semi.μx[j]
+    for (Ut∇pmdU, ∇pmd) in zip(Ut∇pmU, pn_semi.∇pm)
+        # Ut∇pmdU .= transpose(Um)*∇pmd*Up
+        mul_buf!(Ut∇pmdU, transpose(Um), ∇pmd, Up, buf)
     end
+
+    for (gxjU, gxj) in zip(gxU, pn_semi.gx)
+        mul!(gxjU, transpose(Up), gxj)
+    end
+
+    for (μxjU, μxj) in zip(μxU, pn_semi.μx)
+        mul!(μxjU, transpose(Up), μxj)
+    end
+    return
 end
