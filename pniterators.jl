@@ -11,13 +11,13 @@ function Base.iterate(pn_it::ForwardIterator)
     pn_solv = pn_it.solver
     initialize!(pn_solv)
     pn_equ = get_pn_equ(pn_solv)
-    ϵ = energy_interval(pn_equ)[2]
+    ϵ = _energy_interval(pn_equ)[2]
     return ϵ, (ϵ, 1)
 end
 
 function Base.iterate(pn_it::ForwardIterator, (ϵ, i))
     pn_equ = get_pn_equ(pn_it.solver)
-    ϵ_cutoff = energy_interval(pn_equ)[1]
+    ϵ_cutoff = _energy_interval(pn_equ)[1]
     if isapprox(ϵ - ϵ_cutoff, 0.0, atol=1e-8)
         return nothing
     else
@@ -45,13 +45,13 @@ function Base.iterate(pn_it::BackwardIterator)
     pn_solv = pn_it.solver
     initialize!(pn_solv)
     pn_equ = get_pn_equ(pn_solv)
-    ϵ = energy_interval(pn_equ)[1]
+    ϵ = _energy_interval(pn_equ)[1]
     return ϵ, (ϵ, 1)
 end
 
 function Base.iterate(pn_it::BackwardIterator, (ϵ, i))
     pn_equ = get_pn_equ(pn_it.solver)
-    ϵ_initial = energy_interval(pn_equ)[2]
+    ϵ_initial = _energy_interval(pn_equ)[2]
     if isapprox(ϵ - ϵ_initial, 0.0, atol=1e-8)
         return nothing
     else

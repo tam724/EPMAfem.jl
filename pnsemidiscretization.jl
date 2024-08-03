@@ -71,7 +71,7 @@ function pn_semidiscretization(pn_sys, pn_equ, skip_projections=false)
 
     n_basis = number_of_basis_functions(pn_sys)
     # TODO!!! (support multiple scattering kernels per element)
-    Kpp, Kmm = assemble_scattering_matrices(pn_sys.PN, μ -> scattering_kernel(pn_equ, μ, 1, 1), nd(pn_sys))
+    Kpp, Kmm = assemble_scattering_matrices(pn_sys.PN, _electron_scattering_kernel(pn_equ, 1, 1), nd(pn_sys))
 
     ρ_to_ρp = sparse(zeros(1, 1))
     ρ_to_ρm = Diagonal(zeros(1))
@@ -81,7 +81,7 @@ function pn_semidiscretization(pn_sys, pn_equ, skip_projections=false)
         ρ_to_ρp = build_ρ_to_ρp_projection(pn_sys)
         ρ_to_ρm = build_ρ_to_ρm_projection(pn_sys)
 
-        ρs = [project_function(U[2], model, x -> mass_concentrations(pn_equ, x, e)).free_values for e in 1:number_of_elements(pn_equ)]
+        ρs = [project_function(U[2], model, _mass_concentrations(pn_equ, e)).free_values for e in 1:number_of_elements(pn_equ)]
 
         temp = assemble_bilinear(∫ρuv, (x -> 1.0, model), U[1], V[1]) # only get the sparsity pattern of ρp and reuse the colptr and rowval vectors
         ρp_colptr = Vector(temp.colptr)
@@ -93,8 +93,8 @@ function pn_semidiscretization(pn_sys, pn_equ, skip_projections=false)
             mul!(ρm[e].diag, ρ_to_ρm, ρs[e])
         end
     else
-        ρp = [assemble_bilinear(∫ρuv, (x -> mass_concentrations(pn_equ, x, e), model), U[1], V[1]) for e in 1:number_of_elements(pn_equ)]
-        ρm = [Diagonal(Vector(diag(assemble_bilinear(∫ρuv, (x -> mass_concentrations(pn_equ, x, e), model), U[2], V[2])))) for e in 1:number_of_elements(pn_equ)] 
+        ρp = [assemble_bilinear(∫ρuv, (_mass_concentrations(pn_equ, e), model), U[1], V[1]) for e in 1:number_of_elements(pn_equ)]
+        ρm = [Diagonal(Vector(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_equ, e), model), U[2], V[2])))) for e in 1:number_of_elements(pn_equ)] 
     end
     return PNSemidiscretization(
         ((n_basis.x.p, n_basis.x.m), (n_basis.Ω.p, n_basis.Ω.m)),
@@ -118,11 +118,11 @@ function pn_semidiscretization(pn_sys, pn_equ, skip_projections=false)
         [Matrix(assemble_transport_matrix(pn_sys.PN, dir, :pm, nd(model.model))) for dir ∈ space_directions(model.model)],
 
         # only discretize the even parts (and store as matrices (with 1x or x1 dimension) then CUDA works):
-        [sparse(reshape(assemble_linear(∫nzgv, ((x -> beam_position(pn_equ, x, j)), model), U[1], V[1]), (n_basis.x.p, 1),)) for j in 1:number_of_beam_positions(pn_equ)],
-        [Matrix(reshape(assemble_direction_boundary(pn_sys.PN, beam_direction(pn_equ, k), @SVector[0.0, 0.0, 1.0], nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_beam_directions(pn_equ)],
+        [sparse(reshape(assemble_linear(∫nzgv, (_beam_spatial_distribution(pn_equ, j), model), U[1], V[1]), (n_basis.x.p, 1),)) for j in 1:number_of_beam_positions(pn_equ)],
+        [Matrix(reshape(assemble_direction_boundary(pn_sys.PN, _beam_direction_distribution(pn_equ, k), @SVector[0.0, 0.0, 1.0], nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_beam_directions(pn_equ)],
 
-        [Matrix(reshape(assemble_linear(∫μv, (x -> extraction_position(pn_equ, x, e), model), U[1], V[1]), (n_basis.x.p, 1))) for e in 1:number_of_extraction_positions(pn_equ)],
-        [Matrix(reshape(assemble_direction_source(pn_sys.PN, extraction_direction(pn_equ, k), nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_extraction_directions(pn_equ)],
+        [Matrix(reshape(assemble_linear(∫μv, (_extraction_spatial_distribution(pn_equ, e), model), U[1], V[1]), (n_basis.x.p, 1))) for e in 1:number_of_extraction_positions(pn_equ)],
+        [Matrix(reshape(assemble_direction_source(pn_sys.PN, _extraction_direction_distribution(pn_equ, k), nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_extraction_directions(pn_equ)],
 
         ρ_to_ρp,
         ρ_to_ρm
@@ -162,7 +162,7 @@ function assemble_beam_rhs!(b, pn_semi::PNSemidiscretization, ϵ, (i, j, k), α)
     bp = reshape(@view(b[1:np]), (nLp, nRp))
     bm = reshape(@view(b[np+1:np+nm]), (nLm, nRm))
 
-    mul!(bp, pn_semi.gx[j], pn_semi.gΩ[k], α*beam_energy(pn_semi.pn_equ, ϵ, i), false)
+    mul!(bp, pn_semi.gx[j], pn_semi.gΩ[k], α*_excitation_energy_distribution(pn_semi.pn_equ, i)(ϵ), false)
     fill!(bm, 0)
 end
 
@@ -174,7 +174,7 @@ function assemble_extraction_rhs!(b, pn_semi::PNSemidiscretization, ϵ, (i, j, k
     bp = reshape(@view(b[1:np]), (nLp, nRp))
     bm = reshape(@view(b[np+1:np+nm]), (nLm, nRm))
 
-    mul!(bp, pn_semi.μx[j], pn_semi.μΩ[k], α*extraction_energy(pn_semi.pn_equ, ϵ, i), false)
+    mul!(bp, pn_semi.μx[j], pn_semi.μΩ[k], α*_extraction_energy_distribution(pn_semi.pn_equ, i)(ϵ), false)
     fill!(bm, 0)
 end
 

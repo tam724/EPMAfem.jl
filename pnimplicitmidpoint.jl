@@ -2,16 +2,16 @@ abstract type PNImplicitMidpointSolver{T} <: PNSolver{T} end
 
 function energy_step(pn_solv::PNImplicitMidpointSolver)
     pn_equ = get_pn_equ(pn_solv)
-    Iϵ = energy_interval(pn_equ)
+    Iϵ = _energy_interval(pn_equ)
     return (Iϵ[2] - Iϵ[1])/(pn_solv.N-1)
 end
 
 function update_coefficients_rhs_forward!(pn_solv::PNImplicitMidpointSolver, ϵi, ϵ2, ϵip1, Δϵ)
     pn_equ = get_pn_equ(pn_solv)
     for e in 1:number_of_elements(pn_equ)
-        pn_solv.a[e] = -s(pn_equ, ϵip1, e) - s(pn_equ, ϵ2, e) + 0.5 * Δϵ * τ(pn_equ, ϵ2, e)
+        pn_solv.a[e] = -_s(pn_equ, e)(ϵip1) - _s(pn_equ, e)(ϵ2) + 0.5 * Δϵ * _τ(pn_equ, e)(ϵ2)
         for i in 1:number_of_scatterings(pn_equ)
-            pn_solv.c[e][i] = -0.5 * Δϵ * σ(pn_equ, ϵ2, e, i)
+            pn_solv.c[e][i] = -0.5 * Δϵ * _σ(pn_equ, e, i)(ϵ2)
         end
     end
     b = 0.5*Δϵ
@@ -21,9 +21,9 @@ end
 function update_coefficients_rhs_backward!(pn_solv::PNImplicitMidpointSolver, ϵi, ϵ2, ϵip1, Δϵ)
     pn_equ = get_pn_equ(pn_solv)
     for e in 1:number_of_elements(pn_equ)
-        pn_solv.a[e] = - s(pn_equ, ϵi, e) - s(pn_equ, ϵ2, e) + 0.5 * Δϵ * τ(pn_equ, ϵ2, e)
+        pn_solv.a[e] = - _s(pn_equ, e)(ϵi) - _s(pn_equ, e)(ϵ2) + 0.5 * Δϵ * τ(pn_equ, e)(ϵ2)
         for i in 1:number_of_scatterings(pn_equ)
-            pn_solv.c[e][i] = -0.5 * Δϵ * σ(pn_equ, ϵ2, e, i)
+            pn_solv.c[e][i] = -0.5 * Δϵ * σ(pn_equ, e, i)(ϵ2)
         end
     end
     b = 0.5*Δϵ
@@ -33,9 +33,9 @@ end
 function update_coefficients_mat_forward!(pn_solv::PNImplicitMidpointSolver, ϵi, ϵ2, ϵip1, Δϵ)
     pn_equ = get_pn_equ(pn_solv)
     for e in 1:number_of_elements(pn_equ)
-        pn_solv.a[e] = s(pn_equ, ϵi, e) + s(pn_equ, ϵ2, e) + 0.5*Δϵ * τ(pn_equ, ϵ2, e)
+        pn_solv.a[e] = _s(pn_equ, e)(ϵi) + _s(pn_equ, e)(ϵ2) + 0.5*Δϵ * _τ(pn_equ, e)(ϵ2)
         for i in 1:number_of_scatterings(pn_equ)
-            pn_solv.c[e][i] = -0.5*Δϵ*σ(pn_equ, ϵ2, e, i)
+            pn_solv.c[e][i] = -0.5*Δϵ*_σ(pn_equ, e, i)(ϵ2)
         end
     end
     b = 0.5*Δϵ 
@@ -45,9 +45,9 @@ end
 function update_coefficients_mat_backward!(pn_solv::PNImplicitMidpointSolver, ϵi, ϵ2, ϵip1, Δϵ)
     pn_equ = get_pn_equ(pn_solv)
     for e in 1:number_of_elements(pn_equ)
-        pn_solv.a[e] = s(pn_equ, ϵip1, e) + s(pn_equ, ϵ2, e) + 0.5*Δϵ * τ(pn_equ, ϵ2, e)
+        pn_solv.a[e] = _s(pn_equ, e)(ϵip1) + _s(pn_equ, e)(ϵ2) + 0.5*Δϵ * _τ(pn_equ, e)(ϵ2)
         for i in 1:number_of_scatterings(pn_equ)
-            pn_solv.c[e][i] = -0.5*Δϵ*σ(pn_equ, ϵ2, e, i)
+            pn_solv.c[e][i] = -0.5*Δϵ*_σ(pn_equ, e, i)(ϵ2)
         end
     end
     b = 0.5*Δϵ 
@@ -399,7 +399,7 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         rhs_K = cuview(pn_solv.rhs,1:rp*nLp+rm*nLm)
         # minus because we have to bring b to the right side of the equation
         gΩV = gΩV_view(pn_proj_semi, gk)
-        assemble_rhs!(rhs_K, pn_semi.gx[gj], gΩV, -Δϵ*beam_energy(pn_equ, ϵ2, gi))
+        assemble_rhs!(rhs_K, pn_semi.gx[gj], gΩV, -Δϵ*_excitation_energy_distribution(pn_equ, gi)(ϵ2))
         a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
         # we use the solution buffer of the solver for K0
@@ -434,7 +434,7 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         rhs_U = cuview(pn_solv.rhs, 1:nRp*rp+nRm*rm)
         # minus because we have to bring b to the right side of the equation
         gxU = gxU_view(pn_proj_semi, gj)
-        assemble_rhs!(rhs_U, gxU, pn_semi.gΩ[gk], -Δϵ*beam_energy(pn_equ, ϵ2, gi))
+        assemble_rhs!(rhs_U, gxU, pn_semi.gΩ[gk], -Δϵ*_excitation_energy_distribution(pn_equ, gi)(ϵ2))
         a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
         Lt0_vec = lin_solver_L.x
@@ -468,7 +468,7 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         # minus because we have to bring b to the right side of the equation
         gΩV = gΩV_view(pn_proj_semi, gk)
         gxU = gxU_view(pn_proj_semi, gj)
-        assemble_rhs!(rhs_S, gxU, gΩV, -Δϵ*beam_energy(pn_equ, ϵ2, gi))
+        assemble_rhs!(rhs_S, gxU, gΩV, -Δϵ*_excitation_energy_distribution(pn_equ, gi)(ϵ2))
         a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
         S0_vec = lin_solver_S.x

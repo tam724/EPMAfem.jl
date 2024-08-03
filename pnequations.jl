@@ -1,135 +1,97 @@
-abstract type PNEquations{NE, Ni, Ngϵ, Ngx, NgΩ, Nμϵ} end
 
-function s(eq::PNEquations, ϵ, e)
-    return 0.5 * stopping_power(eq, ϵ, e)
+abstract type AbstractPNEquations end
+"""
+Conversion between physics (with units) and mathematics. With additional solver construction internals. 
+"""
+struct PNEquations{EEQ} <: AbstractPNEquations
+    eq::EEQ
 end
 
-function τ(eq::PNEquations, ϵ, e)
-    return total_scattering_cross_section(eq, ϵ, e) - 0.5 * ∂stopping_power(eq, ϵ, e)
+function unit_energy(eq::PNEquations)
+    return 1.0u"keV"
 end
 
-function σ(eq::PNEquations, ϵ, e, i)
-    return scattering_cross_section(eq, ϵ, e, i)
+function unit_length(eq::PNEquations)
+    return 1.0u"nm"
 end
 
-function ∂stopping_power(eq::PNEquations, ϵ, e)
-    Enzyme.autodiff(Forward, ϵ -> stopping_power(eq, ϵ, e), Duplicated(ϵ, 1.0))[1]
+function unit_mass(eq::PNEquations)
+    return 1.0u"u"
 end
 
-number_of_elements(::PNEquations{NE}) where NE = NE
-number_of_scatterings(::PNEquations{NE, Ni}) where {NE, Ni} = Ni
-number_of_beam_energies(::PNEquations{NE, Ni, Ngϵ}) where {NE, Ni, Ngϵ} = Ngϵ
-number_of_beam_positions(::PNEquations{NE, Ni, Ngϵ, Ngx}) where {NE, Ni, Ngϵ, Ngx} = Ngx
-number_of_beam_directions(::PNEquations{NE, Ni, Ngϵ, Ngx, NgΩ}) where {NE, Ni, Ngϵ, Ngx, NgΩ} = NgΩ
-
-number_of_extraction_positions(::PNEquations{NE}) where NE = NE
-number_of_extraction_directions(::PNEquations) = 1
-
-# SOME FUNCTIONS
-
-function expm2(x::Number, μ::Number, σ::Number)
-    return exp(-0.5*(x - μ)^2 / σ^2)
-end
-
-function expm2(x, μ, σ)
-    # try to iterate x and μ
-    return exp(-sum((0.5*(x_ - μ_)^2/σ_ for (x_, μ_, σ_) in zip(x, μ, σ))))
-end
-
-# use a struct that we can dispatch on (to precompute stuff)
-abstract type BeamDirection end
-struct VMFBeam <: BeamDirection
-    direction::SVector{3, Float64}
-    κ::Float64
-end
-(vmf_beam::VMFBeam)(Ω) = pdf(VonMisesFisher(Vector(vmf_beam.direction), vmf_beam.κ), [Ω...])
-
-abstract type ExtractionDirection end
-struct IsotropicExtraction <: ExtractionDirection end
-(::IsotropicExtraction)(Ω) = 1.0
-
-# SOME DUMMY VALUES TO TEST THE CODE WITH
-
-struct DummyPNEquations{Ngx, Ngϵ, NgΩ} <: PNEquations{2, 1, Ngx, Ngϵ, NgΩ, 2}
-    scattering_norm_factor::Float64
-    gϵpos::Vector{Float64}
-    gxpos::Vector{Float64}
-    gΩ::Vector{BeamDirection}
-
-    μϵpos::Vector{Float64}
-end
-
-function dummy_equations(gϵpos, gxpos, gΩpos, κ, μϵpos)
-    scattering_norm_factor = 2*π*hquadrature(x -> _scattering_kernel(x), -1.0, 1.0, rtol=1e-8, atol=1e-8, maxevals=100000)[1]
-    return DummyPNEquations{length(gϵpos), length(gxpos), length(gΩpos)}(
-        scattering_norm_factor,
-        gϵpos,
-        gxpos,
-        [VMFBeam(normalize(gΩp), κ) for gΩp ∈ gΩpos],
-        μϵpos)
-end
-
-_scattering_kernel(μ) = exp(-5.0*(μ-1.0)^2)
-
-function scattering_kernel(eq::DummyPNEquations, μ, e, i)
-    # for now we ignore e and i
-    return _scattering_kernel(μ) / eq.scattering_norm_factor
-end
-
-function stopping_power(::DummyPNEquations, ϵ, e)
-    if e == 1
-        return 1.0# + 0.1*exp(-ϵ)
-    elseif e == 2
-        return 1.0# + 0.01*exp(-ϵ)
-    else
-        error("index too high")
-    end
-    return 0.0
-end
-
-scattering_cross_section(::DummyPNEquations, ϵ, e, i) = (10.0, 5.0)[e]
-total_scattering_cross_section(eq::DummyPNEquations, ϵ , e) = scattering_cross_section(eq, ϵ, e, 1)
-
-beam_energy(eq::DummyPNEquations, ϵ, i) = expm2(ϵ, eq.gϵpos[i], 0.04)
-function beam_position(eq::DummyPNEquations, x, j)
-    if isapprox(x[1], 1.0)
-        return expm2([(length(x)>1) ? x[2] : 0.0, (length(x)>2) ? x[3] : 0.0], [eq.gxpos[j], 0.0], [0.0025, 0.0025])
-    else 
-        return 0.0
+function _s(eq::PNEquations, e)
+    return function(ϵ_)
+        units_specific_stopping_power = unit_energy(eq) * unit_length(eq)^5 / unit_mass(eq)^2
+        return 0.5 * specific_stopping_power(eq.eq, e)(ϵ_*unit_energy(eq)) / units_specific_stopping_power
     end
 end
 
-beam_direction(eq::DummyPNEquations, k) = eq.gΩ[k]
-
-extraction_energy(eq::DummyPNEquations, ϵ, e) = (ϵ-eq.μϵpos[e] > 0.0) ? sqrt(ϵ-eq.μϵpos[e]) : 0.0
-
-extraction_position(eq::DummyPNEquations, x, e) = mass_concentrations(eq, x, e) # add absorption here !
-extraction_direction(::PNEquations, k) = IsotropicExtraction()
-
-function mass_concentrations(::DummyPNEquations, x, e)
-    z_ = x[1]
-    if length(x) == 1 # 1D version
-        return 1.0
+function _τ(eq::PNEquations, e)
+    return function(ϵ_)
+        units_specific_stopping_power = unit_energy(eq) * unit_length(eq)^5 / unit_mass(eq)^2
+        units_specific_electron_scattering_cross_section = unit_length(eq)^5 / unit_mass(eq)^2
+        # do we have to be careful with the derivative here?
+        ∂spe_stop_pow = Enzyme.autodiff(Forward, ϵ_ -> specific_stopping_power(eq.eq, e)(ϵ_*unit_energy(eq))/units_specific_stopping_power, Duplicated(ϵ_, 1.0))[1]
+        σ_tot = total_specific_electron_scattering_cross_section(eq.eq, e)(ϵ_*unit_energy(eq)) / units_specific_electron_scattering_cross_section
+        return σ_tot - 0.5 * ∂spe_stop_pow
     end
-    x_ = x[2]
-    if length(x) == 2 # 2D version
-        if abs(x_) < 0.2
-            return (0.0, 1.0)[e]
-        else
-            return (1.0, 0.0)[e]
-        end
-        return 1.0
-    end
-    if length(x) == 3
-        if x[2]^2 + x[3]^2 < 0.5^2
-            return (0.0, 1.2)[e]
-        else
-            return (0.8, 0.0)[e]
-        end
-    end
-    error("")
 end
 
-function energy_interval(::DummyPNEquations)
-    return (0.0, 1.0)
+function _σ(eq::PNEquations, e, i)
+    return function(ϵ_)
+        units_specific_electron_scattering_cross_section = unit_length(eq)^5 / unit_mass(eq)^2
+        return specific_electron_scattering_cross_section(eq.eq, e, i)(ϵ_*unit_energy(eq)) / units_specific_electron_scattering_cross_section
+    end
 end
+
+number_of_elements(eq::PNEquations) = number_of_elements(eq.eq)
+number_of_scatterings(eq::PNEquations) = number_of_scatterings(eq.eq)
+number_of_beam_energies(eq::PNEquations) = number_of_beam_energies(eq.eq)
+number_of_beam_positions(eq::PNEquations) = number_of_beam_positions(eq.eq)
+number_of_beam_directions(eq::PNEquations) = number_of_beam_directions(eq.eq)
+number_of_extraction_positions(eq::PNEquations) = number_of_extraction_positions(eq.eq)
+number_of_extraction_directions(eq::PNEquations) = number_of_extraction_directions(eq.eq)
+number_of_extraction_energies(eq::PNEquations) = number_of_extraction_energies(eq.eq)
+
+extend_3D(x::VectorValue{1, T}) where T = (x.data..., zero(T), zero(T))
+extend_3D(x::VectorValue{2, T}) where T = (x.data..., zero(T))
+extend_3D(x::VectorValue{3, T}) where T = (x.data..., )
+
+function _mass_concentrations(eq::PNEquations, e)
+    units_mass_concentration = unit_mass(eq)/unit_length(eq)^3
+    return x -> mass_concentrations(eq.eq, e)(extend_3D(x).*unit_length(eq)) / units_mass_concentration
+end
+
+function _electron_scattering_kernel(eq::PNEquations, e, i)
+    return electron_scattering_kernel(eq.eq, e, i)
+end
+
+function _excitation_energy_distribution(eq::PNEquations, i)
+    return ϵ_ -> beam_energy_distribution(eq.eq, i)(ϵ_ * unit_energy(eq))
+end
+
+function _excitation_spatial_distribution(eq::PNEquations, j)
+    return x_ -> beam_spatial_distribution(eq.eq, j)(extend_3D(x_).*unit_length(eq))
+end
+
+function _excitation_direction_distribution(eq::PNEquations, k)
+    return beam_direction_distribution(eq.eq, k)
+end
+
+function _extraction_energy_distribution(eq::PNEquations, i)
+    return ϵ_ -> extraction_energy_distribution(eq.eq, i)(ϵ_ * unit_energy(eq))
+end
+
+function _extraction_spatial_distribution(eq::PNEquations, j)
+    return x_ -> extraction_spatial_distribution(eq.eq, j)(extend_3D(x_).*unit_length(eq))
+end
+
+function _extraction_direction_distribution(eq::PNEquations, k)
+    return extraction_direction_distribution(eq.eq, k)
+end
+
+function _energy_interval(eq::PNEquations)
+    return energy_interval(eq.eq) ./ unit_energy(eq)
+end
+
+
