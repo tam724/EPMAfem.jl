@@ -40,24 +40,30 @@ pn_equ = dummy_equations(
     [0.85],                                                     # beam energy
     range(-0.5, 0.5, length=10),                                # beam position
     [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]],    # beam direction. Careful, this is (x, y, z), not (z, x, y)
-    50.0,                                                      # beam concentration
+    300.0,                                                      # beam concentration
     [0.1, 0.2])                                                 # extraction energy 
 
-n_z = 100
+n_z = 50
 model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
-pn_sys = build_solver(model, 23, 2)
+using GridapGmsh
+model2 = DiscreteModelFromFile("square.msh")
+pn_sys = build_solver(model, 21, 2)
+pn_sys2 = build_solver(model2, 21, 2)
 
 pn_semi = pn_semidiscretization(pn_sys, pn_equ, true)
 pn_semi_cu = cuda(pn_semi)
 
-N = 100
+model |> typeof |> fieldnames
+model.grid.elements
+
+N = 150
 pn_solver_exp = pn_expliciteulersolver(pn_semi, N)
 pn_solver_exp_cu = pn_expliciteulersolver(pn_semi_cu, N)
 
 # initialize!(pn_solver_exp)
 # @time step_forward!(pn_solver_exp, 0.86, 0.85, (1, 1, 1));
 
-pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi_cu, N, 40)
+pn_solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_semi_cu, N, 50)
 
 pn_solver_imp = pn_fullimplicitmidpointsolver(pn_semi, N)
 pn_solver_imp_cu = pn_fullimplicitmidpointsolver(pn_semi_cu, N)
@@ -168,10 +174,11 @@ plot!(mranks)
 
     clims = (0, 0.15)
     p1 = Plots.heatmap(x_coords, z_coords, temp_1)
-    p2 = Plots.heatmap(x_coords, z_coords, temp_2)
-    p3 = Plots.heatmap(x_coords, z_coords, temp_3)
+    # p2 = Plots.heatmap(x_coords, z_coords, temp_2)
+    # p3 = Plots.heatmap(x_coords, z_coords, temp_3)
     p4 = Plots.heatmap(x_coords, z_coords, temp_4)
-    Plots.plot(p1, p2, p3, p4)
+    # Plots.plot(p1, p2, p3, p4)
+    Plots.plot(p1, p4)
     # savefig("plots/$(i).pdf")
 end fps=20
 

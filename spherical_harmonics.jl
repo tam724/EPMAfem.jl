@@ -310,7 +310,7 @@ module SphericalHarmonicsMatrices
 end
 
 
-function assemble_boundary_matrix(N, ::Val{D}, parity, nd::Val{ND}, tol=1e-7) where {D, ND}
+function assemble_boundary_matrix(N, ::Val{D}, parity, nd::Val{ND}, tol=1e-11) where {D, ND}
     filename = "boundary_matrix_dict.jls"
     boundary_matrix_dict = isfile(filename) ? Serialization.deserialize(filename) : Dict{Tuple{Int64, Tuple{Int64, Int64}, Tuple{Int64, Int64}}, Tuple{Float64, Float64}}()
     @assert parity == :pp
@@ -324,7 +324,7 @@ function assemble_boundary_matrix(N, ::Val{D}, parity, nd::Val{ND}, tol=1e-7) wh
                 A[i, j] = boundary_matrix_dict[(D, (l_, k_), (l, k))][1]
             else
                 a, error = SphericalHarmonicsMatrices.compute_boundary_matrix_entry(D, (l, k), (l_, k_), tol)
-                @info "computed and stored ∫_S^2 |Ω_$(D)| Y_$(l)^$k Y_$(l_)^$(k_) dΩ = $(a) with error of $(error)."
+                @info "computed and stored ∫_S^2 |Ω_$(D)| Y_$(l)^$k Y_$(l_)^$(k_) dΩ = $(a) with tolerance $(tol) and with error of $(error)."
                 boundary_matrix_dict[(D, (l, k), (l_, k_))] = (a, tol)
                 Serialization.serialize(filename, boundary_matrix_dict)
                 A[i, j] = boundary_matrix_dict[(D, (l, k), (l_, k_))][1]
