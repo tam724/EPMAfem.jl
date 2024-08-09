@@ -11,6 +11,11 @@ using Plots
 using UnsafeArrays
 
 using IterativeSolvers
+using Unitful
+using UnitfulChainRules
+using ConcreteStructs
+
+using ForwardDiff
 using Krylov
 using CUDA
 using Zygote
@@ -20,6 +25,7 @@ using BenchmarkTools
 using StaticArrays
 using InteractiveUtils
 
+include("epmaequations.jl")
 include("pnequations.jl")
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
@@ -36,27 +42,82 @@ include("pnexpliciteuler.jl")
 include("pniterators.jl")
 include("pnlowrank.jl")
 
-pn_equ = dummy_equations(
-    [0.85],                                                     # beam energy
-    range(-0.5, 0.5, length=10),                                # beam position
+epma_eq = dummy_epma_equations(
+    [0.85u"keV"],                                               # beam energy
+    range(-0.5u"nm", 0.5u"nm", length=10),                      # beam position
     [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]],    # beam direction. Careful, this is (x, y, z), not (z, x, y)
-    300.0,                                                      # beam concentration
-    [0.1, 0.2])                                                 # extraction energy 
+    10.0,                                                      # beam concentration
+    [0.1u"keV", 0.2u"keV"],                                     # extraction energy
+    [(1.0, 3.0, 10.0)]                                          # takeoff directions
+)
 
-n_z = 50
-model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
-using GridapGmsh
-model2 = DiscreteModelFromFile("square.msh")
-pn_sys = build_solver(model, 21, 2)
-pn_sys2 = build_solver(model2, 21, 2)
+pn_equ = PNEquations(epma_eq)
+
+n_z = 70
+
+space_model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
+space_model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
+space_model = CartesianDiscreteModel((0.0, 1.0), (n_z))
+
+# using GridapGmsh
+# model2 = DiscreteModelFromFile("square.msh")
+
+model = PNGridapModel(space_model, range(0, 1, 100), 11)
+problem = discretize(pn_equ, model) |> cuda
+solver = pn_schurimplicitmidpointsolver(pn_equ, model) |> cuda
+
+nb = number_of_basis_functions(model)
+
+@gif for ϵ in hightolow(problem, solver)
+    @show ϵ
+    ψ = Vector(current_solution(solver))
+    heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
+end
+
+@gif for ϵ in lowtohigh(problem, solver)
+    @show ϵ
+    ψ = current_solution(solver)
+    heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
+end
+
+
+it = forward(disc_eq, pn_solver_imp)
+
+iterate(it, 100)
+
+
+# pn_sys = build_solver(model, 21, 2)
+# pn_sys2 = build_solver(model2, 21, 2)
+
+grid = 
+prob = DiscretePNProblem()
+solv = PNSolver()
+parameters = PNParams()
+
+sol = solve(prob, solv, parameters)
+
+epma_prob = DiscreteEPMAProblem()
+solv = EPMASolver()
+parameters = EPMAParams()
+
+
+for ϵ ∈ forward(prob, solv, parameters)
+    ψ = current_solution(solv)
+    plot(ψ)
+end
+
+intensities = solve(epma_prob, parameters)
 
 pn_semi = pn_semidiscretization(pn_sys, pn_equ, true)
+
+A = Matrix(pn_semi.Ωpm[1]' * pn_semi.Ωpm[1])
+
 pn_semi_cu = cuda(pn_semi)
 
 model |> typeof |> fieldnames
 model.grid.elements
 
-N = 150
+N = 50
 pn_solver_exp = pn_expliciteulersolver(pn_semi, N)
 pn_solver_exp_cu = pn_expliciteulersolver(pn_semi_cu, N)
 
@@ -174,11 +235,11 @@ plot!(mranks)
 
     clims = (0, 0.15)
     p1 = Plots.heatmap(x_coords, z_coords, temp_1)
-    # p2 = Plots.heatmap(x_coords, z_coords, temp_2)
-    # p3 = Plots.heatmap(x_coords, z_coords, temp_3)
+    p2 = Plots.heatmap(x_coords, z_coords, temp_2)
+    p3 = Plots.heatmap(x_coords, z_coords, temp_3)
     p4 = Plots.heatmap(x_coords, z_coords, temp_4)
-    # Plots.plot(p1, p2, p3, p4)
-    Plots.plot(p1, p4)
+    Plots.plot(p1, p2, p3, p4)
+    # Plots.plot(p1, p4)
     # savefig("plots/$(i).pdf")
 end fps=20
 
@@ -194,7 +255,7 @@ end
 
 using GLMakie
 Makie.inline!(false)
-temp_4 = reshape(@view(ψs1[1:n_basis.x.p, 10]), (n_z+1, 2*n_z+1, 2*n_z+1))
+temp_4 = reshape(@view(ψs4[1:n_basis.x.p, 10]), (n_z+1, 2*n_z+1, 2*n_z+1))
 # GLMakie.volume(temp_4)
 # _, _, pl = GLMakie.contour(permutedims(temp_4[:, 1:51, 1:51], [2, 3, 1]))
 _, _, pl = GLMakie.contour(x_coords[1:30], y_coords[1:end], z_coords[:], permutedims(temp_4[:, 1:30, :], (2, 3, 1)))

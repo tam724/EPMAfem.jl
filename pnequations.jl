@@ -1,7 +1,9 @@
 
 abstract type AbstractPNEquations end
+
 """
-Conversion between physics (with units) and mathematics. With additional solver construction internals. 
+    PNEquations
+    ``\\partial_ϵ(s\\psi) + s\\partial_\\epsilon \\psi ``
 """
 struct PNEquations{EEQ} <: AbstractPNEquations
     eq::EEQ
@@ -59,39 +61,46 @@ extend_3D(x::VectorValue{3, T}) where T = (x.data..., )
 
 function _mass_concentrations(eq::PNEquations, e)
     units_mass_concentration = unit_mass(eq)/unit_length(eq)^3
-    return x -> mass_concentrations(eq.eq, e)(extend_3D(x).*unit_length(eq)) / units_mass_concentration
+    return x -> mass_concentrations(eq.eq, e, extend_3D(x).*unit_length(eq)) / units_mass_concentration
 end
 
 function _electron_scattering_kernel(eq::PNEquations, e, i)
     return electron_scattering_kernel(eq.eq, e, i)
 end
 
-function _excitation_energy_distribution(eq::PNEquations, i)
-    return ϵ_ -> beam_energy_distribution(eq.eq, i)(ϵ_ * unit_energy(eq))
+#always take the first for now..
+function _excitation_energy_distribution(eq::PNEquations)
+    return ϵ_ -> beam_energy_distribution(eq.eq, 1)(ϵ_ * unit_energy(eq))
 end
 
-function _excitation_spatial_distribution(eq::PNEquations, j)
-    return x_ -> beam_spatial_distribution(eq.eq, j)(extend_3D(x_).*unit_length(eq))
+function _excitation_spatial_distribution(eq::PNEquations)
+    return x_ -> beam_spatial_distribution(eq.eq, 1)(extend_3D(x_).*unit_length(eq))
 end
 
-function _excitation_direction_distribution(eq::PNEquations, k)
-    return beam_direction_distribution(eq.eq, k)
+function _excitation_direction_distribution(eq::PNEquations)
+    return beam_direction_distribution(eq.eq, 2)
 end
 
-function _extraction_energy_distribution(eq::PNEquations, i)
-    return ϵ_ -> extraction_energy_distribution(eq.eq, i)(ϵ_ * unit_energy(eq))
+function _extraction_energy_distribution(eq::PNEquations)
+    return ϵ_ -> extraction_energy_distribution(eq.eq, 1)(ϵ_ * unit_energy(eq))
 end
 
-function _extraction_spatial_distribution(eq::PNEquations, j)
-    return x_ -> extraction_spatial_distribution(eq.eq, j)(extend_3D(x_).*unit_length(eq))
+function _extraction_spatial_distribution(eq::PNEquations)
+    return x_ -> extraction_spatial_distribution(eq.eq, 1)(extend_3D(x_).*unit_length(eq))
 end
 
-function _extraction_direction_distribution(eq::PNEquations, k)
-    return extraction_direction_distribution(eq.eq, k)
+function _extraction_direction_distribution(eq::PNEquations)
+    return extraction_direction_distribution(eq.eq, 1)
 end
 
 function _energy_interval(eq::PNEquations)
     return energy_interval(eq.eq) ./ unit_energy(eq)
 end
+
+function _specific_attenuation_coefficient(eq::PNEquations, e, j)
+    units_specific_attenuation_coefficient = unit_mass(eq) / unit_length(eq)^3
+    return specific_attenuation_coefficient(eq.eq, e, j) / units_specific_attenuation_coefficient
+end
+
 
 

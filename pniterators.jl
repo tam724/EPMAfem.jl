@@ -1,72 +1,57 @@
-struct ForwardIterator{S <: PNSolver}
-    solver::S
-    g_idx::NTuple{3, Int64}
+@concrete struct HighToLowIterator
+    problem
+    solver
 end
 
-function forward(pn_solv, g_idx)
-    return ForwardIterator(pn_solv, g_idx)
+function hightolow(problem::DiscretePNProblem, solver::PNSolver)
+    return HighToLowIterator(problem, solver)
 end
 
-function Base.iterate(pn_it::ForwardIterator)
-    pn_solv = pn_it.solver
-    initialize!(pn_solv)
-    pn_equ = get_pn_equ(pn_solv)
-    ϵ = _energy_interval(pn_equ)[2]
-    return ϵ, (ϵ, 1)
+function Base.iterate(it::HighToLowIterator)
+    initialize!(it.solver)
+    ϵs = energy(it.problem.model)
+    ϵ = ϵs[end]
+    return ϵ, length(ϵs)
 end
 
-function Base.iterate(pn_it::ForwardIterator, (ϵ, i))
-    pn_equ = get_pn_equ(pn_it.solver)
-    ϵ_cutoff = _energy_interval(pn_equ)[1]
-    if isapprox(ϵ - ϵ_cutoff, 0.0, atol=1e-8)
+function Base.iterate(it::HighToLowIterator, i)
+    if i <= 1
         return nothing
     else
-        pn_solv = pn_it.solver
-        Δϵ = energy_step(pn_solv)
-        # here we update the solver state from i+1 to i !!! NOTE: forward means from higher to lower energies
-        ϵip1 = ϵ
-        ϵi = ϵ - Δϵ
-        if (ϵi < ϵ_cutoff) ϵi = ϵ_cutoff end
-        step_forward!(pn_solv, ϵi, ϵip1, pn_it.g_idx)
-        return ϵi, (ϵi, i+1)
+        ϵs = energy(it.problem.model)
+        # here we update the solver state from i+1 to i! NOTE: HighToLow means from higher to lower energies/times
+        ϵi, ϵip1 = ϵs[i-1], ϵs[i]
+        Δϵ = ϵip1-ϵi
+        step_hightolow!(it.solver, it.problem, i, Δϵ)
+        return ϵi, i-1
     end
 end
 
-struct BackwardIterator{S <: PNSolver}
-    solver::S
-    μ_idx::NTuple{3, Int64}
+@concrete struct LowToHighIterator
+    problem
+    solver
 end
 
-function backward(pn_solv, μ_idx)
-    return BackwardIterator(pn_solv, μ_idx)
+function lowtohigh(problem::DiscretePNProblem, solver::PNSolver)
+    return LowToHighIterator(problem, solver)
 end
 
-function Base.iterate(pn_it::BackwardIterator)
-    pn_solv = pn_it.solver
-    initialize!(pn_solv)
-    pn_equ = get_pn_equ(pn_solv)
-    ϵ = _energy_interval(pn_equ)[1]
-    return ϵ, (ϵ, 1)
+function Base.iterate(it::LowToHighIterator)
+    initialize!(it.solver)
+    ϵs = energy(it.problem.model)
+    ϵ = ϵs[1]
+    return ϵ, 1
 end
 
-function Base.iterate(pn_it::BackwardIterator, (ϵ, i))
-    pn_equ = get_pn_equ(pn_it.solver)
-    ϵ_initial = _energy_interval(pn_equ)[2]
-    if isapprox(ϵ - ϵ_initial, 0.0, atol=1e-8)
+function Base.iterate(it::LowToHighIterator, i)
+    ϵs = energy(it.problem.model)
+    if i >= length(ϵs)
         return nothing
     else
-        pn_solv = pn_it.solver
-        Δϵ = energy_step(pn_solv)
-        ϵi = ϵ
-        ϵip1 = ϵ + Δϵ
-        if (ϵip1 > ϵ_initial) ϵip1 = ϵ_initial end
-        step_backward!(pn_solv, ϵi, ϵip1, pn_it.μ_idx)
-        return ϵip1, (ϵip1, i+1)
+        # here we update the solver state from i to i+1! NOTE: LowToHigh means from lower to higher energies/times
+        ϵi, ϵip1 = ϵs[i], ϵs[i+1]
+        Δϵ = ϵip1-ϵi
+        step_lowtohigh!(it.solver, it.problem, i, Δϵ)
+        return ϵip1, i+1
     end
 end
-
-struct AugmentedForwardIterator{S}
-    solver::S
-    g_factors::Array{3, Float64}
-end
-

@@ -7,6 +7,8 @@ module SphericalHarmonicsMatrices
     using LegendrePolynomials
     using Serialization
     using Logging
+    using MathLink
+
 
 
     ## advection matrices
@@ -199,19 +201,27 @@ module SphericalHarmonicsMatrices
         return !is_even(l, k)
     end
 
-    function get_eo_moments(N, nd)
+    function get_even_moments(N, nd)
         even_moments = [m for m in get_moments(N, nd) if is_even(m...)]
+        return even_moments
+    end
+
+    function get_odd_moments(N, nd)
         odd_moments = [m for m in get_moments(N, nd) if !is_even(m...)]
-        return vcat(even_moments, odd_moments)
+        return odd_moments
+    end
+
+    function get_eo_moments(N, nd)
+        return vcat(get_even_moments(N, nd), get_odd_moments(N, nd))
     end
 
     function assemble_transport_matrix(N, dim, parity, nd)
         if parity == :pm
-            eo_moms1 = [m for m ∈ get_eo_moments(N, nd) if is_even(m...)]
-            eo_moms2 = [m for m ∈ get_eo_moments(N, nd) if is_odd(m...)]
+            eo_moms1 = get_even_moments(N, nd)
+            eo_moms2 = get_odd_moments(N, nd)
         else
-            eo_moms1 = [m for m ∈ get_eo_moments(N, nd) if is_odd(m...)]
-            eo_moms2 = [m for m ∈ get_eo_moments(N, nd) if is_even(m...)]
+            eo_moms1 = get_odd_moments(N, nd)
+            eo_moms2 = get_even_momenta(N, nd)
         end
         # eo_moms = get_eo_moments(N, nd)
         A = spzeros(length(eo_moms2), length(eo_moms1))
@@ -226,7 +236,35 @@ module SphericalHarmonicsMatrices
         return A
     end
 
+    function compute_boundary_matrix_entry_mathematica(D, m1, m2)
+        realsphericalharmonics = W`RealSphericalHarmonicY[l_, m_, \[Theta]_, \[Phi]_] := FullSimplify[If[m < 0, 
+            (-1)^m*I/Sqrt[2]*(SphericalHarmonicY[l, m, \[Theta], \[Phi]] - (-1)^m*SphericalHarmonicY[l, -m, \[Theta], \[Phi]]),
+            If[m > 0,
+            (-1)^m*1/Sqrt[2]*(SphericalHarmonicY[l, -m, \[Theta], \[Phi]] + (-1)^m*SphericalHarmonicY[l, m, \[Theta], \[Phi]]),
+            SphericalHarmonicY[l, m, \[Theta], \[Phi]]]]]`
+        weval(realsphericalharmonics)
+
+        boundary_integral = (
+            W`N[Integrate[
+                Abs[Sin[\[Theta]]*Cos[\[Phi]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
+                RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
+                Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`,
+            W`N[Integrate[
+                Abs[Sin[\[Theta]]*Sin[\[Phi]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
+                RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
+                Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`,
+            W`N[Integrate[
+                Abs[Cos[\[Theta]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
+                RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
+                Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`
+        )[D]
+
+        val = weval(boundary_integral; l1=m1[1], m1=m1[2], l2=m2[1], m2=m2[2])
+        return val
+    end 
+
     function compute_boundary_matrix_entry(D, m1, m2, tol)
+        if tol == 0 return compute_boundary_matrix_entry_mathematica(D, m1, m2), 0.0 end
         function integrand((θ, ϕ))
             abs_Ω = abs((sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))[D])
             # Y = computeYlm(θ, ϕ, lmax=max(m1[1], m2[1]), SHType=SphericalHarmonics.RealHarmonics())
@@ -253,9 +291,8 @@ module SphericalHarmonicsMatrices
     end
 
     function assemble_scattering_matrices(N, scattering_kernel, nd::Val{ND}) where ND
-        eo_moms = get_eo_moments(N, nd)
         Σl = 2*π*hquadrature(x -> scattering_kernel(x).*Pl.(x, 0:N), -1.0, 1.0, rtol=1e-8, atol=1e-8, maxevals=100000)[1]
-        return Diagonal([Σl[l+1] for (l, k) in eo_moms if is_even(l, k)]), Diagonal([Σl[l+1] for (l, k) in eo_moms if is_odd(l, k)])
+        return Diagonal([Σl[l+1] for (l, k) in get_even_moments(N, nd)]), Diagonal([Σl[l+1] for (l, k) in get_odd_moments(N, nd)])
     end
 
     function assemble_direction_source(N, qΩ, nd::Val{ND}) where ND
@@ -310,7 +347,7 @@ module SphericalHarmonicsMatrices
 end
 
 
-function assemble_boundary_matrix(N, ::Val{D}, parity, nd::Val{ND}, tol=1e-11) where {D, ND}
+function assemble_boundary_matrix(N, ::Val{D}, parity, nd::Val{ND}, tol=0.0) where {D, ND}
     filename = "boundary_matrix_dict.jls"
     boundary_matrix_dict = isfile(filename) ? Serialization.deserialize(filename) : Dict{Tuple{Int64, Tuple{Int64, Int64}, Tuple{Int64, Int64}}, Tuple{Float64, Float64}}()
     @assert parity == :pp
@@ -324,7 +361,13 @@ function assemble_boundary_matrix(N, ::Val{D}, parity, nd::Val{ND}, tol=1e-11) w
                 A[i, j] = boundary_matrix_dict[(D, (l_, k_), (l, k))][1]
             else
                 a, error = SphericalHarmonicsMatrices.compute_boundary_matrix_entry(D, (l, k), (l_, k_), tol)
-                @info "computed and stored ∫_S^2 |Ω_$(D)| Y_$(l)^$k Y_$(l_)^$(k_) dΩ = $(a) with tolerance $(tol) and with error of $(error)."
+                if haskey(boundary_matrix_dict, (D, (l, k), (l_, k_)))
+                    a_old, tol_old = boundary_matrix_dict[(D, (l, k), (l_, k_))]
+                    @info "replacing the old value ∫_S^2 |Ω_$(D)| Y_$(l)^$k Y_$(l_)^$(k_) dΩ = $(a_old) with tolerance $(tol_old)."
+                    @info "replacing with new vale ∫_S^2 |Ω_$(D)| Y_$(l)^$k Y_$(l_)^$(k_) dΩ = $(a) with tolerance $(tol)."
+                else
+                    @info "computed and stored ∫_S^2 |Ω_$(D)| Y_$(l)^$k Y_$(l_)^$(k_) dΩ = $(a) with tolerance $(tol) and with error of $(error)."
+                end
                 boundary_matrix_dict[(D, (l, k), (l_, k_))] = (a, tol)
                 Serialization.serialize(filename, boundary_matrix_dict)
                 A[i, j] = boundary_matrix_dict[(D, (l, k), (l_, k_))][1]

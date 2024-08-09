@@ -2,6 +2,124 @@
 using StaticArrays
 
 """
+    DiscretePNProblem
+
+    discrete version of [`PNEquations`](@ref)
+"""
+struct DiscretePNProblem{T, V<:AbstractVector{T}, M<:AbstractMatrix{T}, SM<:AbstractSparseMatrix{T}, PNM}
+    model::PNM
+
+    # energy (these will always live on the cpu)
+    s::Matrix{T}
+    τ::Matrix{T}
+    σ::Array{T, 3}
+
+    # space (might be moved to gpu)
+    ρp::Vector{SM}
+    ρm::Vector{Diagonal{T, V}}
+    ∂p::Vector{SM}
+    ∇pm::Vector{SM}
+
+    # direction (might be moved to gpu)
+    Ip::Diagonal{T, V}
+    Im::Diagonal{T, V}
+    kp::Vector{Vector{Diagonal{T, V}}}
+    km::Vector{Vector{Diagonal{T, V}}}
+    absΩp::Vector{M}
+    Ωpm::Vector{SM}
+
+    # excitation (might be moved to gpu)
+    gϵ::Vector{T}
+    gxp::M
+    gΩp::M
+
+    # extraction (might be moved to gpu)
+    μϵ::Vector{T}
+    μxp::M
+    μΩp::M
+end
+
+function cuda(problem::DiscretePNProblem, T=Float32)
+    return DiscretePNProblem(
+        problem.model, Matrix{T}(problem.s), Matrix{T}(problem.τ), Array{T, 3}(problem.σ), cu.(problem.ρp), cu.(problem.ρm), cu.(problem.∂p), cu.(problem.∇pm),
+        cu(problem.Ip), cu(problem.Im), [cu.(kpz) for kpz in problem.kp], [cu.(kmz) for kmz in problem.km], cu.(problem.absΩp), cu.(problem.Ωpm),
+        Vector{T}(problem.gϵ), cu(problem.gxp), cu(problem.gΩp), Vector{T}(problem.μϵ), cu(problem.μxp), cu(problem.μΩp)
+    )
+end
+
+function discrete_skeleton(discrete_model)
+    s = zeros(number_of_elements(pn_eq), length(energy(discrete_model)))
+    τ = ..
+    TODO
+end
+
+# function number_of_basis_functions(solver)
+#     x = (p=num_free_dofs(solver.U[1]), m=num_free_dofs(solver.U[2]))
+#     Ω = (p=length([m for m in SphericalHarmonicsMatrices.get_moments(solver.PN, nd(solver)) if SphericalHarmonicsMatrices.is_even(m...)]), m=length([m for m in SphericalHarmonicsMatrices.get_moments(solver.PN, nd(solver)) if SphericalHarmonicsMatrices.is_odd(m...)]))
+#     return (x=x, Ω=Ω)
+# end
+
+function discretize(pn_eq, discrete_model)
+    ## assemble (compute) all the energy matrices
+    s = [_s(pn_eq, e)(ϵ) for e in 1:number_of_elements(pn_eq), ϵ ∈ energy(discrete_model)] 
+    τ = [_τ(pn_eq, e)(ϵ) for e in 1:number_of_elements(pn_eq), ϵ ∈ energy(discrete_model)] 
+    σ = [_σ(pn_eq, e, i)(ϵ) for e in 1:number_of_elements(pn_eq), i in 1:number_of_scatterings(pn_eq), ϵ ∈ energy(discrete_model)] 
+
+
+    ## instantiate Gridap stuff
+    space_model = space(discrete_model)
+    U, V = function_spaces(space_model)
+    R = Triangulation(space_model)
+    ∂R = BoundaryTriangulation(space_model)
+    model = model=(model=space_model, R=R, dx=Measure(R, 2), ∂R=∂R, dΓ= Measure(∂R, 2), n=get_normal_vector(∂R))
+
+    n_basis = number_of_basis_functions(discrete_model)
+
+    ## assemble all the space matrices
+    ρp = [assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), model), U[1], V[1]) for e in 1:number_of_elements(pn_eq)]
+    ρm = [Diagonal(Vector(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
+
+    ∂p = [assemble_bilinear(a, (model, ), U[1], V[1]) for a ∈ ∫absn_uv(space(discrete_model))]
+    ∇pm = [assemble_bilinear(a, (model, ), U[1], V[2]) for a ∈ ∫∂u_v(space(discrete_model))]
+
+    ## assemble all the direction matrices
+    Kpp, Kmm = assemble_scattering_matrices(max_degree(discrete_model), _electron_scattering_kernel(pn_eq, 1, 1), nd(discrete_model))
+    kp = [[Kpp], [Kpp]]
+    # we use negative odd basis function for direction (resulting matrix is symmetric)
+    km = [[-Kmm], [Kmm]]
+
+    Ip = Diagonal(ones(n_basis.Ω.p))
+    # we use negative odd basis function for direction (resulting matrix is symmetric)
+    Im = Diagonal(-ones(n_basis.Ω.m))
+
+    absΩp = [assemble_boundary_matrix(max_degree(discrete_model), dir, :pp, nd(discrete_model)) for dir ∈ space_directions(discrete_model)]
+    Ωpm = [assemble_transport_matrix(max_degree(discrete_model), dir, :pm, nd(discrete_model)) for dir ∈ space_directions(discrete_model)]
+
+    ## assemble excitation and extraction 
+    gϵ = [_excitation_energy_distribution(pn_eq)(ϵ) for ϵ ∈ energy(discrete_model)]
+    gxp = Matrix(reshape(assemble_linear(∫nzgv, (_excitation_spatial_distribution(pn_eq), model), U[1], V[1]), (n_basis.x.p, 1),))
+    gΩp = Matrix(reshape(assemble_direction_boundary(max_degree(discrete_model), _excitation_direction_distribution(pn_eq), @SVector[0.0, 0.0, 1.0], nd(discrete_model)).p, (1, n_basis.Ω.p)))
+
+    μϵ = [_extraction_energy_distribution(pn_eq)(ϵ) for ϵ ∈ energy(discrete_model)]
+    μxp = Matrix(reshape(assemble_linear(∫μv, (_extraction_spatial_distribution(pn_eq), model), U[1], V[1]), (n_basis.x.p, 1)))
+    μΩp = Matrix(reshape(assemble_direction_source(max_degree(discrete_model), _extraction_direction_distribution(pn_eq), nd(discrete_model)).p, (1, n_basis.Ω.p)))
+
+    return DiscretePNProblem(discrete_model, s, τ, σ, ρp, ρm, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm, gϵ, gxp, gΩp, μϵ, μxp, μΩp)
+end
+
+function solve(prob, solver)
+    return solve(prob, solver, nothing)
+end
+
+function solve(prob, solver, parameters)
+    update!(prob, parameters)
+    for ϵ ∈ forward(prob, solver)
+        integrate(current_solution(solver))
+    end
+    return val
+end
+
+"""
 PNSemidiscretization.
 Basically a matrix storage, that has some logic to assemble the decomposed rhs (g and μ) (for given energy ϵ)
 """
@@ -21,7 +139,7 @@ struct PNSemidiscretization{T, V<:AbstractVector{T}, M<:AbstractMatrix{T}, SM<:A
     km::Vector{Vector{Diagonal{T, V}}}
 
     absΩp::Vector{M}
-    Ωpm::Vector{M}
+    Ωpm::Vector{SM}
 
     # For source (g) and extraction (μ) we only discretize the even parts (the odd parts should always be zero.)
     gx::Vector{SM}
@@ -114,12 +232,12 @@ function pn_semidiscretization(pn_sys, pn_equ, skip_projections=false)
         # we use negative odd basis function for direction (so the resulting matrix is symmetric)
         [[-Kmm], [-Kmm]],
 
-        [Matrix(assemble_boundary_matrix(pn_sys.PN, dir, :pp, nd(model.model))) for dir ∈ space_directions(model.model)],
-        [Matrix(assemble_transport_matrix(pn_sys.PN, dir, :pm, nd(model.model))) for dir ∈ space_directions(model.model)],
+        [assemble_boundary_matrix(pn_sys.PN, dir, :pp, nd(model.model)) for dir ∈ space_directions(model.model)],
+        [assemble_transport_matrix(pn_sys.PN, dir, :pm, nd(model.model)) for dir ∈ space_directions(model.model)],
 
         # only discretize the even parts (and store as matrices (with 1x or x1 dimension) then CUDA works):
-        [sparse(reshape(assemble_linear(∫nzgv, (_beam_spatial_distribution(pn_equ, j), model), U[1], V[1]), (n_basis.x.p, 1),)) for j in 1:number_of_beam_positions(pn_equ)],
-        [Matrix(reshape(assemble_direction_boundary(pn_sys.PN, _beam_direction_distribution(pn_equ, k), @SVector[0.0, 0.0, 1.0], nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_beam_directions(pn_equ)],
+        [sparse(reshape(assemble_linear(∫nzgv, (_excitation_spatial_distribution(pn_equ, j), model), U[1], V[1]), (n_basis.x.p, 1),)) for j in 1:number_of_beam_positions(pn_equ)],
+        [Matrix(reshape(assemble_direction_boundary(pn_sys.PN, _excitation_direction_distribution(pn_equ, k), @SVector[0.0, 0.0, 1.0], nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_beam_directions(pn_equ)],
 
         [Matrix(reshape(assemble_linear(∫μv, (_extraction_spatial_distribution(pn_equ, e), model), U[1], V[1]), (n_basis.x.p, 1))) for e in 1:number_of_extraction_positions(pn_equ)],
         [Matrix(reshape(assemble_direction_source(pn_sys.PN, _extraction_direction_distribution(pn_equ, k), nd(model.model)).p, (1, n_basis.Ω.p))) for k in 1:number_of_extraction_directions(pn_equ)],
@@ -146,24 +264,19 @@ function update_mass_concentrations!(pn_semi, ρs)
     end
 end
 
-# i: energy, j: space, k: direction
-function assemble_rhs!(b, vx, vΩ, d)
-    nLp = size(vx, 1)
-    nRp = size(vΩ, 2)
-    mul!(reshape(@view(b[1:nLp*nRp]), (nLp, nRp)), vx, vΩ, d, false)
+function assemble_rhs_p!(b, vxp, vΩp, d)
+    nLp = size(vxp, 1)
+    nRp = size(vΩp, 2)
+    mul!(reshape(@view(b[1:nLp*nRp]), (nLp, nRp)), vxp, vΩp, d, false)
     fill!(@view(b[nLp*nRp+1:end]), zero(eltype(b)))
 end
 
-function assemble_beam_rhs!(b, pn_semi::PNSemidiscretization, ϵ, (i, j, k), α)
-    ((nLp, nLm), (nRp, nRm)) = pn_semi.size
-    np = nLp*nRp
-    nm = nLm*nRm
+function assemble_rhs_hightolow!(b, problem::DiscretePNProblem, gϵ, α)
+    bp = pview(b, problem.model)
+    bm = mview(b, problem.model)
 
-    bp = reshape(@view(b[1:np]), (nLp, nRp))
-    bm = reshape(@view(b[np+1:np+nm]), (nLm, nRm))
-
-    mul!(bp, pn_semi.gx[j], pn_semi.gΩ[k], α*_excitation_energy_distribution(pn_semi.pn_equ, i)(ϵ), false)
-    fill!(bm, 0)
+    mul!(bp, problem.gx, problem.gΩ, α*gϵ, false)
+    fill!(bm, zero(eltype(b)))
 end
 
 function assemble_extraction_rhs!(b, pn_semi::PNSemidiscretization, ϵ, (i, j, k), α)

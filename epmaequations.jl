@@ -24,6 +24,23 @@ function total_specific_electron_scattering_cross_section(eq::EPMAEquations, e)
     end
 end
 
+function attenuation_factor(eq::EPMAEquations, j, p, x)
+    return sum((mass_concentrations(eq, e, p, x) * specific_attenuation_coefficient(eq, e, j) for e in 1:number_of_elements(eq)))
+end
+
+function quadrature(f, l, r, N)
+    return sum(f(x)*(r-l)/N for x in range(l, r, N))
+end
+
+function attenuation_field(eq::EPMAEquations, j, p, x)
+    v = takeoff_direction(eq, j)
+    @assert ((surface_z(eq) - x[1])/v[1]) >= 0.0u"nm"
+    path_vec = v .* ((surface_z(eq) - x[1])/v[1])
+    path(λ) = x .+ λ.*path_vec
+    path_speed = norm(path_vec)
+    return exp(-quadrature(λ -> attenuation_factor(eq, j, p, path(λ))*path_speed, 0.0, 1.0, 100))
+end
+
 # use a struct that we can dispatch on (to precompute stuff)
 abstract type BeamDirection end
 struct VMFBeam <: BeamDirection
@@ -38,6 +55,7 @@ struct IsotropicExtraction <: ExtractionDirection end
 
 # SOME DUMMY VALUES TO TEST THE CODE WITH
 
+
 struct DummyEPMAEquations <: EPMAEquations
     scattering_norm_factor::Float64
     gϵpos::Vector{Quantity{Float64}}
@@ -45,11 +63,15 @@ struct DummyEPMAEquations <: EPMAEquations
     gΩ::Vector{BeamDirection}
 
     μϵpos::Vector{Quantity{Float64}}
-    takeoff_angles::Vector{Vector{Float64}}
+    takeoff_directions::Vector{NTuple{3, Float64}}
 end
 
 scattering_kernel_func(μ) = exp(-5.0*(μ-1.0)^2)
-function dummy_epma_equations(gϵpos, gxpos, gΩpos, κ, μϵpos)
+
+import LinearAlgebra: normalize
+LinearAlgebra.normalize(x::NTuple{3, Float64}) = x ./ norm(x)
+
+function dummy_epma_equations(gϵpos, gxpos, gΩpos, κ, μϵpos, takeoff_directions)
     scattering_norm_factor = 2*π*hquadrature(x -> scattering_kernel_func(x), -1.0, 1.0)[1]
     return DummyEPMAEquations(
         scattering_norm_factor,
@@ -57,7 +79,7 @@ function dummy_epma_equations(gϵpos, gxpos, gΩpos, κ, μϵpos)
         gxpos,
         [VMFBeam(normalize(gΩp), κ) for gΩp ∈ gΩpos],
         μϵpos,
-        [[1.0, 0.0, 0.0]])
+        normalize.(takeoff_directions))
 end
 
 number_of_elements(::DummyEPMAEquations) = 2
@@ -69,6 +91,14 @@ number_of_beam_directions(eq::DummyEPMAEquations) = length(eq.gΩ)
 number_of_extraction_positions(eq::DummyEPMAEquations) = number_of_elements(eq)
 number_of_extraction_directions(eq::DummyEPMAEquations) = 1
 number_of_extraction_energies(eq::DummyEPMAEquations) = number_of_elements(eq)
+
+function takeoff_direction(eq::DummyEPMAEquations, j)
+    return eq.takeoff_directions[j]
+end
+
+function surface_z(eq::DummyEPMAEquations)
+    return 0.0u"nm"
+end
 
 function electron_scattering_kernel(eq::DummyEPMAEquations, e, i)
     # for now we ignore e and i
@@ -82,7 +112,12 @@ end
 
 function specific_electron_scattering_cross_section(::DummyEPMAEquations, e, i)
     u_scs = (u"nm")^5 / u"u"^2
-    return ϵ -> (0.0u_scs, 0.0u_scs)[e]
+    return ϵ -> (1.0u_scs, 1.0u_scs)[e]
+end
+
+function specific_attenuation_coefficient(::DummyEPMAEquations, e, j)
+    u_ac = u"nm"^2/u"u"
+    return 0.03*u_ac
 end
 
 beam_energy_distribution(eq::DummyEPMAEquations, i) = ϵ -> expm2(ϵ, eq.gϵpos[i], 0.04u"keV")
@@ -95,17 +130,25 @@ end
 beam_direction_distribution(eq::DummyEPMAEquations, k) = eq.gΩ[k]
 
 extraction_energy_distribution(eq::DummyEPMAEquations, i) = ϵ -> (ϵ-eq.μϵpos[i] > 0.0u"keV") ? sqrt((ϵ-eq.μϵpos[i])/1u"keV") : 0.0
-extraction_spatial_distribution(eq::DummyEPMAEquations, j) = x -> mass_concentrations(eq, j)(x) / (u"u"/u"nm"^3) # add absorption here ! this should be unitless
+extraction_spatial_distribution(eq::DummyEPMAEquations, j) = x -> mass_concentrations(eq, j, x) / (u"u"/u"nm"^3) # add absorption here ! this should be unitless
 extraction_direction_distribution(::DummyEPMAEquations, k) = IsotropicExtraction()
 
-function mass_concentrations(::DummyEPMAEquations, e::Int64)
+function default_parameters(eq::DummyEPMAEquations)
+    return [1.0]
+end
+
+function mass_concentrations(eq::DummyEPMAEquations, e::Int64, x)
+    # @info "Using starting parameters"
+    return mass_concentrations(eq, e, default_parameters(eq), x)
+end
+
+function mass_concentrations(::DummyEPMAEquations, e::Int64, p, (z, x, y))
     u_mc = u"u"/u"nm"^3
-    return function((z, x, y))
-        if abs(x) < 0.2u"nm"
-            return (0.0u_mc, 1.0u_mc)[e]
-        else
-            return (1.0u_mc, 0.0u_mc)[e]
-        end
+
+    if abs(x) < 30u"nm" && z > -10u"nm"
+        return (p[1]u_mc, 1.5u_mc)[e]
+    else
+        return (0.5u_mc, 0.0u_mc)[e]
     end
 end
 

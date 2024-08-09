@@ -19,34 +19,34 @@ function assemble_linear(b, args, U, V)
 end
 
 ## general
-function number_of_basis_functions(solver)
-    x = (p=num_free_dofs(solver.U[1]), m=num_free_dofs(solver.U[2]))
-    Ω = (p=length([m for m in SphericalHarmonicsMatrices.get_moments(solver.PN, nd(solver)) if SphericalHarmonicsMatrices.is_even(m...)]), m=length([m for m in SphericalHarmonicsMatrices.get_moments(solver.PN, nd(solver)) if SphericalHarmonicsMatrices.is_odd(m...)]))
-    return (x=x, Ω=Ω)
-end
+# function number_of_basis_functions(solver)
+#     x = (p=num_free_dofs(solver.U[1]), m=num_free_dofs(solver.U[2]))
+#     Ω = (p=length([m for m in SphericalHarmonicsMatrices.get_moments(solver.PN, nd(solver)) if SphericalHarmonicsMatrices.is_even(m...)]), m=length([m for m in SphericalHarmonicsMatrices.get_moments(solver.PN, nd(solver)) if SphericalHarmonicsMatrices.is_odd(m...)]))
+#     return (x=x, Ω=Ω)
+# end
 
 ## solver functions
-function build_solver(model, PN, n_elem)
-    V = MultiFieldFESpace([TestFESpace(model, ReferenceFE(lagrangian, Float64, 1), conformity=:H1), TestFESpace(model, ReferenceFE(lagrangian, Float64, 0), conformity=:L2)])
-    U = MultiFieldFESpace([TrialFESpace(V[1]), TrialFESpace(V[2])])
+# function build_solver(model, PN, n_elem)
+#     V = MultiFieldFESpace([TestFESpace(model, ReferenceFE(lagrangian, Float64, 1), conformity=:H1), TestFESpace(model, ReferenceFE(lagrangian, Float64, 0), conformity=:L2)])
+#     U = MultiFieldFESpace([TrialFESpace(V[1]), TrialFESpace(V[2])])
 
-    R = Triangulation(model)
-    dx = Measure(R, 2)
-    ∂R = BoundaryTriangulation(model)
-    dΓ = Measure(∂R, 2)
-    n = get_normal_vector(∂R)
+#     R = Triangulation(model)
+#     dx = Measure(R, 2)
+#     ∂R = BoundaryTriangulation(model)
+#     dΓ = Measure(∂R, 2)
+#     n = get_normal_vector(∂R)
 
-    return (U=U, V=V, model=(model=model, R=R, dx=dx, ∂R=∂R, dΓ=dΓ, n=n), PN=PN, n_elem=n_elem)
-end
+#     return (U=U, V=V, model=(model=model, R=R, dx=dx, ∂R=∂R, dΓ=dΓ, n=n), PN=PN, n_elem=n_elem)
+# end
 
 number_of_dimensions(::DiscreteModel{N}) where N = N
 function nd(::DiscreteModel{N}) where N
     return Val{N}()
 end
 
-function nd(solver)
-    return nd(solver.model.model)
-end
+# function nd(solver)
+#     return nd(solver.model.model)
+# end
 
 function material_space(model)
     return FESpace(model, ReferenceFE(lagrangian, Float64, 0), conformity=:L2)
