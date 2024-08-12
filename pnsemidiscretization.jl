@@ -39,6 +39,16 @@ struct DiscretePNProblem{T, V<:AbstractVector{T}, M<:AbstractMatrix{T}, SM<:Abst
     μΩp::M
 end
 
+struct DiscretePNRHS{T, M<:AbstractMatrix{}}
+    bϵ::Vector{T}
+    bxp::M
+    bΩp::M
+end
+
+mat_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = M
+vec_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = V
+base_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = T
+
 function cuda(problem::DiscretePNProblem, T=Float32)
     return DiscretePNProblem(
         problem.model, Matrix{T}(problem.s), Matrix{T}(problem.τ), Array{T, 3}(problem.σ), cu.(problem.ρp), cu.(problem.ρm), cu.(problem.∂p), cu.(problem.∇pm),
@@ -47,23 +57,15 @@ function cuda(problem::DiscretePNProblem, T=Float32)
     )
 end
 
-function discrete_skeleton(discrete_model)
-    s = zeros(number_of_elements(pn_eq), length(energy(discrete_model)))
-    τ = ..
-    TODO
-end
-
-# function number_of_basis_functions(solver)
-#     x = (p=num_free_dofs(solver.U[1]), m=num_free_dofs(solver.U[2]))
-#     Ω = (p=length([m for m in SphericalHarmonicsMatrices.get_moments(solver.PN, nd(solver)) if SphericalHarmonicsMatrices.is_even(m...)]), m=length([m for m in SphericalHarmonicsMatrices.get_moments(solver.PN, nd(solver)) if SphericalHarmonicsMatrices.is_odd(m...)]))
-#     return (x=x, Ω=Ω)
-# end
-
 function discretize(pn_eq, discrete_model)
+    MT = mat_type(discrete_model)
+    VT = vec_type(discrete_model)
+    SMT = smat_type(discrete_model)
+    T = base_type(discrete_model)
     ## assemble (compute) all the energy matrices
-    s = [_s(pn_eq, e)(ϵ) for e in 1:number_of_elements(pn_eq), ϵ ∈ energy(discrete_model)] 
-    τ = [_τ(pn_eq, e)(ϵ) for e in 1:number_of_elements(pn_eq), ϵ ∈ energy(discrete_model)] 
-    σ = [_σ(pn_eq, e, i)(ϵ) for e in 1:number_of_elements(pn_eq), i in 1:number_of_scatterings(pn_eq), ϵ ∈ energy(discrete_model)] 
+    s = Matrix{T}([_s(pn_eq, e)(ϵ) for e in 1:number_of_elements(pn_eq), ϵ ∈ energy(discrete_model)])
+    τ = Matrix{T}([_τ(pn_eq, e)(ϵ) for e in 1:number_of_elements(pn_eq), ϵ ∈ energy(discrete_model)])
+    σ = Array{T}([_σ(pn_eq, e, i)(ϵ) for e in 1:number_of_elements(pn_eq), i in 1:number_of_scatterings(pn_eq), ϵ ∈ energy(discrete_model)])
 
 
     ## instantiate Gridap stuff
@@ -76,47 +78,37 @@ function discretize(pn_eq, discrete_model)
     n_basis = number_of_basis_functions(discrete_model)
 
     ## assemble all the space matrices
-    ρp = [assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), model), U[1], V[1]) for e in 1:number_of_elements(pn_eq)]
-    ρm = [Diagonal(Vector(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
+    ρp = [SMT((assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), model), U[1], V[1]))) for e in 1:number_of_elements(pn_eq)] 
+    ρm = [Diagonal(VT(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
 
-    ∂p = [assemble_bilinear(a, (model, ), U[1], V[1]) for a ∈ ∫absn_uv(space(discrete_model))]
-    ∇pm = [assemble_bilinear(a, (model, ), U[1], V[2]) for a ∈ ∫∂u_v(space(discrete_model))]
+    ∂p = [SMT(dropzeros(assemble_bilinear(a, (model, ), U[1], V[1]))) for a ∈ ∫absn_uv(space(discrete_model))]
+    ∇pm = [SMT(assemble_bilinear(a, (model, ), U[1], V[2])) for a ∈ ∫∂u_v(space(discrete_model))]
 
     ## assemble all the direction matrices
     Kpp, Kmm = assemble_scattering_matrices(max_degree(discrete_model), _electron_scattering_kernel(pn_eq, 1, 1), nd(discrete_model))
+    Kpp = Diagonal(VT(Kpp.diag))
+    Kmm = Diagonal(VT(-Kmm.diag))
     kp = [[Kpp], [Kpp]]
     # we use negative odd basis function for direction (resulting matrix is symmetric)
-    km = [[-Kmm], [Kmm]]
+    km = [[Kmm], [Kmm]]
 
-    Ip = Diagonal(ones(n_basis.Ω.p))
+    Ip = Diagonal(VT(ones(n_basis.Ω.p)))
     # we use negative odd basis function for direction (resulting matrix is symmetric)
-    Im = Diagonal(-ones(n_basis.Ω.m))
+    Im = Diagonal(VT(-ones(n_basis.Ω.m)))
 
-    absΩp = [assemble_boundary_matrix(max_degree(discrete_model), dir, :pp, nd(discrete_model)) for dir ∈ space_directions(discrete_model)]
-    Ωpm = [assemble_transport_matrix(max_degree(discrete_model), dir, :pm, nd(discrete_model)) for dir ∈ space_directions(discrete_model)]
+    absΩp = [MT(assemble_boundary_matrix(max_degree(discrete_model), dir, :pp, nd(discrete_model), 1e-7)) for dir ∈ space_directions(discrete_model)]
+    Ωpm = [SMT(assemble_transport_matrix(max_degree(discrete_model), dir, :pm, nd(discrete_model))) for dir ∈ space_directions(discrete_model)]
 
     ## assemble excitation and extraction 
-    gϵ = [_excitation_energy_distribution(pn_eq)(ϵ) for ϵ ∈ energy(discrete_model)]
-    gxp = Matrix(reshape(assemble_linear(∫nzgv, (_excitation_spatial_distribution(pn_eq), model), U[1], V[1]), (n_basis.x.p, 1),))
-    gΩp = Matrix(reshape(assemble_direction_boundary(max_degree(discrete_model), _excitation_direction_distribution(pn_eq), @SVector[0.0, 0.0, 1.0], nd(discrete_model)).p, (1, n_basis.Ω.p)))
+    gϵ = Vector{T}([_excitation_energy_distribution(pn_eq)(ϵ) for ϵ ∈ energy(discrete_model)])
+    gxp = MT(reshape(assemble_linear(∫nzgv, (_excitation_spatial_distribution(pn_eq), model), U[1], V[1]), (n_basis.x.p, 1),))
+    gΩp = MT(reshape(assemble_direction_boundary(max_degree(discrete_model), _excitation_direction_distribution(pn_eq), @SVector[0.0, 0.0, 1.0], nd(discrete_model)).p, (1, n_basis.Ω.p)))
 
-    μϵ = [_extraction_energy_distribution(pn_eq)(ϵ) for ϵ ∈ energy(discrete_model)]
-    μxp = Matrix(reshape(assemble_linear(∫μv, (_extraction_spatial_distribution(pn_eq), model), U[1], V[1]), (n_basis.x.p, 1)))
-    μΩp = Matrix(reshape(assemble_direction_source(max_degree(discrete_model), _extraction_direction_distribution(pn_eq), nd(discrete_model)).p, (1, n_basis.Ω.p)))
+    μϵ = Vector{T}([_extraction_energy_distribution(pn_eq)(ϵ) for ϵ ∈ energy(discrete_model)])
+    μxp = MT(reshape(assemble_linear(∫μv, (_extraction_spatial_distribution(pn_eq), model), U[1], V[1]), (n_basis.x.p, 1)))
+    μΩp = MT(reshape(assemble_direction_source(max_degree(discrete_model), _extraction_direction_distribution(pn_eq), nd(discrete_model)).p, (1, n_basis.Ω.p)))
 
     return DiscretePNProblem(discrete_model, s, τ, σ, ρp, ρm, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm, gϵ, gxp, gΩp, μϵ, μxp, μΩp)
-end
-
-function solve(prob, solver)
-    return solve(prob, solver, nothing)
-end
-
-function solve(prob, solver, parameters)
-    update!(prob, parameters)
-    for ϵ ∈ forward(prob, solver)
-        integrate(current_solution(solver))
-    end
-    return val
 end
 
 """

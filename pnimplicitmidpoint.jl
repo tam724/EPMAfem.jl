@@ -99,7 +99,8 @@ struct PNFullImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplici
     lin_solver::Tsolv
 end
 
-function initialize!(pn_solv::PNFullImplicitMidpointSolver{T}) where T
+function initialize!(pn_solv::PNFullImplicitMidpointSolver{T}, problem) where T
+    # use initial condition from problem
     fill!(pn_solv.lin_solver.x, zero(T))
 end
 
@@ -112,7 +113,7 @@ function step_hightolow!(solver::PNFullImplicitMidpointSolver{T}, problem::Discr
     a, b, c = update_coefficients_mat_hightolow!(solver, problem, i, Δϵ)
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
     Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=T(1e-14), atol=T(1e-14))
-    # @show pn_solv.lin_solver.stats
+    @show solver.lin_solver.stats
 end
 
 function step_lowtohigh!(solver::PNFullImplicitMidpointSolver{T}, problem::DiscretePNProblem, i, Δϵ) where T
@@ -123,16 +124,19 @@ function step_lowtohigh!(solver::PNFullImplicitMidpointSolver{T}, problem::Discr
     # @show pn_solv.lin_solver.stats
 end
 
-function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, model::PNGridapModel)
-    n = number_of_basis_functions(model)
+function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel)
+    n = number_of_basis_functions(discrete_model)
+    VT = vec_type(discrete_model)
+    T = base_type(discrete_model)
+
     n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m
     return PNFullImplicitMidpointSolver(
-        ones(number_of_elements(pn_eq)),
-        [ones(number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)], 
-        zeros(max(n.x.p, n.x.m)*max(n.Ω.p, n.Ω.m)),
-        zeros(max(n.Ω.p, n.Ω.m)),
-        zeros(n_tot),
-        Krylov.MinresSolver(n_tot, n_tot, Vector{Float64})
+        Vector{T}(undef, number_of_elements(pn_eq)),
+        [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)], 
+        VT(undef, max(n.x.p, n.x.m)*max(n.Ω.p, n.Ω.m)),
+        VT(undef, max(n.Ω.p, n.Ω.m)),
+        VT(undef, n_tot),
+        Krylov.MinresSolver(n_tot, n_tot, VT)
     )
 end
 
@@ -161,42 +165,29 @@ struct PNSchurImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplic
     lin_solver::Tsolv
 end
 
-function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, model::PNGridapModel)
-    n = number_of_basis_functions(model)
+function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel)
+    n = number_of_basis_functions(discrete_model)
+    VT = vec_type(discrete_model)
+    T = base_type(discrete_model)
 
     np = n.x.p*n.Ω.p
     n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m
     return PNSchurImplicitMidpointSolver(
-        ones(number_of_elements(pn_eq)),
-        [ones(number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)],
-        zeros(max(n.x.p, n.x.m)*max(n.Ω.p, n.Ω.m)),
-        zeros(max(n.Ω.p, n.Ω.m)),
-        zeros(n.x.m*n.Ω.m),
-        zeros(n.x.m*n.Ω.m),
-        zeros(np),
-        zeros(n_tot),
-        zeros(n_tot),
-        Krylov.MinresSolver(np, np, Vector{Float64}),
+        Vector{T}(undef, number_of_elements(pn_eq)),
+        [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)],
+        VT(undef, max(n.x.p, n.x.m)*max(n.Ω.p, n.Ω.m)),
+        VT(undef, max(n.Ω.p, n.Ω.m)),
+        VT(undef, n.x.m*n.Ω.m),
+        VT(undef, n.x.m*n.Ω.m),
+        VT(undef, np),
+        VT(undef, n_tot),
+        VT(undef, n_tot),
+        Krylov.MinresSolver(np, np, VT),
     )
 end
 
-function cuda(solver::PNSchurImplicitMidpointSolver, T=Float32)
-    return PNSchurImplicitMidpointSolver(
-        Vector{T}(solver.a),
-        Vector{T}.(solver.c),
-        solver.tmp |> cu,
-        solver.tmp2 |> cu,
-        solver.tmp3 |> cu,
-        solver.D |> cu,
-        solver.rhs_schur |> cu,
-        solver.rhs |> cu,
-        solver.sol |> cu,
-        Krylov.MinresSolver(solver.lin_solver.m, solver.lin_solver.n, CuVector{T})
-    )
-end
-
-
-function initialize!(solver::PNSchurImplicitMidpointSolver{T}) where T
+function initialize!(solver::PNSchurImplicitMidpointSolver{T}, problem) where T
+    # use initial condition from problem
     fill!(solver.sol, zero(T))
 end
 
@@ -207,12 +198,12 @@ end
 function step_hightolow!(solver::PNSchurImplicitMidpointSolver{T}, problem::DiscretePNProblem, i, Δϵ) where T
     update_rhs_hightolow!(solver, problem, i, Δϵ)
     a, b, c = update_coefficients_mat_hightolow!(solver, problem, i, Δϵ)
-    _update_D(solver, problem, a, b, c)
-    _compute_schur_rhs(solver, problem, a, b, c)
+    _update_D(solver, problem, a, b, c) # assembles the right lower block (diagonal)
+    _compute_schur_rhs(solver, problem, a, b, c) # computes the schur rhs (using the inverse of D)
     A_schur = SchurBlockMat(problem.ρp, problem.∇pm, problem.∂p, problem.Ip, problem.kp, problem.Ωpm, problem.absΩp, Diagonal(solver.D), a, b, c, solver.tmp, solver.tmp2, solver.tmp3)
     Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=T(1e-14), atol=T(1e-14))
-    # @show pn_solv.lin_solver.stats
-    _compute_full_solution_schur(solver, problem, a, b, c)
+    @show solver.lin_solver.stats
+    _compute_full_solution_schur(solver, problem, a, b, c) # reconstructs lower part of the solution vector
     return
 end
 
@@ -267,7 +258,6 @@ function _compute_schur_rhs(solver::PNSchurImplicitMidpointSolver, problem::Disc
     # _mul_mp!(rhs_schurp, pn_solv.A_schur.A, A_tmp_m, -1.0)
 
     mul!(solver.rhs_schur, DMatrix((transpose(∇pmd) for ∇pmd in problem.∇pm), problem.Ωpm, b, mat_view(solver.tmp, nLp, nRm)), @view(solver.tmp3[1:nLm*nRm]), -1.0, true)
-
 end
 
 function _compute_full_solution_schur(solver::PNSchurImplicitMidpointSolver, problem::DiscretePNProblem, a, b, c)
@@ -294,9 +284,8 @@ function _compute_full_solution_schur(solver::PNSchurImplicitMidpointSolver, pro
     full_m .= full_m ./ solver.D
 end
 
-struct PNDLRFullImplicitMidpointSolver{T, V<:AbstractVector{T}, Tpnsemi<:PNSemidiscretization{T, V}, Tppnsemi, Tsolv} <: PNImplicitMidpointSolver{T}
-    pn_semi::Tpnsemi
-    pn_proj_semi::Tppnsemi
+struct PNDLRFullImplicitMidpointSolver{T, V<:AbstractVector{T}, TPP, Tsolv} <: PNImplicitMidpointSolver{T}
+    proj_problem::TPP
     a::Vector{T}
     c::Vector{Vector{T}}
     Mbuf::V
@@ -308,38 +297,35 @@ struct PNDLRFullImplicitMidpointSolver{T, V<:AbstractVector{T}, Tpnsemi<:PNSemid
     sol::Tuple{V, V, V}
     ranks::Vector{Int64}
     max_rank::Int64
-    N::Int64
 end
 
-function get_pn_equ(pn_solv::PNDLRFullImplicitMidpointSolver)
-    return pn_solv.pn_semi.pn_equ
-end
+function initialize!(solver::PNDLRFullImplicitMidpointSolver{T}, problem) where T
+    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    rp, rm = solver.ranks
 
-function initialize!(pn_solv::PNDLRFullImplicitMidpointSolver{T}) where T
-    ((nLp, nLm), (nRp, nRm)) = pn_solv.pn_semi.size
-    rp, rm = pn_solv.ranks
-
+    # this is still a bit strange
     ψp0 = rand(nLp, nRp)
     ψm0 = rand(nLm, nRm)
     Up, Sp, Vtp = svd(ψp0)
     Um, Sm, Vtm = svd(ψm0)
 
-    copyto!(@view(pn_solv.sol[1][1:nLp*rp]), Up[:, 1:rp][:])
-    copyto!(@view(pn_solv.sol[1][nLp*rp+1:nLp*rp+nLm*rm]), Um[:, 1:rm][:])
+    copyto!(@view(solver.sol[1][1:nLp*rp]), Up[:, 1:rp][:])
+    copyto!(@view(solver.sol[1][nLp*rp+1:nLp*rp+nLm*rm]), Um[:, 1:rm][:])
 
-    copyto!(@view(pn_solv.sol[2][1:rp*rp]), Diagonal(zeros(rp))[:])
-    copyto!(@view(pn_solv.sol[2][rp*rp+1:rp*rp+rm*rm]), Diagonal(zeros(rm))[:])
+    copyto!(@view(solver.sol[2][1:rp*rp]), Diagonal(zeros(rp))[:])
+    copyto!(@view(solver.sol[2][rp*rp+1:rp*rp+rm*rm]), Diagonal(zeros(rm))[:])
 
-    copyto!(@view(pn_solv.sol[3][1:rp*nRp]), Vtp[1:rp, :][:])
-    copyto!(@view(pn_solv.sol[3][rp*nRp+1:rp*nRp+rm*nRm]), Vtm[1:rm, :][:])
+    copyto!(@view(solver.sol[3][1:rp*nRp]), Vtp[1:rp, :][:])
+    copyto!(@view(solver.sol[3][rp*nRp+1:rp*nRp+rm*nRm]), Vtm[1:rm, :][:])
 end
 
-function current_solution(pn_solv::PNDLRFullImplicitMidpointSolver)
-    ((nLp, nLm), (nRp, nRm)) = pn_solv.pn_semi.size
-    rp, rm = pn_solv.ranks
-    U = view_U(pn_solv.sol[1], (nLp, nLm), (rp, rm))
-    S = view_S(pn_solv.sol[2], (rp, rm))
-    Vt = view_Vt(pn_solv.sol[3], (nRp, nRm), (rp, rm))
+# maybe this should not depend on the problem (the solver could have the view_U,S,Vt functions available with the current rank)
+function current_solution(solver::PNDLRFullImplicitMidpointSolver, problem)
+    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    rp, rm = solver.ranks
+    U = view_U(solver.sol[1], (nLp, nLm), (rp, rm))
+    S = view_S(solver.sol[2], (rp, rm))
+    Vt = view_Vt(solver.sol[3], (nRp, nRm), (rp, rm))
     ψp = U.Up * S.Sp * Vt.Vtp
     ψm = U.Um * S.Sm * Vt.Vtm
     return [ψp[:]; ψm[:]]
@@ -361,7 +347,7 @@ function view_M(m, (rp, rm))
     return (Mp=reshape(@view(m[1:r*r]), (r, r)), Mm=reshape(@view(m[r*r+1:r*r+r*r]), (r, r)))
 end
 
-function get_lin_solver(bs::MinresSolver{T, FC, S}, m, n) where {T, FC, S<:CuArray{T, 1, CUDA.DeviceMemory}}
+function get_lin_solver(bs::MinresSolver{T, FC, S}, m, n) where {T, FC, S<:CuArray{T, 1}}
     ## pull the solver internal caches from the "big solver", that is stored in the type
     fill!(bs.err_vec, zero(T))
     stats = bs.stats
@@ -380,31 +366,30 @@ end
 cuview(A::Array, slice) = uview(A, slice)
 cuview(A::CuArray, slice) = view(A, slice)
 
-function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip1, (gi, gj, gk)) where {T, V}
-    ((nLp, nLm), (nRp, nRm)) = pn_solv.pn_semi.size
-    rp, rm = pn_solv.ranks
+function step_hightolow!(solver::PNDLRFullImplicitMidpointSolver{T, V}, problem::DiscretePNProblem, i, Δϵ) where {T, V}
+    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    rp, rm = solver.ranks
 
-    pn_semi = pn_solv.pn_semi
-    pn_proj_semi = pn_solv.pn_proj_semi
+    proj_problem = solver.proj_problem
 
-    ϵ2 = 0.5*(ϵi + ϵip1)
-    Δϵ = ϵip1 - ϵi
+    gϵ2 = 0.5*(problem.gϵ[i] + problem.gϵ[i-1])
+
     #K-step
-    Vt = view_Vt(pn_solv.sol[3], (nRp, nRm), (rp, rm))
-    update_Vt!(pn_proj_semi, pn_semi, Vt)
-    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, _, _ = V_views(pn_proj_semi)
-    lin_solver_K = get_lin_solver(pn_solv.lin_solver, rp*nLp + rm*nLm, rp*nLp + rm*nLm)
+    Vt = view_Vt(solver.sol[3], (nRp, nRm), (rp, rm))
+    update_Vt!(proj_problem, problem, Vt)
+    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, _, _ = V_views(proj_problem)
+    lin_solver_K = get_lin_solver(solver.lin_solver, rp*nLp + rm*nLm, rp*nLp + rm*nLm)
     # assemble rhs
-        rhs_K = cuview(pn_solv.rhs,1:rp*nLp+rm*nLm)
+        rhs_K = cuview(solver.rhs,1:rp*nLp+rm*nLm)
         # minus because we have to bring b to the right side of the equation
-        gΩV = gΩV_view(pn_proj_semi, gk)
-        assemble_rhs_p!(rhs_K, pn_semi.gx[gj], gΩV, -Δϵ*_excitation_energy_distribution(pn_equ, gi)(ϵ2))
-        a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
-        A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+        gΩpV = gΩpV_view(proj_problem)
+        assemble_rhs_p!(rhs_K, problem.gxp, gΩpV, -Δϵ*gϵ2)
+        a, b, c = update_coefficients_rhs_hightolow!(solver, problem, i, Δϵ)
+        A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, solver.tmp, solver.tmp2)
         # we use the solution buffer of the solver for K0
         K0_vec = lin_solver_K.x
-        U = view_U(pn_solv.sol[1], (nLp, nLm), (rp, rm))
-        S = view_S(pn_solv.sol[2], (rp, rm))
+        U = view_U(solver.sol[1], (nLp, nLm), (rp, rm))
+        S = view_S(solver.sol[2], (rp, rm))
         K0 = view_U(K0_vec, (nLp, nLm), (rp, rm))
         mul!(K0.Up, U.Up, S.Sp)
         mul!(K0.Um, U.Um, S.Sm)
@@ -412,33 +397,33 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         mul!(rhs_K, A, K0_vec, -1.0, 1.0)
         K0 = nothing # forget about K0, it will be overwritten by the solve
     # solve the system 
-        a, b, c = update_coefficients_mat_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
-        A = FullBlockMat(pn_semi.ρp, pn_semi.ρm, pn_semi.∇pm, pn_semi.∂p, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+        a, b, c = update_coefficients_mat_hightolow!(solver, problem, i, Δϵ)
+        A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, solver.tmp, solver.tmp2)
         Krylov.minres!(lin_solver_K, A, rhs_K, rtol=T(1e-14), atol=T(1e-14))
         # K1, stats = Krylov.minres(A, rhs_K, rtol=T(1e-14), atol=T(1e-14))
         @show lin_solver_K.stats
         K = view_U(lin_solver_K.x, (nLp, nLm), (rp, rm))
-        U_hatp = qr([K.Up U.Up]).Q |> mat_type(pn_solv.pn_semi)
-        U_hatm = qr([K.Um U.Um]).Q |> mat_type(pn_solv.pn_semi)
+        U_hatp = qr([K.Up U.Up]).Q |> mat_type(problem)
+        U_hatm = qr([K.Um U.Um]).Q |> mat_type(problem)
 
         M_hatp = transpose(U_hatp)*U.Up
         M_hatm = transpose(U_hatm)*U.Um
 
     #L-step
-    U = view_U(pn_solv.sol[1], (nLp, nLm), (rp, rm))
-    update_U!(pn_proj_semi, pn_semi, U)
-    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, _, _ = U_views(pn_proj_semi)
-    lin_solver_L = get_lin_solver(pn_solv.lin_solver, nRp*rp + nRm*rm, nRp*rp + nRm*rm)
+    U = view_U(solver.sol[1], (nLp, nLm), (rp, rm))
+    update_U!(proj_problem, problem, U)
+    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, _, _ = U_views(proj_problem)
+    lin_solver_L = get_lin_solver(solver.lin_solver, nRp*rp + nRm*rm, nRp*rp + nRm*rm)
     # assemble rhs
-        rhs_U = cuview(pn_solv.rhs, 1:nRp*rp+nRm*rm)
+        rhs_U = cuview(solver.rhs, 1:nRp*rp+nRm*rm)
         # minus because we have to bring b to the right side of the equation
-        gxU = gxU_view(pn_proj_semi, gj)
-        assemble_rhs_p!(rhs_U, gxU, pn_semi.gΩ[gk], -Δϵ*_excitation_energy_distribution(pn_equ, gi)(ϵ2))
-        a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
-        A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+        gxpU = gxpU_view(proj_problem)
+        assemble_rhs_p!(rhs_U, gxpU, problem.gΩp, -Δϵ*gϵ2)
+        a, b, c = update_coefficients_rhs_hightolow!(solver, problem, i, Δϵ)
+        A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
         Lt0_vec = lin_solver_L.x
-        Vt = view_Vt(pn_solv.sol[3], (nRp, nRm), (rp, rm))
-        S = view_S(pn_solv.sol[2], (rp, rm))
+        Vt = view_Vt(solver.sol[3], (nRp, nRm), (rp, rm))
+        S = view_S(solver.sol[2], (rp, rm))
         Lt0 = view_Vt(Lt0_vec, (nRp, nRm), (rp, rm))
         mul!(Lt0.Vtp, S.Sp, Vt.Vtp)
         mul!(Lt0.Vtm, S.Sm, Vt.Vtm)
@@ -446,68 +431,68 @@ function step_forward!(pn_solv::PNDLRFullImplicitMidpointSolver{T, V}, ϵi, ϵip
         mul!(rhs_U, A, Lt0_vec, -1.0, 1.0)
         Lt0 = nothing
     # solve the system 
-        a, b, c = update_coefficients_mat_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
-        A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, pn_semi.Ip, pn_semi.Im, pn_semi.kp, pn_semi.km, pn_semi.Ωpm,  pn_semi.absΩp, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+        a, b, c = update_coefficients_mat_hightolow!(solver, problem, i, Δϵ)
+        A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
         Krylov.minres!(lin_solver_L, A, rhs_U, rtol=T(1e-14), atol=T(1e-14))
         # @show stats
         Lt = view_Vt(lin_solver_L.x, (nRp, nRm), (rp, rm))
-        V_hatp = qr([transpose(Lt.Vtp) transpose(Vt.Vtp)]).Q |> mat_type(pn_solv.pn_semi)
-        V_hatm = qr([transpose(Lt.Vtm) transpose(Vt.Vtm)]).Q |> mat_type(pn_solv.pn_semi)
+        V_hatp = qr([transpose(Lt.Vtp) transpose(Vt.Vtp)]).Q |> mat_type(problem)
+        V_hatm = qr([transpose(Lt.Vtm) transpose(Vt.Vtm)]).Q |> mat_type(problem)
         N_hatTp = Vt.Vtp*V_hatp
         N_hatTm = Vt.Vtm*V_hatm
         
     #S-step
-    update_Vt!(pn_proj_semi, pn_semi, (Vtp=transpose(V_hatp), Vtm=transpose(V_hatm)))
-    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, _, _ = V_views(pn_proj_semi)
-    update_U!(pn_proj_semi, pn_semi, (Up=U_hatp, Um=U_hatm))
-    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, _, _ = U_views(pn_proj_semi)
-    lin_solver_S = get_lin_solver(pn_solv.lin_solver, 2*rp*2*rp+2*rm*2*rm, 2*rp*2*rp+2*rm*2*rm)
+    update_Vt!(proj_problem, problem, (Vtp=transpose(V_hatp), Vtm=transpose(V_hatm)))
+    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, _, _ = V_views(proj_problem)
+    update_U!(proj_problem, problem, (Up=U_hatp, Um=U_hatm))
+    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, _, _ = U_views(proj_problem)
+    lin_solver_S = get_lin_solver(solver.lin_solver, 2*rp*2*rp+2*rm*2*rm, 2*rp*2*rp+2*rm*2*rm)
     # assemble rhs
-        rhs_S = cuview(pn_solv.rhs, 1:2*rp*2*rp+2*rm*2*rm)
+        rhs_S = cuview(solver.rhs, 1:2*rp*2*rp+2*rm*2*rm)
         # minus because we have to bring b to the right side of the equation
-        gΩV = gΩV_view(pn_proj_semi, gk)
-        gxU = gxU_view(pn_proj_semi, gj)
-        assemble_rhs_p!(rhs_S, gxU, gΩV, -Δϵ*_excitation_energy_distribution(pn_equ, gi)(ϵ2))
-        a, b, c = update_coefficients_rhs_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
-        A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+        gΩpV = gΩpV_view(proj_problem)
+        gxpU = gxpU_view(proj_problem)
+        assemble_rhs_p!(rhs_S, gxpU, gΩpV, -Δϵ*gϵ2)
+        a, b, c = update_coefficients_rhs_hightolow!(solver, problem, i, Δϵ)
+        A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, solver.tmp, solver.tmp2)
         S0_vec = lin_solver_S.x
         S0 = view_S(S0_vec, (2*rp, 2*rm))
-        S0_prev = view_S(pn_solv.sol[2], (rp, rm))
+        S0_prev = view_S(solver.sol[2], (rp, rm))
         S0.Sp .= M_hatp*S0_prev.Sp*N_hatTp
         S0.Sm .= M_hatm*S0_prev.Sm*N_hatTm
         # minus because we have to bring b to the right side of the equation
         mul!(rhs_S, A, S0_vec, -1.0, 1.0)
         S0_vec = nothing
     # solve the system 
-        a, b, c = update_coefficients_mat_forward!(pn_solv, ϵi, ϵ2, ϵip1, Δϵ)
-        A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, pn_solv.tmp, pn_solv.tmp2)
+        a, b, c = update_coefficients_mat_hightolow!(solver, problem, i, Δϵ)
+        A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, solver.tmp, solver.tmp2)
         Krylov.minres!(lin_solver_S, A, rhs_S, rtol=T(1e-14), atol=T(1e-14))
         # @show stats
         S_new = view_S(lin_solver_S.x, (2*rp, 2*rm))
 
         P_hatp, Σ_hatp, Q_hatp = svd(S_new.Sp)
         P_hatm, Σ_hatm, Q_hatm = svd(S_new.Sm)
-        r1p, r1m = compute_new_rank(Σ_hatp, pn_solv.max_rank), compute_new_rank(Σ_hatm, pn_solv.max_rank)
+        r1p, r1m = compute_new_rank(Σ_hatp, solver.max_rank), compute_new_rank(Σ_hatm, solver.max_rank)
 
     # update the current solution
-    U = view_U(pn_solv.sol[1], (nLp, nLm), (r1p, r1m))
-    S = view_S(pn_solv.sol[2], (r1p, r1m))
-    Vt = view_Vt(pn_solv.sol[3], (nRp, nRm), (r1p, r1m))
+    U = view_U(solver.sol[1], (nLp, nLm), (r1p, r1m))
+    S = view_S(solver.sol[2], (r1p, r1m))
+    Vt = view_Vt(solver.sol[3], (nRp, nRm), (r1p, r1m))
     U.Up .= U_hatp*(P_hatp[:, 1:r1p])
     U.Um .= U_hatm*(P_hatm[:, 1:r1m])
     S.Sp .= Diagonal(Σ_hatp[1:r1p])
     S.Sm .= Diagonal(Σ_hatm[1:r1m])
     Vt.Vtp .= transpose(V_hatp*(Q_hatp[:, 1:r1p]))
     Vt.Vtm .= transpose(V_hatm*(Q_hatm[:, 1:r1m]))
-    pn_solv.ranks .= [r1p, r1m]
-    @show pn_solv.ranks
+    solver.ranks .= [r1p, r1m]
+    @show solver.ranks
     return 
 end
 
 function compute_new_rank(Σ, max_rank)
     r1 = 1
     Σ = Vector(Σ)
-    while sqrt(sum([σ^2 for σ ∈ Σ[r1+1:end]])) > 1e-2
+    while sqrt(sum([σ^2 for σ ∈ Σ[r1+1:end]])) > 1e-3
         r1 += 1
     end
     return min(r1, max_rank)
@@ -526,26 +511,26 @@ end
 #     # @show pn_solv.lin_solver.stats
 # end
 
-function pn_dlrfullimplicitmidpointsolver(pn_semi::PNSemidiscretization{T, V}, N, max_rank) where {T, V}
-    ((nLp, nLm), (nRp, nRm)) = pn_semi.size
+function pn_dlrfullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, max_rank)
+    (_, (nLp, nLm), (nRp, nRm)) = discrete_model.n_basis
+    VT = vec_type(discrete_model)
+    T = base_type(discrete_model)
 
     n = nLp*nRp + nLm*nRm
     r = 2*max_rank # currently the rank is fixed 2r
     mr2 = 2*max_rank
     return PNDLRFullImplicitMidpointSolver(
-        pn_semi,
-        pn_projectedsemidiscretization(pn_semi, max_rank),
-        ones(T, number_of_elements(equations(pn_semi))),
-        [ones(T, number_of_scatterings(equations(pn_semi))) for _ in 1:number_of_elements(equations(pn_semi))],
-        V(undef, mr2*r),
-        V(undef, mr2*r),
-        V(undef, max(nLp, nLm)*max(nRp, nRm)), # this can be smaller
-        V(undef, max(nRp*nRp, nRm*nRm)), # this can be smaller
-        V(undef, n),
-        MinresSolver(max(r*max(nLp+nLm, nRp+nRm), mr2*mr2), max(r*max(nLp+nLm, nRp+nRm), mr2*mr2), V),
-        (V(undef, nLp*r + nLm*r), V(undef, r*r + r*r), V(undef, r*nRp + r*nRm)),
-        [mr2, mr2],
-        max_rank,
-        N,
+        pn_projectedproblem(pn_eq, discrete_model, max_rank),
+        Vector{T}(undef, number_of_elements(pn_eq)),
+        [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)],
+        VT(undef, mr2*r),
+        VT(undef, mr2*r),
+        VT(undef, max(nLp, nLm)*max(nRp, nRm)), # this can be smaller
+        VT(undef, max(nRp*nRp, nRm*nRm)), # this can be smaller
+        VT(undef, n),
+        MinresSolver(max(r*max(nLp+nLm, nRp+nRm), mr2*mr2), max(r*max(nLp+nLm, nRp+nRm), mr2*mr2), VT),
+        (VT(undef, nLp*r + nLm*r), VT(undef, r*r + r*r), VT(undef, r*nRp + r*nRm)),
+        [1, 1],
+        max_rank
     )
 end

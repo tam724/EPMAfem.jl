@@ -8,7 +8,7 @@ function hightolow(problem::DiscretePNProblem, solver::PNSolver)
 end
 
 function Base.iterate(it::HighToLowIterator)
-    initialize!(it.solver)
+    initialize!(it.solver, it.problem)
     ϵs = energy(it.problem.model)
     ϵ = ϵs[end]
     return ϵ, length(ϵs)
@@ -37,7 +37,7 @@ function lowtohigh(problem::DiscretePNProblem, solver::PNSolver)
 end
 
 function Base.iterate(it::LowToHighIterator)
-    initialize!(it.solver)
+    initialize!(it.solver, it.problem)
     ϵs = energy(it.problem.model)
     ϵ = ϵs[1]
     return ϵ, 1

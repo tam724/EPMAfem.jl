@@ -25,6 +25,9 @@ using BenchmarkTools
 using StaticArrays
 using InteractiveUtils
 
+using MKL
+using MKLSparse
+
 include("epmaequations.jl")
 include("pnequations.jl")
 include("spherical_harmonics.jl")
@@ -46,14 +49,14 @@ epma_eq = dummy_epma_equations(
     [0.85u"keV"],                                               # beam energy
     range(-0.5u"nm", 0.5u"nm", length=10),                      # beam position
     [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]],    # beam direction. Careful, this is (x, y, z), not (z, x, y)
-    10.0,                                                      # beam concentration
+    100.0,                                                       # beam concentration
     [0.1u"keV", 0.2u"keV"],                                     # extraction energy
     [(1.0, 3.0, 10.0)]                                          # takeoff directions
 )
 
 pn_equ = PNEquations(epma_eq)
 
-n_z = 70
+n_z = 100
 
 space_model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
 space_model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
@@ -62,16 +65,34 @@ space_model = CartesianDiscreteModel((0.0, 1.0), (n_z))
 # using GridapGmsh
 # model2 = DiscreteModelFromFile("square.msh")
 
-model = PNGridapModel(space_model, range(0, 1, 100), 11)
-problem = discretize(pn_equ, model) |> cuda
-solver = pn_schurimplicitmidpointsolver(pn_equ, model) |> cuda
+model = PNGridapModel(space_model, range(0, 1, 50), 21, cuda())
+problem = discretize(pn_equ, model)
+solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_equ, model, 40)
+solver = pn_schurimplicitmidpointsolver(pn_equ, model)
+
+A = rand(20301, 500)
+AT = Matrix(transpose(A)) #(20301, 500)
+B = zeros(20301, 500)
+BT = Matrix(transpose(B))
+
+@benchmark mul!(A, problem.ρp[1], B)
+@which mul!(AT, BT, problem.ρp[1])
 
 nb = number_of_basis_functions(model)
 
 @gif for ϵ in hightolow(problem, solver)
     @show ϵ
+    @show solver_dlr.ranks
     ψ = Vector(current_solution(solver))
     heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
+    #@show solver.ranks
+end
+
+@gif for ϵ in hightolow(problem, solver_dlr)
+    @show ϵ
+    ψ = Vector(current_solution(solver_dlr, problem))
+    heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
+    #@show solver.ranks
 end
 
 @gif for ϵ in lowtohigh(problem, solver)
