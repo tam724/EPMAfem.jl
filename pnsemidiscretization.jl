@@ -49,14 +49,6 @@ mat_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = M
 vec_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = V
 base_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = T
 
-function cuda(problem::DiscretePNProblem, T=Float32)
-    return DiscretePNProblem(
-        problem.model, Matrix{T}(problem.s), Matrix{T}(problem.τ), Array{T, 3}(problem.σ), cu.(problem.ρp), cu.(problem.ρm), cu.(problem.∂p), cu.(problem.∇pm),
-        cu(problem.Ip), cu(problem.Im), [cu.(kpz) for kpz in problem.kp], [cu.(kmz) for kmz in problem.km], cu.(problem.absΩp), cu.(problem.Ωpm),
-        Vector{T}(problem.gϵ), cu(problem.gxp), cu(problem.gΩp), Vector{T}(problem.μϵ), cu(problem.μxp), cu(problem.μΩp)
-    )
-end
-
 function discretize(pn_eq, discrete_model)
     MT = mat_type(discrete_model)
     VT = vec_type(discrete_model)

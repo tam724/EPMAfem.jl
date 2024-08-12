@@ -1,3 +1,5 @@
+### OUTDATED .. needs rewrite
+
 struct PNExplicitEulerSolver{T, V<:AbstractVector{T}, Tmat<:PNExplicitImplicitMatrix{T, V}, TLU} <: PNSolver{T}
     A::Tmat
     Dm::V

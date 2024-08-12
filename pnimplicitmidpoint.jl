@@ -140,17 +140,6 @@ function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGri
     )
 end
 
-function cuda(solver::PNFullImplicitMidpointSolver, T=Float32)
-    return PNFullImplicitMidpointSolver(
-        Vector{T}(solver.a),
-        Vector{T}.(solver.c),
-        solver.tmp |> cu,
-        solver.tmp2 |> cu,
-        solver.rhs |> cu,
-        Krylov.MinresSolver(solver.lin_solver.m, solver.lin_solver.m, CuVector{Float32})
-    )
-end
-
 struct PNSchurImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplicitMidpointSolver{T}
     a::Vector{T}
     c::Vector{Vector{T}}
