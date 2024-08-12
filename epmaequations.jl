@@ -112,7 +112,7 @@ end
 
 function specific_electron_scattering_cross_section(::DummyEPMAEquations, e, i)
     u_scs = (u"nm")^5 / u"u"^2
-    return ϵ -> (1.0u_scs, 1.0u_scs)[e]
+    return ϵ -> (10.0u_scs, 10.0u_scs)[e]
 end
 
 function specific_attenuation_coefficient(::DummyEPMAEquations, e, j)
@@ -134,7 +134,7 @@ extraction_spatial_distribution(eq::DummyEPMAEquations, j) = x -> mass_concentra
 extraction_direction_distribution(::DummyEPMAEquations, k) = IsotropicExtraction()
 
 function default_parameters(eq::DummyEPMAEquations)
-    return [1.0]
+    return [0.0]
 end
 
 function mass_concentrations(eq::DummyEPMAEquations, e::Int64, x)
@@ -145,10 +145,10 @@ end
 function mass_concentrations(::DummyEPMAEquations, e::Int64, p, (z, x, y))
     u_mc = u"u"/u"nm"^3
 
-    if abs(x) < 30u"nm" && z > -10u"nm"
+    if abs(x+0.5*z-0.5u"nm") < 0.1u"nm"
         return (p[1]u_mc, 1.5u_mc)[e]
     else
-        return (0.5u_mc, 0.0u_mc)[e]
+        return (1.0u_mc, 0.0u_mc)[e]
     end
 end
 

@@ -18,6 +18,7 @@ end
 ## Naming Convention: lowercase: vector values, uppercase: matrix valued
 ##
 
+# TODO: use concretestructs for the matrices
 @parametric_type ZMatrix ρ i k a c Tmp1 Tmp2
 
 """

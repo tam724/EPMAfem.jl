@@ -28,28 +28,33 @@ struct DiscretePNProblem{T, V<:AbstractVector{T}, M<:AbstractMatrix{T}, SM<:Abst
     absΩp::Vector{M}
     Ωpm::Vector{SM}
 
-    # excitation (might be moved to gpu)
-    gϵ::Vector{T}
-    gxp::M
-    gΩp::M
+    # # excitation (might be moved to gpu)
+    # gϵ::Vector{T}
+    # gxp::M
+    # gΩp::M
 
-    # extraction (might be moved to gpu)
-    μϵ::Vector{T}
-    μxp::M
-    μΩp::M
+    # # extraction (might be moved to gpu)
+    # μϵ::Vector{T}
+    # μxp::M
+    # μΩp::M
 end
 
-struct DiscretePNRHS{T, M<:AbstractMatrix{}}
-    bϵ::Vector{T}
-    bxp::M
-    bΩp::M
+struct DiscretePNRHS{T, M<:AbstractMatrix{}, PNM}
+    model::PNM
+
+    # excitation (might be moved to gpu)
+    weights::Array{T, 3}
+
+    bϵ::Vector{Vector{T}}
+    bxp::Vector{M}
+    bΩp::Vector{M}
 end
 
 mat_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = M
 vec_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = V
 base_type(::DiscretePNProblem{T, V, M}) where {T, V, M} = T
 
-function discretize(pn_eq, discrete_model)
+function discretize_problem(pn_eq, discrete_model)
     MT = mat_type(discrete_model)
     VT = vec_type(discrete_model)
     SMT = smat_type(discrete_model)
@@ -58,7 +63,6 @@ function discretize(pn_eq, discrete_model)
     s = Matrix{T}([_s(pn_eq, e)(ϵ) for e in 1:number_of_elements(pn_eq), ϵ ∈ energy(discrete_model)])
     τ = Matrix{T}([_τ(pn_eq, e)(ϵ) for e in 1:number_of_elements(pn_eq), ϵ ∈ energy(discrete_model)])
     σ = Array{T}([_σ(pn_eq, e, i)(ϵ) for e in 1:number_of_elements(pn_eq), i in 1:number_of_scatterings(pn_eq), ϵ ∈ energy(discrete_model)])
-
 
     ## instantiate Gridap stuff
     space_model = space(discrete_model)
@@ -91,16 +95,53 @@ function discretize(pn_eq, discrete_model)
     absΩp = [MT(assemble_boundary_matrix(max_degree(discrete_model), dir, :pp, nd(discrete_model), 1e-7)) for dir ∈ space_directions(discrete_model)]
     Ωpm = [SMT(assemble_transport_matrix(max_degree(discrete_model), dir, :pm, nd(discrete_model))) for dir ∈ space_directions(discrete_model)]
 
-    ## assemble excitation and extraction 
+    DiscretePNProblem(discrete_model, s, τ, σ, ρp, ρm, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
+end
+
+function discretize_rhs(pn_eq, discrete_model)
+    MT = mat_type(discrete_model)
+    T = base_type(discrete_model)
+
+    ## instantiate Gridap stuff
+    space_model = space(discrete_model)
+    U, V = function_spaces(space_model)
+    R = Triangulation(space_model)
+    ∂R = BoundaryTriangulation(space_model)
+    model = model=(model=space_model, R=R, dx=Measure(R, 2), ∂R=∂R, dΓ= Measure(∂R, 2), n=get_normal_vector(∂R))
+
+    n_basis = number_of_basis_functions(discrete_model)
+
+    ## assemble excitation 
     gϵ = Vector{T}([_excitation_energy_distribution(pn_eq)(ϵ) for ϵ ∈ energy(discrete_model)])
     gxp = MT(reshape(assemble_linear(∫nzgv, (_excitation_spatial_distribution(pn_eq), model), U[1], V[1]), (n_basis.x.p, 1),))
     gΩp = MT(reshape(assemble_direction_boundary(max_degree(discrete_model), _excitation_direction_distribution(pn_eq), @SVector[0.0, 0.0, 1.0], nd(discrete_model)).p, (1, n_basis.Ω.p)))
 
+    return DiscretePNRHS(discrete_model, ones(T, 1, 1, 1), [gϵ], [gxp], [gΩp])
+end
+
+function discretize_extraction(pn_eq, discrete_model)
+    MT = mat_type(discrete_model)
+    T = base_type(discrete_model)
+
+    ## instantiate Gridap stuff
+    space_model = space(discrete_model)
+    U, V = function_spaces(space_model)
+    R = Triangulation(space_model)
+    ∂R = BoundaryTriangulation(space_model)
+    model = model=(model=space_model, R=R, dx=Measure(R, 2), ∂R=∂R, dΓ= Measure(∂R, 2), n=get_normal_vector(∂R))
+
+    n_basis = number_of_basis_functions(discrete_model)
+
+    ## ... and extraction
     μϵ = Vector{T}([_extraction_energy_distribution(pn_eq)(ϵ) for ϵ ∈ energy(discrete_model)])
     μxp = MT(reshape(assemble_linear(∫μv, (_extraction_spatial_distribution(pn_eq), model), U[1], V[1]), (n_basis.x.p, 1)))
     μΩp = MT(reshape(assemble_direction_source(max_degree(discrete_model), _extraction_direction_distribution(pn_eq), nd(discrete_model)).p, (1, n_basis.Ω.p)))
 
-    return DiscretePNProblem(discrete_model, s, τ, σ, ρp, ρm, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm, gϵ, gxp, gΩp, μϵ, μxp, μΩp)
+    return DiscretePNRHS(discrete_model, ones(T, 1, 1, 1), [μϵ], [μxp], [μΩp])
+end
+
+function discretize(pn_eq, discrete_model)
+    return discretize_problem(pn_eq, discrete_model), discretize_rhs(pn_eq, discrete_model)
 end
 
 """
@@ -248,11 +289,22 @@ function update_mass_concentrations!(pn_semi, ρs)
     end
 end
 
-function assemble_rhs_p!(b, vxp, vΩp, d)
-    nLp = size(vxp, 1)
-    nRp = size(vΩp, 2)
-    mul!(reshape(@view(b[1:nLp*nRp]), (nLp, nRp)), vxp, vΩp, d, false)
-    fill!(@view(b[nLp*nRp+1:end]), zero(eltype(b)))
+function assemble_rhs_p!(b, rhs, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+    fill!(b, zero(eltype(b)))
+
+    nLp = size(first(bxp), 1)
+    nRp = size(first(bΩp), 2)
+
+    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
+    # bp = pview(b, rhs.model)
+    for (ϵi, bϵi) in zip(1:size(rhs.weights, 1), rhs.bϵ)
+        for (xi, bxpi) in zip(1:size(rhs.weights, 2), bxp)
+            for (Ωi, bΩpi) in zip(1:size(rhs.weights, 3), bΩp)
+                bϵ2 = 0.5*(bϵi[i] + bϵi[i+1])
+                mul!(bp, bxpi, bΩpi, rhs.weights[ϵi, xi, Ωi]*bϵ2*Δ, 1.0)
+            end
+        end
+    end
 end
 
 function assemble_rhs_hightolow!(b, problem::DiscretePNProblem, gϵ, α)

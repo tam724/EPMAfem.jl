@@ -1,10 +1,11 @@
 @concrete struct HighToLowIterator
     problem
+    rhs
     solver
 end
 
-function hightolow(problem::DiscretePNProblem, solver::PNSolver)
-    return HighToLowIterator(problem, solver)
+function hightolow(problem::DiscretePNProblem, rhs::DiscretePNRHS, solver::PNSolver)
+    return HighToLowIterator(problem, rhs, solver)
 end
 
 function Base.iterate(it::HighToLowIterator)
@@ -22,18 +23,19 @@ function Base.iterate(it::HighToLowIterator, i)
         # here we update the solver state from i+1 to i! NOTE: HighToLow means from higher to lower energies/times
         ϵi, ϵip1 = ϵs[i-1], ϵs[i]
         Δϵ = ϵip1-ϵi
-        step_hightolow!(it.solver, it.problem, i, Δϵ)
+        step_hightolow!(it.solver, it.problem, it.rhs, i, Δϵ)
         return ϵi, i-1
     end
 end
 
 @concrete struct LowToHighIterator
     problem
+    rhs
     solver
 end
 
-function lowtohigh(problem::DiscretePNProblem, solver::PNSolver)
-    return LowToHighIterator(problem, solver)
+function lowtohigh(problem::DiscretePNProblem, rhs::DiscretePNRHS, solver::PNSolver)
+    return LowToHighIterator(problem, rhs, solver)
 end
 
 function Base.iterate(it::LowToHighIterator)
@@ -51,7 +53,7 @@ function Base.iterate(it::LowToHighIterator, i)
         # here we update the solver state from i to i+1! NOTE: LowToHigh means from lower to higher energies/times
         ϵi, ϵip1 = ϵs[i], ϵs[i+1]
         Δϵ = ϵip1-ϵi
-        step_lowtohigh!(it.solver, it.problem, i, Δϵ)
+        step_lowtohigh!(it.solver, it.problem, it.rhs, i, Δϵ)
         return ϵip1, i+1
     end
 end

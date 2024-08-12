@@ -55,6 +55,9 @@ number_of_extraction_positions(eq::PNEquations) = number_of_extraction_positions
 number_of_extraction_directions(eq::PNEquations) = number_of_extraction_directions(eq.eq)
 number_of_extraction_energies(eq::PNEquations) = number_of_extraction_energies(eq.eq)
 
+max_number_of_space_rhs(eq::PNEquations) = max(number_of_beam_positions(eq), number_of_extraction_positions(eq))
+max_number_of_direction_rhs(eq::PNEquations) = max(number_of_beam_directions(eq), number_of_extraction_directions(eq))
+
 extend_3D(x::VectorValue{1, T}) where T = (x.data..., zero(T), zero(T))
 extend_3D(x::VectorValue{2, T}) where T = (x.data..., zero(T))
 extend_3D(x::VectorValue{3, T}) where T = (x.data..., )
@@ -86,7 +89,7 @@ function _extraction_energy_distribution(eq::PNEquations)
 end
 
 function _extraction_spatial_distribution(eq::PNEquations)
-    return x_ -> extraction_spatial_distribution(eq.eq, 1)(extend_3D(x_).*unit_length(eq))
+    return x_ -> extraction_spatial_distribution(eq.eq, 2)(extend_3D(x_).*unit_length(eq))
 end
 
 function _extraction_direction_distribution(eq::PNEquations)

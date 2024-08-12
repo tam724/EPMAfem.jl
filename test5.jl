@@ -65,40 +65,29 @@ space_model = CartesianDiscreteModel((0.0, 1.0), (n_z))
 # using GridapGmsh
 # model2 = DiscreteModelFromFile("square.msh")
 
-model = PNGridapModel(space_model, range(0, 1, 50), 21, cuda())
-problem = discretize(pn_equ, model)
+model = PNGridapModel(space_model, range(0, 1, 50), 21, cuda(Float32))
+pnproblem, pnrhs = discretize(pn_equ, model)
+pnext = discretize_extraction(pn_equ, model)
 solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_equ, model, 40)
 solver = pn_schurimplicitmidpointsolver(pn_equ, model)
 
-A = rand(20301, 500)
-AT = Matrix(transpose(A)) #(20301, 500)
-B = zeros(20301, 500)
-BT = Matrix(transpose(B))
-
-@benchmark mul!(A, problem.ρp[1], B)
-@which mul!(AT, BT, problem.ρp[1])
-
 nb = number_of_basis_functions(model)
 
-@gif for ϵ in hightolow(problem, solver)
+@gif for ϵ in lowtohigh(pnproblem, pnext, solver)
     @show ϵ
-    @show solver_dlr.ranks
-    ψ = Vector(current_solution(solver))
+    # @show solver_dlr.ranks
+    #ψ = Vector(current_solution(solver))
+    #heatmap(-reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)), clims=(0, 0.4))
+    beam_surf = reshape(current_solution(solver)[1:nb.x.p], (n_z+1, 2*n_z+1))[end, :]
+    plot(-Vector(beam_surf))
+    #@show solver.ranks
+end fps=5
+
+@gif for ϵ in hightolow(pnproblem, pnrhs, solver_dlr)
+    @show ϵ
+    ψ = Vector(current_solution(solver_dlr, pnproblem))
     heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
     #@show solver.ranks
-end
-
-@gif for ϵ in hightolow(problem, solver_dlr)
-    @show ϵ
-    ψ = Vector(current_solution(solver_dlr, problem))
-    heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
-    #@show solver.ranks
-end
-
-@gif for ϵ in lowtohigh(problem, solver)
-    @show ϵ
-    ψ = current_solution(solver)
-    heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
 end
 
 

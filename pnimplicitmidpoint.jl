@@ -68,10 +68,10 @@ function update_coefficients_mat_lowtohigh!(solver::PNImplicitMidpointSolver, pr
     return solver.a, b, solver.c
 end
 
-function update_rhs_hightolow!(solver::PNImplicitMidpointSolver, problem::DiscretePNProblem, i, Δϵ)
+function update_rhs_hightolow!(solver::PNImplicitMidpointSolver, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ)
     # minus because we have to bring b to the right side of the equation 
-    gϵ2 = 0.5*(problem.gϵ[i] + problem.gϵ[i-1])
-    assemble_rhs_p!(solver.rhs, problem.gxp, problem.gΩp, -Δϵ*gϵ2)
+    # bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i-1])
+    assemble_rhs_p!(solver.rhs, rhs, i-1, -Δϵ)
     a, b, c = update_coefficients_rhs_hightolow!(solver, problem, i, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
@@ -79,10 +79,11 @@ function update_rhs_hightolow!(solver::PNImplicitMidpointSolver, problem::Discre
     return
 end
 
-function update_rhs_lowtohigh!(solver::PNImplicitMidpointSolver, problem::DiscretePNProblem, i, Δϵ)
+function update_rhs_lowtohigh!(solver::PNImplicitMidpointSolver, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ)
     # minus because we have to bring b to the right side of the equation 
-    μϵ2 = 0.5*(problem.μϵ[i] + problem.μϵ[i+1])
-    assemble_rhs_p!(solver.rhs, problem.μxp, problem.μΩp, -Δϵ*μϵ2)
+    # bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
+    assemble_rhs_p!(solver.rhs, rhs, i, -Δϵ)
+    # assemble_rhs_p!(solver.rhs, rhs.bxp, rhs.bΩp, -Δϵ*bϵ2)
     a, b, c = update_coefficients_rhs_lowtohigh!(solver, problem, i, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
@@ -108,16 +109,16 @@ function current_solution(solv::PNFullImplicitMidpointSolver)
     return solv.lin_solver.x
 end
 
-function step_hightolow!(solver::PNFullImplicitMidpointSolver{T}, problem::DiscretePNProblem, i, Δϵ) where T
-    update_rhs_hightolow!(solver, problem, i, Δϵ)
+function step_hightolow!(solver::PNFullImplicitMidpointSolver{T}, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ) where T
+    update_rhs_hightolow!(solver, problem, rhs, i, Δϵ)
     a, b, c = update_coefficients_mat_hightolow!(solver, problem, i, Δϵ)
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
     Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=T(1e-14), atol=T(1e-14))
     @show solver.lin_solver.stats
 end
 
-function step_lowtohigh!(solver::PNFullImplicitMidpointSolver{T}, problem::DiscretePNProblem, i, Δϵ) where T
-    update_rhs_lowtohigh!(solver, problem, i, Δϵ)
+function step_lowtohigh!(solver::PNFullImplicitMidpointSolver{T}, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ) where T
+    update_rhs_lowtohigh!(solver, problem, rhs, i, Δϵ)
     a, b, c = update_coefficients_mat_lowtohigh!(solver, problem, i, Δϵ)
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
     Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=T(1e-14), atol=T(1e-14))
@@ -184,8 +185,8 @@ function current_solution(solver::PNSchurImplicitMidpointSolver)
     return solver.sol
 end
 
-function step_hightolow!(solver::PNSchurImplicitMidpointSolver{T}, problem::DiscretePNProblem, i, Δϵ) where T
-    update_rhs_hightolow!(solver, problem, i, Δϵ)
+function step_hightolow!(solver::PNSchurImplicitMidpointSolver{T}, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ) where T
+    update_rhs_hightolow!(solver, problem, rhs, i, Δϵ)
     a, b, c = update_coefficients_mat_hightolow!(solver, problem, i, Δϵ)
     _update_D(solver, problem, a, b, c) # assembles the right lower block (diagonal)
     _compute_schur_rhs(solver, problem, a, b, c) # computes the schur rhs (using the inverse of D)
@@ -196,8 +197,8 @@ function step_hightolow!(solver::PNSchurImplicitMidpointSolver{T}, problem::Disc
     return
 end
 
-function step_lowtohigh!(solver::PNSchurImplicitMidpointSolver{T}, problem::DiscretePNProblem, i, Δϵ) where T
-    update_rhs_lowtohigh!(solver, problem, i, Δϵ)
+function step_lowtohigh!(solver::PNSchurImplicitMidpointSolver{T}, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ) where T
+    update_rhs_lowtohigh!(solver, problem, rhs, i, Δϵ)
     a, b, c = update_coefficients_mat_lowtohigh!(solver, problem, i, Δϵ)
     _update_D(solver, problem, a, b, c)
     _compute_schur_rhs(solver, problem, a, b, c)
@@ -355,24 +356,24 @@ end
 cuview(A::Array, slice) = uview(A, slice)
 cuview(A::CuArray, slice) = view(A, slice)
 
-function step_hightolow!(solver::PNDLRFullImplicitMidpointSolver{T, V}, problem::DiscretePNProblem, i, Δϵ) where {T, V}
+function step_hightolow!(solver::PNDLRFullImplicitMidpointSolver{T, V}, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ) where {T, V}
     (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
     rp, rm = solver.ranks
 
     proj_problem = solver.proj_problem
 
-    gϵ2 = 0.5*(problem.gϵ[i] + problem.gϵ[i-1])
+    # bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i-1])
 
     #K-step
     Vt = view_Vt(solver.sol[3], (nRp, nRm), (rp, rm))
-    update_Vt!(proj_problem, problem, Vt)
-    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, _, _ = V_views(proj_problem)
+    update_Vt!(proj_problem, problem, rhs, Vt)
+    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, bΩpV = V_views(proj_problem)
     lin_solver_K = get_lin_solver(solver.lin_solver, rp*nLp + rm*nLm, rp*nLp + rm*nLm)
     # assemble rhs
         rhs_K = cuview(solver.rhs,1:rp*nLp+rm*nLm)
         # minus because we have to bring b to the right side of the equation
-        gΩpV = gΩpV_view(proj_problem)
-        assemble_rhs_p!(rhs_K, problem.gxp, gΩpV, -Δϵ*gϵ2)
+        # bΩpV = bΩpV_view(proj_problem)
+        assemble_rhs_p!(rhs_K, rhs, i-1, -Δϵ; bΩp=bΩpV)
         a, b, c = update_coefficients_rhs_hightolow!(solver, problem, i, Δϵ)
         A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, solver.tmp, solver.tmp2)
         # we use the solution buffer of the solver for K0
@@ -400,14 +401,14 @@ function step_hightolow!(solver::PNDLRFullImplicitMidpointSolver{T, V}, problem:
 
     #L-step
     U = view_U(solver.sol[1], (nLp, nLm), (rp, rm))
-    update_U!(proj_problem, problem, U)
-    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, _, _ = U_views(proj_problem)
+    update_U!(proj_problem, problem, rhs, U)
+    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, bxpU = U_views(proj_problem)
     lin_solver_L = get_lin_solver(solver.lin_solver, nRp*rp + nRm*rm, nRp*rp + nRm*rm)
     # assemble rhs
         rhs_U = cuview(solver.rhs, 1:nRp*rp+nRm*rm)
         # minus because we have to bring b to the right side of the equation
-        gxpU = gxpU_view(proj_problem)
-        assemble_rhs_p!(rhs_U, gxpU, problem.gΩp, -Δϵ*gϵ2)
+        # bxpU = bxpU_view(proj_problem)
+        assemble_rhs_p!(rhs_U, rhs, i-1, -Δϵ; bxp=bxpU)
         a, b, c = update_coefficients_rhs_hightolow!(solver, problem, i, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
         Lt0_vec = lin_solver_L.x
@@ -431,17 +432,17 @@ function step_hightolow!(solver::PNDLRFullImplicitMidpointSolver{T, V}, problem:
         N_hatTm = Vt.Vtm*V_hatm
         
     #S-step
-    update_Vt!(proj_problem, problem, (Vtp=transpose(V_hatp), Vtm=transpose(V_hatm)))
-    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, _, _ = V_views(proj_problem)
-    update_U!(proj_problem, problem, (Up=U_hatp, Um=U_hatm))
-    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, _, _ = U_views(proj_problem)
+    update_Vt!(proj_problem, problem, rhs, (Vtp=transpose(V_hatp), Vtm=transpose(V_hatm)))
+    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, bΩpV = V_views(proj_problem)
+    update_U!(proj_problem, problem, rhs, (Up=U_hatp, Um=U_hatm))
+    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, bxpU = U_views(proj_problem)
     lin_solver_S = get_lin_solver(solver.lin_solver, 2*rp*2*rp+2*rm*2*rm, 2*rp*2*rp+2*rm*2*rm)
     # assemble rhs
         rhs_S = cuview(solver.rhs, 1:2*rp*2*rp+2*rm*2*rm)
         # minus because we have to bring b to the right side of the equation
-        gΩpV = gΩpV_view(proj_problem)
-        gxpU = gxpU_view(proj_problem)
-        assemble_rhs_p!(rhs_S, gxpU, gΩpV, -Δϵ*gϵ2)
+        # bΩpV = bΩpV_view(proj_problem)
+        # bxpU = bxpU_view(proj_problem)
+        assemble_rhs_p!(rhs_S, rhs, i-1, -Δϵ; bxp=bxpU, bΩp=bΩpV)
         a, b, c = update_coefficients_rhs_hightolow!(solver, problem, i, Δϵ)
         A = FullBlockMat(UtρpU, UtρmU, Ut∇pmU, Ut∂pU, VtIpV, VtImV, VtkpV, VtkmV, VtΩpmV, VtabsΩpV, a, b, c, solver.tmp, solver.tmp2)
         S0_vec = lin_solver_S.x
@@ -481,7 +482,7 @@ end
 function compute_new_rank(Σ, max_rank)
     r1 = 1
     Σ = Vector(Σ)
-    while sqrt(sum([σ^2 for σ ∈ Σ[r1+1:end]])) > 1e-3
+    while sqrt(sum([σ^2 for σ ∈ Σ[r1+1:end]])) > 1e-2
         r1 += 1
     end
     return min(r1, max_rank)
@@ -508,8 +509,10 @@ function pn_dlrfullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PN
     n = nLp*nRp + nLm*nRm
     r = 2*max_rank # currently the rank is fixed 2r
     mr2 = 2*max_rank
+    proj_problem = pn_projectedproblem(pn_eq, discrete_model, max_rank)
+
     return PNDLRFullImplicitMidpointSolver(
-        pn_projectedproblem(pn_eq, discrete_model, max_rank),
+        proj_problem,
         Vector{T}(undef, number_of_elements(pn_eq)),
         [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)],
         VT(undef, mr2*r),

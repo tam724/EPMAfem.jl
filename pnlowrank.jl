@@ -18,17 +18,14 @@ struct ProjectedPNProblem{T, V<:AbstractVector{T}}
     VtabsΩpV::Vector{V}
     VtΩpmV::Vector{V}
 
-    gxpU::V
-    gΩpV::V
-
-    μxpU::V
-    μΩpV::V
+    bxpU::Vector{V}
+    bΩpV::Vector{V}
 
     buf::V
 end
 
 function pn_projectedproblem(pn_eq, discrete_model, max_rank)
-    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    (_, (nLp, nLm), (nRp, nRm)) = discrete_model.n_basis
     VT = vec_type(discrete_model)
     return ProjectedPNProblem(
         max_rank,
@@ -49,11 +46,8 @@ function pn_projectedproblem(pn_eq, discrete_model, max_rank)
         [VT(undef, 2*max_rank*2*max_rank) for _ in 1:number_of_dimensions(space(discrete_model))],
         [VT(undef, 2*max_rank*2*max_rank) for _ in 1:number_of_dimensions(space(discrete_model))],
         
-        VT(undef, 2*max_rank*1),
-        VT(undef, 1*2*max_rank),
-
-        VT(undef, 2*max_rank*1),
-        VT(undef, 1*2*max_rank),
+        [VT(undef, 2*max_rank*1) for _ in 1:max_number_of_space_rhs(pn_eq)],
+        [VT(undef, 1*2*max_rank) for _ in 1:max_number_of_direction_rhs(pn_eq)],
         
         VT(undef, 2*max_rank * max(nLp, nLm, nRp, nRm))
     )
@@ -66,15 +60,14 @@ function U_views(proj_problem::ProjectedPNProblem)
     UtρmU = (reshape(@view(UtρmzU[1:rankm*rankm]), (rankm, rankm)) for UtρmzU in proj_problem.UtρmU)
     Ut∂pU = (reshape(@view(Ut∂pdU[1:rankp*rankp]), (rankp, rankp)) for Ut∂pdU in proj_problem.Ut∂pU)
     Ut∇pmU = (reshape(@view(Ut∇pmdU[1:rankm*rankp]), (rankm, rankp)) for Ut∇pmdU in proj_problem.Ut∇pmU)
-    gxpU = reshape(@view(proj_problem.gxpU[1:rankp]), (rankp, 1))
-    μxpU = reshape(@view(proj_problem.μxpU[1:rankp]), (rankp, 1))
-    return UtρpU, UtρmU, Ut∂pU, Ut∇pmU, gxpU, μxpU
+    bxpU = (reshape(@view(bxpUi[1:rankp]), (rankp, 1)) for bxpUi in proj_problem.bxpU)
+    return UtρpU, UtρmU, Ut∂pU, Ut∇pmU, bxpU
 end
 
-function gxpU_view(proj_problem::ProjectedPNProblem)
-    rankp, rankm = proj_problem.Uranks[1], proj_problem.Uranks[2]
-    return reshape(@view(proj_problem.gxpU[1:rankp]), (rankp, 1))
-end
+# function bxpU_view(proj_problem::ProjectedPNProblem)
+#     rankp, rankm = proj_problem.Uranks[1], proj_problem.Uranks[2]
+#     return reshape(@view(proj_problem.bxpU[1:rankp]), (rankp, 1))
+# end
 
 function V_views(proj_problem::ProjectedPNProblem)
     rankp, rankm = proj_problem.Vranks[1], proj_problem.Vranks[2]
@@ -85,15 +78,14 @@ function V_views(proj_problem::ProjectedPNProblem)
     VtkmV = ((reshape(@view(VtkmziV[1:rankm*rankm]), (rankm, rankm)) for VtkmziV in VtkmzV) for VtkmzV in proj_problem.VtkmV)
     VtabsΩpV = (reshape(@view(VtabsΩpdV[1:rankp*rankp]), (rankp, rankp)) for VtabsΩpdV in proj_problem.VtabsΩpV)
     VtΩpmV = (reshape(@view(VtΩpmdV[1:rankm*rankp]), (rankm, rankp)) for VtΩpmdV in proj_problem.VtΩpmV)
-    gΩpV = reshape(@view(proj_problem.gΩpV[1:rankp]), (1, rankp))
-    μΩpV = reshape(@view(proj_problem.μΩpV[1:rankp]), (1, rankp))
-    return VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, gΩpV, μΩpV
+    bΩpV = (reshape(@view(bΩpVi[1:rankp]), (1, rankp)) for bΩpVi in proj_problem.bΩpV)
+    return VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, bΩpV
 end
 
-function gΩpV_view(proj_problem::ProjectedPNProblem)
-    rankp, rankm = proj_problem.Vranks[1], proj_problem.Vranks[2]
-    return reshape(@view(proj_problem.gΩpV[1:rankp]), (1, rankp))
-end
+# function bΩpV_view(proj_problem::ProjectedPNProblem)
+#     rankp, rankm = proj_problem.Vranks[1], proj_problem.Vranks[2]
+#     return reshape(@view(proj_problem.bΩpV[1:rankp]), (1, rankp))
+# end
 
 # computes Y = A*B*C
 function mul_buf!(Y, A, B, C, buf)
@@ -109,13 +101,13 @@ function mul_buf!(Y, A, B::Diagonal, C, buf)
     mul!(Y, buf_mat, C, true, false)
 end
 
-function update_Vt!(proj_problem, problem, (; Vtp, Vtm))
+function update_Vt!(proj_problem, problem, rhs, (; Vtp, Vtm))
     rankp = size(Vtp, 1)
     rankm = size(Vtm, 1)
     proj_problem.Vranks[1] = rankp
     proj_problem.Vranks[2] = rankm
 
-    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, gΩpV, μΩpV = V_views(proj_problem)
+    VtIpV, VtImV, VtkpV, VtkmV, VtabsΩpV, VtΩpmV, bΩpV = V_views(proj_problem)
 
     buf = proj_problem.buf
 
@@ -148,18 +140,19 @@ function update_Vt!(proj_problem, problem, (; Vtp, Vtm))
         mul_buf!(VtΩpmdV, Vtm, Ωpmd, transpose(Vtp), buf)
     end
 
-    mul!(gΩpV, problem.gΩp, transpose(Vtp))
-    mul!(μΩpV, problem.μΩp, transpose(Vtp))
+    for (bΩpVi, bΩpi) in zip(bΩpV, rhs.bΩp)
+        mul!(bΩpVi, bΩpi, transpose(Vtp))
+    end
     return
 end
 
-function update_U!(proj_problem, problem, (; Up, Um))
+function update_U!(proj_problem, problem, rhs, (; Up, Um))
     rankp = size(Up, 2)
     rankm = size(Um, 2)
     proj_problem.Uranks[1] = rankp
     proj_problem.Uranks[2] = rankm
 
-    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, gxpU, μxpU = U_views(proj_problem)
+    UtρpU, UtρmU, Ut∂pU, Ut∇pmU, bxpU = U_views(proj_problem)
     
     buf = proj_problem.buf
 
@@ -184,7 +177,8 @@ function update_U!(proj_problem, problem, (; Up, Um))
         mul_buf!(Ut∇pmdU, transpose(Um), ∇pmd, Up, buf)
     end
 
-    mul!(gxpU, transpose(Up), problem.gxp)
-    mul!(μxpU, transpose(Up), problem.μxp)
+    for (bxpUi, bxpi) in zip(bxpU, rhs.bxp)
+        mul!(bxpUi, transpose(Up), bxpi)
+    end
     return
 end
