@@ -1,4 +1,7 @@
 
+"""
+    A concrete struct of abstract type AbstractPNEquations should support the following functions:
+"""
 abstract type AbstractPNEquations end
 
 """
@@ -29,11 +32,11 @@ function _s(eq::PNEquations, e)
 end
 
 function _τ(eq::PNEquations, e)
-    return function(ϵ_)
+    return function(ϵ_::T) where T
         units_specific_stopping_power = unit_energy(eq) * unit_length(eq)^5 / unit_mass(eq)^2
         units_specific_electron_scattering_cross_section = unit_length(eq)^5 / unit_mass(eq)^2
         # do we have to be careful with the derivative here?
-        ∂spe_stop_pow = Enzyme.autodiff(Forward, ϵ_ -> specific_stopping_power(eq.eq, e)(ϵ_*unit_energy(eq))/units_specific_stopping_power, Duplicated(ϵ_, 1.0))[1]
+        ∂spe_stop_pow = Enzyme.autodiff(Forward, ϵ_ -> specific_stopping_power(eq.eq, e)(ϵ_*unit_energy(eq))/units_specific_stopping_power, Duplicated(ϵ_, one(T)))[1]
         σ_tot = total_specific_electron_scattering_cross_section(eq.eq, e)(ϵ_*unit_energy(eq)) / units_specific_electron_scattering_cross_section
         return σ_tot - 0.5 * ∂spe_stop_pow
     end
@@ -94,10 +97,6 @@ end
 
 function _extraction_direction_distribution(eq::PNEquations)
     return extraction_direction_distribution(eq.eq, 1)
-end
-
-function _energy_interval(eq::PNEquations)
-    return energy_interval(eq.eq) ./ unit_energy(eq)
 end
 
 function _specific_attenuation_coefficient(eq::PNEquations, e, j)

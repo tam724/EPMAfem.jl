@@ -141,6 +141,56 @@ function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGri
     )
 end
 
+struct PNPreconImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplicitMidpointSolver{T}
+    a::Vector{T}
+    c::Vector{Vector{T}}
+    tmp::V
+    tmp2::V
+    rhs::V
+    lin_solver::Tsolv
+end
+
+function initialize!(pn_solv::PNPreconImplicitMidpointSolver{T}, problem) where T
+    # use initial condition from problem
+    fill!(pn_solv.lin_solver.x, zero(T))
+end
+
+function current_solution(solv::PNPreconImplicitMidpointSolver)
+    return solv.lin_solver.x
+end
+
+function step_hightolow!(solver::PNPreconImplicitMidpointSolver{T}, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ) where T
+    update_rhs_hightolow!(solver, problem, rhs, i, Δϵ)
+    a, b, c = update_coefficients_mat_hightolow!(solver, problem, i, Δϵ)
+    A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
+    Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=T(1e-14), atol=T(1e-14))
+    @show solver.lin_solver.stats
+end
+
+function step_lowtohigh!(solver::PNPreconImplicitMidpointSolver{T}, problem::DiscretePNProblem, rhs::DiscretePNRHS, i, Δϵ) where T
+    update_rhs_lowtohigh!(solver, problem, rhs, i, Δϵ)
+    a, b, c = update_coefficients_mat_lowtohigh!(solver, problem, i, Δϵ)
+    A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2)
+    Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=T(1e-14), atol=T(1e-14))
+    # @show pn_solv.lin_solver.stats
+end
+
+function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel)
+    n = number_of_basis_functions(discrete_model)
+    VT = vec_type(discrete_model)
+    T = base_type(discrete_model)
+
+    n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m
+    return PNPreconImplicitMidpointSolver(
+        Vector{T}(undef, number_of_elements(pn_eq)),
+        [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)], 
+        VT(undef, max(n.x.p, n.x.m)*max(n.Ω.p, n.Ω.m)),
+        VT(undef, max(n.Ω.p, n.Ω.m)),
+        VT(undef, n_tot),
+        Krylov.MinresSolver(n_tot, n_tot, VT)
+    )
+end
+
 struct PNSchurImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplicitMidpointSolver{T}
     a::Vector{T}
     c::Vector{Vector{T}}
@@ -191,7 +241,7 @@ function step_hightolow!(solver::PNSchurImplicitMidpointSolver{T}, problem::Disc
     _update_D(solver, problem, a, b, c) # assembles the right lower block (diagonal)
     _compute_schur_rhs(solver, problem, a, b, c) # computes the schur rhs (using the inverse of D)
     A_schur = SchurBlockMat(problem.ρp, problem.∇pm, problem.∂p, problem.Ip, problem.kp, problem.Ωpm, problem.absΩp, Diagonal(solver.D), a, b, c, solver.tmp, solver.tmp2, solver.tmp3)
-    Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=T(1e-14), atol=T(1e-14))
+    Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=T(1e-10), atol=T(1e-10))
     @show solver.lin_solver.stats
     _compute_full_solution_schur(solver, problem, a, b, c) # reconstructs lower part of the solution vector
     return
@@ -203,7 +253,7 @@ function step_lowtohigh!(solver::PNSchurImplicitMidpointSolver{T}, problem::Disc
     _update_D(solver, problem, a, b, c)
     _compute_schur_rhs(solver, problem, a, b, c)
     A_schur = SchurBlockMat(problem.ρp, problem.∇pm, problem.∂p, problem.Ip, problem.kp, problem.Ωpm, problem.absΩp, Diagonal(solver.D), a, b, c, solver.tmp, solver.tmp2, solver.tmp3)
-    Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=T(1e-14), atol=T(1e-14))
+    Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=T(1e-10), atol=T(1e-10))
     # @show pn_solv.lin_solver.stats
     _compute_full_solution_schur(solver, problem, a, b, c)
     # @show pn_solv.lin_solver.stats
@@ -482,7 +532,7 @@ end
 function compute_new_rank(Σ, max_rank)
     r1 = 1
     Σ = Vector(Σ)
-    while sqrt(sum([σ^2 for σ ∈ Σ[r1+1:end]])) > 1e-2
+    while sqrt(sum([σ^2 for σ ∈ Σ[r1+1:end]])) > 1e-3
         r1 += 1
     end
     return min(r1, max_rank)

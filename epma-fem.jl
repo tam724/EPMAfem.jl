@@ -53,18 +53,21 @@ function material_space(model)
 end
 
 # defs of bilinear forms
-∂z(u, ::DiscreteModel{1}) = dot(VectorValue(1.0), ∇(u))
+ez(::DiscreteModel{1}) = VectorValue(1.0)
 
-∂z(u, ::DiscreteModel{2}) = dot(VectorValue(1.0, 0.0), ∇(u))
-∂x(u, ::DiscreteModel{2}) = dot(VectorValue(0.0, 1.0), ∇(u))
+ez(::DiscreteModel{2}) = VectorValue(1.0, 0.0)
+ex(::DiscreteModel{2}) = VectorValue(0.0, 1.0)
 
-∂z(u, ::DiscreteModel{3}) = dot(VectorValue(1.0, 0.0, 0.0), ∇(u))
-∂x(u, ::DiscreteModel{3}) = dot(VectorValue(0.0, 1.0, 0.0), ∇(u))
-∂y(u, ::DiscreteModel{3}) = dot(VectorValue(0.0, 0.0, 1.0), ∇(u))
+ez(::DiscreteModel{3}) = VectorValue(1.0, 0.0, 0.0)
+ex(::DiscreteModel{3}) = VectorValue(0.0, 1.0, 0.0)
+ey(::DiscreteModel{3}) = VectorValue(0.0, 0.0, 1.0)
+
+∂z(u, m::DiscreteModel) = dot(ez(m), ∇(u))
+∂x(u, m::DiscreteModel) = dot(ex(m), ∇(u))
+∂y(u, m::DiscreteModel) = dot(ey(m), ∇(u))
 
 ∫ρuv(u, v, ρ, (model, R, dx, ∂R, dΓ, n)) = ∫(ρ*u*v)dx
 ∫uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(u*v)dx
-∫uvp∇u∇v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(0.9999*u*v + 0.0001*dot(∇(u), ∇(v)))dx
 ∫v(v, (model, R, dx, ∂R, dΓ, n)) = ∫(v)dx
 
 ∫∂zu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂z(u, model)*v)dx
@@ -83,14 +86,9 @@ end
 ∫u_∂v(::DiscreteModel{2}) = (∫u_∂zv, ∫u_∂xv)
 ∫u_∂v(::DiscreteModel{3}) = (∫u_∂zv, ∫u_∂xv, ∫u_∂yv)
 
-nz(n, ::DiscreteModel{1}) = dot(n, VectorValue(1.0))
-
-nz(n, ::DiscreteModel{2}) = dot(n, VectorValue(1.0, 0.0))
-nx(n, ::DiscreteModel{2}) = dot(n, VectorValue(0.0, 1.0))
-
-nz(n, ::DiscreteModel{3}) = dot(n, VectorValue(1.0, 0.0, 0.0))
-nx(n, ::DiscreteModel{3}) = dot(n, VectorValue(0.0, 1.0, 0.0))
-ny(n, ::DiscreteModel{3}) = dot(n, VectorValue(0.0, 0.0, 1.0))
+nz(n, m::DiscreteModel{N, T}) where {N, T} = dot(n, ez(m))
+nx(n, m::DiscreteModel{N, T}) where {N, T} = dot(n, ex(m))
+ny(n, m::DiscreteModel{N, T}) where {N, T} = dot(n, ey(m))
 
 ∫absnz_uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(abs(nz(n, model))*u*v)dΓ
 ∫absnx_uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(abs(nx(n, model))*u*v)dΓ
@@ -133,6 +131,8 @@ end
 ∫μv(v, μ, (model, R, dx, ∂R, dΓ, n)) = ∫(μ*v)dx
 ∫v(v, (model, R, dx, ∂R, dΓ, n)) = ∫(v)dx
 ∫nzgv(v, g, (model, R, dx, ∂R, dΓ, n)) = ∫(nz(n, model)*g*v)dΓ
+∫nxgv(v, g, (model, R, dx, ∂R, dΓ, n)) = ∫(nx(n, model)*g*v)dΓ
+∫nygv(v, g, (model, R, dx, ∂R, dΓ, n)) = ∫(ny(n, model)*g*v)dΓ
 
 function assemble_space_source((U, V, model), μ_x)
     return (p=assemble_linear(∫μv, (μ_x, model), U[1], V[1]), m=assemble_linear(∫μv, (μ_x, model), U[2], V[2]))

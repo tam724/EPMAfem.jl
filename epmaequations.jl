@@ -55,7 +55,6 @@ struct IsotropicExtraction <: ExtractionDirection end
 
 # SOME DUMMY VALUES TO TEST THE CODE WITH
 
-
 struct DummyEPMAEquations <: EPMAEquations
     scattering_norm_factor::Float64
     gϵpos::Vector{Quantity{Float64}}
@@ -124,7 +123,7 @@ beam_energy_distribution(eq::DummyEPMAEquations, i) = ϵ -> expm2(ϵ, eq.gϵpos[
 function beam_spatial_distribution(eq::DummyEPMAEquations, j)
     return function ((z, x, y))
         # should not depend on z (well dirac maybe..)
-        isapprox(1.0u"nm", z)*expm2((x, y), (eq.gxpos[j], 0.0u"nm"), (0.05u"nm", 0.05u"nm"))
+        isapprox(0.0u"nm", z)*expm2((x, y), (eq.gxpos[j], 0.0u"nm"), (0.05u"nm", 0.05u"nm"))
     end
 end
 beam_direction_distribution(eq::DummyEPMAEquations, k) = eq.gΩ[k]
@@ -146,9 +145,9 @@ function mass_concentrations(::DummyEPMAEquations, e::Int64, p, (z, x, y))
     u_mc = u"u"/u"nm"^3
 
     if abs(x+0.5*z-0.5u"nm") < 0.1u"nm"
-        return (p[1]u_mc, 1.5u_mc)[e]
+        return (1.0u_mc, 1.0u_mc)[e]
     else
-        return (1.0u_mc, 0.0u_mc)[e]
+        return (1.0u_mc, 1.0u_mc)[e]
     end
 end
 

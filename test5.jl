@@ -24,12 +24,14 @@ using Optim, Lux, Random, Optimisers
 using BenchmarkTools
 using StaticArrays
 using InteractiveUtils
+using Logging
 
 using MKL
 using MKLSparse
 
 include("epmaequations.jl")
 include("pnequations.jl")
+include("monochrompnequations.jl")
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
 #include("kroneckerblockmatrix.jl")
@@ -37,9 +39,10 @@ using .SphericalHarmonicsMatrices
 include("epma-fem.jl")
 include("overrides.jl")
 
-include("pnsemidiscretization.jl")
-include("pnexplicitimplicitmatrix.jl")
 include("pnsolver.jl")
+include("pnsemidiscretization.jl")
+include("monochrompndiscretization.jl")
+include("pnexplicitimplicitmatrix.jl")
 include("pnimplicitmidpoint.jl")
 include("pnexpliciteuler.jl")
 include("pniterators.jl")
@@ -47,59 +50,98 @@ include("pnlowrank.jl")
 
 epma_eq = dummy_epma_equations(
     [0.85u"keV"],                                               # beam energy
-    range(-0.5u"nm", 0.5u"nm", length=10),                      # beam position
+    [0.0u"nm"],                                                 # beam position
     [[-0.5, 0.0, -0.5], [0.0, 0.0, -1.0], [0.5, 0.0, -0.5]],    # beam direction. Careful, this is (x, y, z), not (z, x, y)
-    100.0,                                                       # beam concentration
+    10.0,                                                       # beam concentration
     [0.1u"keV", 0.2u"keV"],                                     # extraction energy
     [(1.0, 3.0, 10.0)]                                          # takeoff directions
 )
 
 pn_equ = PNEquations(epma_eq)
 
-n_z = 100
+n_z = 10
 
-space_model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
-space_model = CartesianDiscreteModel((0.0, 1.0, -1.0, 1.0), (n_z, 2*n_z))
-space_model = CartesianDiscreteModel((0.0, 1.0), (n_z))
+space_domain = ((-1.0, 0.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
+space_domain = ((-1.0, 0.0, -1.0, 1.0), (n_z, 2*n_z))
+space_domain = ((-1.0, 0.0), (n_z))
+
+energy_domain = ((0.0, 1.0), 60)
 
 # using GridapGmsh
 # model2 = DiscreteModelFromFile("square.msh")
 
-model = PNGridapModel(space_model, range(0, 1, 50), 21, cuda(Float32))
+model = PNGridapModel(space_domain, energy_domain, 27, cpu())
 pnproblem, pnrhs = discretize(pn_equ, model)
+
 pnext = discretize_extraction(pn_equ, model)
-solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_equ, model, 40)
+
+# for PN in 9:2:27
+for PN in 1:2:29
+    monochrommodel = MonoChromPNGridapModel(space_domain, PN, cuda())
+    dummy_mon_eq = DummyAbstractMonoChromPNEquations()
+
+    monopnprob, monopnrhs = discretize(dummy_mon_eq, monochrommodel)
+    #monochromsolver = pn_monochromsolver(dummy_mon_eq, monochrommodel)
+    monochromschursolver = pn_monochromschursolver(dummy_mon_eq, monochrommodel)
+
+    #solve(monopnprob, monopnrhs, monochromsolver)
+    solve(monopnprob, monopnrhs, monochromschursolver)
+
+    #plot!(range(-1.0, 0.0, 101), Vector(monochromsolver.lin_solver.x[1:101]))
+    #sol = Matrix(reshape(monochromsolver.lin_solver.x[1:20301], (n_z+1, 2*n_z+1)))
+    #sol = Matrix(reshape(monochromschursolver.sol[1:5151], (n_z+1, 2*n_z+1)))
+    # heatmap(range(-1.0, 1.0, 2*n_z+1), range(-1.0, 0.0, n_z+1), -sol, aspect_ratio=:equal)
+    sol = Vector(monochromschursolver.sol[1:401])
+    plot(range(-1.0, 0.0, n_z+1), -sol)
+    plot!(range(-1.0, 0.0, n_z+1), x -> exp(-abs(x)))
+    title!("PN = $(PN)")
+    # ylims!(0.0, 0.1)
+    display(plot!())
+end
+heatmap(range(-1.0, 1.0, 2*n_z+1), range(-1.0, 0.0, n_z+1), reshape(Vector(monopnrhs.bxp[1]), (n_z+1, 2*n_z+1)), aspect_ratio=:equal)
+
+# solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_equ, model, 40)
 solver = pn_schurimplicitmidpointsolver(pn_equ, model)
 
-nb = number_of_basis_functions(model)
+nb = number_of_basis_functions(monochrommodel)
 
-@gif for ϵ in lowtohigh(pnproblem, pnext, solver)
+open("example2.txt", "w") do filehandle
+    show(filehandle, prof_result)
+end
+
+CUDA.@profile for ϵ in hightolow(pnproblem, pnrhs, solver)
     @show ϵ
     # @show solver_dlr.ranks
     #ψ = Vector(current_solution(solver))
-    #heatmap(-reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)), clims=(0, 0.4))
-    beam_surf = reshape(current_solution(solver)[1:nb.x.p], (n_z+1, 2*n_z+1))[end, :]
-    plot(-Vector(beam_surf))
-    #@show solver.ranks
-end fps=5
-
-@gif for ϵ in hightolow(pnproblem, pnrhs, solver_dlr)
-    @show ϵ
-    ψ = Vector(current_solution(solver_dlr, pnproblem))
-    heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
+    # heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)), clims=(0, 0.15))
+    #plot(reshape(ψ[1:nb.x.p], (n_z+1)), ylims=(0, 0.15))
+    #beam_surf = reshape(current_solution(solver)[1:nb.x.p], (n_z+1, 2*n_z+1))[end, :]
+    #plot(-Vector(beam_surf))
     #@show solver.ranks
 end
 
 
-it = forward(disc_eq, pn_solver_imp)
 
-iterate(it, 100)
+@gif for ϵ in hightolow(pnproblem, pnrhs, solver_dlr)
+    @show ϵ
+    #ψ = Vector(current_solution(solver_dlr, pnproblem))
+    #plot(reshape(ψ[1:nb.x.p], (n_z+1)), ylims=(0, 0.15))
 
+    # heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
+    #@show solver.ranks
+end
+
+@gif for (ϵ1, ϵ2) in zip(hightolow(pnproblem, pnrhs, solver), hightolow(pnproblem, pnrhs, solver_dlr))
+    ψ2 = Vector(current_solution(solver_dlr, pnproblem))
+    ψ1 = Vector(current_solution(solver))
+
+    plot(reshape(ψ1[1:nb.x.p], (n_z+1)), ylims=(0, 0.15))
+    plot!(reshape(ψ2[1:nb.x.p], (n_z+1)), ylims=(0, 0.15))
+end
 
 # pn_sys = build_solver(model, 21, 2)
 # pn_sys2 = build_solver(model2, 21, 2)
 
-grid = 
 prob = DiscretePNProblem()
 solv = PNSolver()
 parameters = PNParams()
@@ -283,4 +325,3 @@ for i in repeat(1:50, 10)
     sleep(0.1)
 end
 surface(x_coords, y_coords, -reshape(@view(ψs4[1:n_basis.x.p, N÷ 2]), (n_z+1, 2*n_z+1, 2*n_z+1))[1, :, :])
-
