@@ -6,7 +6,7 @@ abstract type AbstractPNEquations end
 
 """
     PNEquations
-    ``\\partial_ϵ(s\\psi) + s\\partial_\\epsilon \\psi ``
+    ``∂ₑ(su) + Ω⋅∇u + τu ...``
 """
 struct PNEquations{EEQ} <: AbstractPNEquations
     eq::EEQ
@@ -103,6 +103,4 @@ function _specific_attenuation_coefficient(eq::PNEquations, e, j)
     units_specific_attenuation_coefficient = unit_mass(eq) / unit_length(eq)^3
     return specific_attenuation_coefficient(eq.eq, e, j) / units_specific_attenuation_coefficient
 end
-
-
 

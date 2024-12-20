@@ -4,7 +4,7 @@
     solver
 end
 
-function hightolow(problem::DiscretePNProblem, rhs::DiscretePNRHS, solver::PNSolver)
+function hightolow(problem::DiscretePNProblem, rhs::AbstractDiscretePNRHS, solver::PNSolver)
     return HighToLowIterator(problem, rhs, solver)
 end
 
@@ -12,7 +12,7 @@ function Base.iterate(it::HighToLowIterator)
     initialize!(it.solver, it.problem)
     ϵs = energy(it.problem.model)
     ϵ = ϵs[end]
-    return ϵ, length(ϵs)
+    return (ϵ, length(ϵs)), length(ϵs)
 end
 
 function Base.iterate(it::HighToLowIterator, i)
@@ -24,7 +24,7 @@ function Base.iterate(it::HighToLowIterator, i)
         ϵi, ϵip1 = ϵs[i-1], ϵs[i]
         Δϵ = ϵip1-ϵi
         step_hightolow!(it.solver, it.problem, it.rhs, i, Δϵ)
-        return ϵi, i-1
+        return (ϵi, i-1), i-1
     end
 end
 
@@ -34,7 +34,7 @@ end
     solver
 end
 
-function lowtohigh(problem::DiscretePNProblem, rhs::DiscretePNRHS, solver::PNSolver)
+function lowtohigh(problem::DiscretePNProblem, rhs::AbstractDiscretePNRHS, solver::PNSolver)
     return LowToHighIterator(problem, rhs, solver)
 end
 
@@ -42,7 +42,7 @@ function Base.iterate(it::LowToHighIterator)
     initialize!(it.solver, it.problem)
     ϵs = energy(it.problem.model)
     ϵ = ϵs[1]
-    return ϵ, 1
+    return (ϵ, 1), 1
 end
 
 function Base.iterate(it::LowToHighIterator, i)
@@ -54,6 +54,6 @@ function Base.iterate(it::LowToHighIterator, i)
         ϵi, ϵip1 = ϵs[i], ϵs[i+1]
         Δϵ = ϵip1-ϵi
         step_lowtohigh!(it.solver, it.problem, it.rhs, i, Δϵ)
-        return ϵip1, i+1
+        return (ϵip1, i+1), i+1
     end
 end

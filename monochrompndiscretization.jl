@@ -249,8 +249,6 @@ function _compute_full_solution_schur(solver::MonoChromSchurPNSolver, problem::D
     full_m .= full_m ./ solver.D
 end
 
-
-
 function solve(problem::DiscreteMonoChromPNProblem, rhs::DiscreteMonoChromPNRHS, solver::MonoChromSchurPNSolver{T}) where T
     assemble_rhs_p!(solver.rhs, rhs)
     a, b, c = update_coefficients!(solver, problem)

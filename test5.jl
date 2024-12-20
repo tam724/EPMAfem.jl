@@ -5,20 +5,18 @@ using Serialization
 using SparseArrays
 using HCubature
 using LinearAlgebra
-using Enzyme
 using Distributions
 using Plots
 using UnsafeArrays
 
-using IterativeSolvers
 using Unitful
 using UnitfulChainRules
 using ConcreteStructs
 
-using ForwardDiff
 using Krylov
 using CUDA
 using Zygote
+using Enzyme
 using Lux
 using Optim, Lux, Random, Optimisers
 using BenchmarkTools
@@ -47,6 +45,7 @@ include("pnimplicitmidpoint.jl")
 include("pnexpliciteuler.jl")
 include("pniterators.jl")
 include("pnlowrank.jl")
+include("trilinearform.jl")
 
 epma_eq = dummy_epma_equations(
     [0.85u"keV"],                                               # beam energy
@@ -59,77 +58,161 @@ epma_eq = dummy_epma_equations(
 
 pn_equ = PNEquations(epma_eq)
 
-n_z = 10
+n_z = 50
 
-space_domain = ((-1.0, 0.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
+# space_domain = ((-1.0, 0.0, -1.0, 1.0, -1.0, 1.0), (n_z, 2*n_z, 2*n_z))
 space_domain = ((-1.0, 0.0, -1.0, 1.0), (n_z, 2*n_z))
-space_domain = ((-1.0, 0.0), (n_z))
+#space_domain = ((-1.0, 0.0), (n_z))
 
-energy_domain = ((0.0, 1.0), 60)
+energy_domain = ((0.0, 1.0), 100)
 
 # using GridapGmsh
 # model2 = DiscreteModelFromFile("square.msh")
 
-model = PNGridapModel(space_domain, energy_domain, 27, cpu())
+model = PNGridapModel(space_domain, energy_domain, 13, cuda())
+
+# U, V, gap_model = gridap_model(space(model))
+
 pnproblem, pnrhs = discretize(pn_equ, model)
 
 pnext = discretize_extraction(pn_equ, model)
 
-# for PN in 9:2:27
-for PN in 1:2:29
-    monochrommodel = MonoChromPNGridapModel(space_domain, PN, cuda())
-    dummy_mon_eq = DummyAbstractMonoChromPNEquations()
+# # for PN in 9:2:27
+# for PN in 1:2:29
+#     monochrommodel = MonoChromPNGridapModel(space_domain, PN, cuda())
+#     dummy_mon_eq = DummyAbstractMonoChromPNEquations()
 
-    monopnprob, monopnrhs = discretize(dummy_mon_eq, monochrommodel)
-    #monochromsolver = pn_monochromsolver(dummy_mon_eq, monochrommodel)
-    monochromschursolver = pn_monochromschursolver(dummy_mon_eq, monochrommodel)
+#     monopnprob, monopnrhs = discretize(dummy_mon_eq, monochrommodel)
+#     #monochromsolver = pn_monochromsolver(dummy_mon_eq, monochrommodel)
+#     monochromschursolver = pn_monochromschursolver(dummy_mon_eq, monochrommodel)
 
-    #solve(monopnprob, monopnrhs, monochromsolver)
-    solve(monopnprob, monopnrhs, monochromschursolver)
+#     #solve(monopnprob, monopnrhs, monochromsolver)
+#     solve(monopnprob, monopnrhs, monochromschursolver)
 
-    #plot!(range(-1.0, 0.0, 101), Vector(monochromsolver.lin_solver.x[1:101]))
-    #sol = Matrix(reshape(monochromsolver.lin_solver.x[1:20301], (n_z+1, 2*n_z+1)))
-    #sol = Matrix(reshape(monochromschursolver.sol[1:5151], (n_z+1, 2*n_z+1)))
-    # heatmap(range(-1.0, 1.0, 2*n_z+1), range(-1.0, 0.0, n_z+1), -sol, aspect_ratio=:equal)
-    sol = Vector(monochromschursolver.sol[1:401])
-    plot(range(-1.0, 0.0, n_z+1), -sol)
-    plot!(range(-1.0, 0.0, n_z+1), x -> exp(-abs(x)))
-    title!("PN = $(PN)")
-    # ylims!(0.0, 0.1)
-    display(plot!())
-end
-heatmap(range(-1.0, 1.0, 2*n_z+1), range(-1.0, 0.0, n_z+1), reshape(Vector(monopnrhs.bxp[1]), (n_z+1, 2*n_z+1)), aspect_ratio=:equal)
+#     #plot!(range(-1.0, 0.0, 101), Vector(monochromsolver.lin_solver.x[1:101]))
+#     #sol = Matrix(reshape(monochromsolver.lin_solver.x[1:20301], (n_z+1, 2*n_z+1)))
+#     #sol = Matrix(reshape(monochromschursolver.sol[1:5151], (n_z+1, 2*n_z+1)))
+#     # heatmap(range(-1.0, 1.0, 2*n_z+1), range(-1.0, 0.0, n_z+1), -sol, aspect_ratio=:equal)
+#     sol = Vector(monochromschursolver.sol[1:401])
+#     plot(range(-1.0, 0.0, n_z+1), -sol)
+#     plot!(range(-1.0, 0.0, n_z+1), x -> exp(-abs(x)))
+#     title!("PN = $(PN)")
+#     # ylims!(0.0, 0.1)
+#     display(plot!())
+# end
+# heatmap(range(-1.0, 1.0, 2*n_z+1), range(-1.0, 0.0, n_z+1), reshape(Vector(monopnrhs.bxp[1]), (n_z+1, 2*n_z+1)), aspect_ratio=:equal)
 
 # solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_equ, model, 40)
-solver = pn_schurimplicitmidpointsolver(pn_equ, model)
+# solver = pn_schurimplicitmidpointsolver(pn_equ, model)
+solver = pn_fullimplicitmidpointsolver(pn_equ, model)
+solver_schur = pn_schurimplicitmidpointsolver(pn_equ, model)
 
-nb = number_of_basis_functions(monochrommodel)
+nb = number_of_basis_functions(model)
 
-open("example2.txt", "w") do filehandle
-    show(filehandle, prof_result)
+# CUDA.@profile for ϵ in hightolow(pnproblem, pnrhs, solver)
+#     @show ϵ
+#     # @show solver_dlr.ranks
+#     #ψ = Vector(current_solution(solver))
+#     # heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)), clims=(0, 0.15))
+#     #plot(reshape(ψ[1:nb.x.p], (n_z+1)), ylims=(0, 0.15))
+#     #beam_surf = reshape(current_solution(solver)[1:nb.x.p], (n_z+1, 2*n_z+1))[end, :]
+#     #plot(-Vector(beam_surf))
+#     #@show solver.ranks
+# end
+
+function (b::Rank1DiscretePNRHS)(it::HighToLowIterator)
+    Δϵ = step(b.model.energy_model)
+    integral = 0.0
+    for (ϵ, i) in it
+        ψp = pview(current_solution(it.solver), it.problem.model)
+
+        integral += Δϵ * b.bϵ[i]*dot(b.bxp, ψp * b.bΩp)   
+    end
+    return integral
 end
 
-CUDA.@profile for ϵ in hightolow(pnproblem, pnrhs, solver)
+function (b::Rank1DiscretePNRHS)(it::LowToHighIterator)
+    Δϵ = step(b.model.energy_model)
+    integral = 0.0
+    for (ϵ, i) in it
+        ψp = pview(current_solution(it.solver), it.problem.model)
+
+        if i != 1 # (where ψp is initialized to 0 anyways..)
+            integral += Δϵ * 0.5 * (b.bϵ[i] + b.bϵ[i-1])*dot(b.bxp, ψp * b.bΩp)
+        end  
+    end
+    return integral
+end
+
+# c(A * b)
+@time pnext(hightolow(pnproblem, pnrhs, solver))
+@time pnext(hightolow(pnproblem, pnrhs, solver_schur))
+# b(A^T * c)
+@time pnrhs(lowtohigh(pnproblem, pnext, solver))
+@time pnrhs(lowtohigh(pnproblem, pnext, solver_schur))
+
+integral = 0.0
+for (ϵ, i) in hightolow(pnproblem, pnrhs, solver)
     @show ϵ
-    # @show solver_dlr.ranks
-    #ψ = Vector(current_solution(solver))
-    # heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)), clims=(0, 0.15))
+    ψ = Vector(current_solution(solver))
+    ψp = pview(ψ, model)
     #plot(reshape(ψ[1:nb.x.p], (n_z+1)), ylims=(0, 0.15))
-    #beam_surf = reshape(current_solution(solver)[1:nb.x.p], (n_z+1, 2*n_z+1))[end, :]
-    #plot(-Vector(beam_surf))
+
+
+    # now integrate this thing..
+    Δϵ = step(model.energy_model)
+    for j in 1:nb.x.p
+        for k in 1:nb.Ω.p
+            integral += ψp[j, k] * bxp_temp[j] * bΩp_temp[k] * pnext.bϵ[1][i] * Δϵ
+        end
+    end
+    # pview(ψ, model)
     #@show solver.ranks
+    # heatmap(reshape(@view(ψ[1:nb.x.p]), (n_z+1, 2*n_z+1)))
 end
+@show integral
+@show integral2
+integral - integral2
 
-
-
-@gif for ϵ in hightolow(pnproblem, pnrhs, solver_dlr)
+@gif for (ϵ, i) in hightolow(pnproblem, pnrhs, solver)
     @show ϵ
-    #ψ = Vector(current_solution(solver_dlr, pnproblem))
+    ψ = Vector(current_solution(solver))
+    ψp = pview(ψ, model)
+    # plot(reshape(ψ[1:nb.x.p], (n_z+1)), ylims=(0, 0.18))
+    # plot!(pnext.bxp[1][:] * pnext.bϵ[1][i])
+    heatmap(reshape(@view(ψ[1:nb.x.p]), (n_z+1, 2*n_z+1)))
+end fps=10
+
+@gif for (ϵ, i) in lowtohigh(pnproblem, pnext, solver)
+    @show ϵ
+    ψ = Vector(current_solution(solver))
+    #plot(-reshape(ψ[1:nb.x.p], (n_z+1)), ylims=(0, 0.5))
+    #if i != 1
+    #    plot!(pnrhs.bxp[1][:] * (pnrhs.bϵ[1][i] + pnrhs.bϵ[1][i-1])* 0.5)
+    #end
+    heatmap(-reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
+end fps=10
+
+integral2 = 0.0
+for (ϵ, i) in lowtohigh(pnproblem, pnext, solver)
+    @show ϵ
+    ψ = Vector(current_solution(solver))
+    ψp = pview(ψ, model)
+
     #plot(reshape(ψ[1:nb.x.p], (n_z+1)), ylims=(0, 0.15))
 
     # heatmap(reshape(ψ[1:nb.x.p], (n_z+1, 2*n_z+1)))
+    Δϵ = model.energy_model.step.hi
+    if i != 1
+        for j in 1:nb.x.p
+            for k in 1:nb.Ω.p
+                integral2 += ψp[j, k] * pnrhs.bxp[1][j] * pnrhs.bΩp[1][k] * (pnrhs.bϵ[1][i] + pnrhs.bϵ[1][i-1])* 0.5 * Δϵ
+            end
+        end
+    end
     #@show solver.ranks
 end
+@show integral2
 
 @gif for (ϵ1, ϵ2) in zip(hightolow(pnproblem, pnrhs, solver), hightolow(pnproblem, pnrhs, solver_dlr))
     ψ2 = Vector(current_solution(solver_dlr, pnproblem))
@@ -237,7 +320,6 @@ function doit!(storage, solver, n_basis)
             # ϵs[i÷10] = ϵ 
     end
 end
-
 
 
 @time doit!(ψs1, pn_solver_exp, n_basis)
