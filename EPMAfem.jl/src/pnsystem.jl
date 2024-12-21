@@ -30,7 +30,7 @@ end
     solver
 end
 
-function iterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNRHS{false}, solver::PNSolver)
+function iterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNVector{false}, solver)
     return NonAdjointIterator(system, rhs, solver)
 end
 
@@ -60,7 +60,7 @@ end
     solver
 end
 
-function iterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNRHS{true}, solver::PNSolver)
+function iterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNVector{true}, solver)
     return AdjointIterator(system, rhs, solver)
 end
 

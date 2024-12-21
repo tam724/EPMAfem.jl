@@ -1,7 +1,7 @@
-const ∫s²_nΩgv = Val{:∫s²_nΩgv}()
-const ∫s²_hv = Val{:∫s²_hv}()
+const ∫S²_nΩgv = Val{:∫S²_nΩgv}()
+const ∫S²_hv = Val{:∫S²_hv}()
 
-function assemble_linear(::Val{:∫s²_nΩgv}, n, g, model, V, quad::Quadrature=lebedev_quadrature)
+function assemble_linear(::Val{:∫S²_nΩgv}, n, g, model, V, quad::Quadrature=lebedev_quadrature)
     cache = zeros(length(V))
     function f!(cache, Ω)
         Y_V = _eval_basis_functions!(model, Ω, V)
@@ -16,7 +16,7 @@ function assemble_linear(::Val{:∫s²_nΩgv}, n, g, model, V, quad::Quadrature=
     return quad(f!, cache, model)
 end
 
-function assemble_linear(::Val{:∫s²_hv}, h, model, V, quad::Quadrature=lebedev_quadrature)
+function assemble_linear(::Val{:∫S²_hv}, h, model, V, quad::Quadrature=lebedev_quadrature)
     cache = zeros(length(V))
     function f!(cache, Ω)
         Y_V = _eval_basis_functions!(model, Ω, V)

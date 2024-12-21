@@ -58,16 +58,6 @@ mat_type(pnprob::DiscretePNProblem) = mat_type(pnprob.model)
 vec_type(pnprob::DiscretePNProblem) = vec_type(pnprob.model)
 base_type(pnprob::DiscretePNProblem) = base_type(pnprob.model)
 
-nonzero_values(A::CUDA.CuSparseMatrixCSC) = A.nzVal
-nonzero_values(A::Diagonal) = A.diag
-nonzero_values(A::SparseMatrixCSC) = A.nzval
-
-function project_matrices(ρs, ρ_projector, vals)
-    for (ρi, vi) in zip(ρs, vals)
-        mul!(nonzero_values(ρi), ρ_projector, vi, 1.0, 0.0)
-    end
-end
-
 # function project_matrices(ρs::Vector{<:Diagonal}, ρ_projector, vals)
 #     for (ρi, vi) in zip(ρs, vals)
 #         mul!(ρi.diag, ρ_projector, vi, 1.0, 0.0)
@@ -339,11 +329,6 @@ end
 #     mul!(bp, pn_semi.μx[j], pn_semi.μΩ[k], α*_extraction_energy_distribution(pn_semi.pn_equ, i)(ϵ), false)
 #     fill!(bm, 0)
 # end
-
-function project_function(U, (model, R, dx, ∂R, dΓ, n), f)
-    op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, U)
-    return Gridap.solve(op).free_values
-end
 
 
 # function build_ρ_to_ρp_projection(pn_sys)

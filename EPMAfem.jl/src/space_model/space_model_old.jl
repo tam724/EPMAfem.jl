@@ -3,20 +3,9 @@ using SparseArrays
 
 ## Gridap Helper function
 
-function assemble_bilinear(a, args, U, V)
-    u = get_trial_fe_basis(U)
-    v = get_fe_basis(V)
-    matcontribs = a(u, v, args...)
-    data = Gridap.FESpaces.collect_cell_matrix(U, V, matcontribs)
-    return assemble_matrix(SparseMatrixAssembler(U, V), data)
-end
 
-function assemble_linear(b, args, U, V)
-    v = get_fe_basis(V)
-    veccontribs = b(v, args...)
-    data = Gridap.FESpaces.collect_cell_vector(V, veccontribs)
-    return assemble_vector(SparseMatrixAssembler(U, V), data)
-end
+
+
 
 number_of_dimensions(::DiscreteModel{N}) where N = N
 function nd(::DiscreteModel{N}) where N
@@ -32,50 +21,16 @@ function material_space(model)
 end
 
 # defs of bilinear forms
-ez(::DiscreteModel{1}) = VectorValue(1.0)
+# ez(::DiscreteModel{1}) = VectorValue(1.0)
 
-ez(::DiscreteModel{2}) = VectorValue(1.0, 0.0)
-ex(::DiscreteModel{2}) = VectorValue(0.0, 1.0)
+# ez(::DiscreteModel{2}) = VectorValue(1.0, 0.0)
+# ex(::DiscreteModel{2}) = VectorValue(0.0, 1.0)
 
-ez(::DiscreteModel{3}) = VectorValue(1.0, 0.0, 0.0)
-ex(::DiscreteModel{3}) = VectorValue(0.0, 1.0, 0.0)
-ey(::DiscreteModel{3}) = VectorValue(0.0, 0.0, 1.0)
+# ez(::DiscreteModel{3}) = VectorValue(1.0, 0.0, 0.0)
+# ex(::DiscreteModel{3}) = VectorValue(0.0, 1.0, 0.0)
+# ey(::DiscreteModel{3}) = VectorValue(0.0, 0.0, 1.0)
 
-∂z(u, m::DiscreteModel) = dot(ez(m), ∇(u))
-∂x(u, m::DiscreteModel) = dot(ex(m), ∇(u))
-∂y(u, m::DiscreteModel) = dot(ey(m), ∇(u))
 
-∫ρuv(u, v, ρ, (model, R, dx, ∂R, dΓ, n)) = ∫(ρ*u*v)dx
-∫uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(u*v)dx
-∫v(v, (model, R, dx, ∂R, dΓ, n)) = ∫(v)dx
-
-∫∂zu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂z(u, model)*v)dx
-∫∂xu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂x(u, model)*v)dx
-∫∂yu_v(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(∂y(u, model)*v)dx
-
-∫u_∂zv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(u*∂z(v, model))dx
-∫u_∂xv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(u*∂x(v, model))dx
-∫u_∂yv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(u*∂y(v, model))dx
-
-∫∂u_v(::DiscreteModel{1}) = (∫∂zu_v, )
-∫∂u_v(::DiscreteModel{2}) = (∫∂zu_v, ∫∂xu_v)
-∫∂u_v(::DiscreteModel{3}) = (∫∂zu_v, ∫∂xu_v, ∫∂yu_v)
-
-∫u_∂v(::DiscreteModel{1}) = (∫u_∂zv, )
-∫u_∂v(::DiscreteModel{2}) = (∫u_∂zv, ∫u_∂xv)
-∫u_∂v(::DiscreteModel{3}) = (∫u_∂zv, ∫u_∂xv, ∫u_∂yv)
-
-nz(n, m::DiscreteModel{N, T}) where {N, T} = dot(n, ez(m))
-nx(n, m::DiscreteModel{N, T}) where {N, T} = dot(n, ex(m))
-ny(n, m::DiscreteModel{N, T}) where {N, T} = dot(n, ey(m))
-
-∫absnz_uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(abs(nz(n, model))*u*v)dΓ
-∫absnx_uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(abs(nx(n, model))*u*v)dΓ
-∫absny_uv(u, v, (model, R, dx, ∂R, dΓ, n)) = ∫(abs(ny(n, model))*u*v)dΓ
-
-∫absn_uv(::DiscreteModel{1}) = (∫absnz_uv, )
-∫absn_uv(::DiscreteModel{2}) = (∫absnz_uv, ∫absnx_uv)
-∫absn_uv(::DiscreteModel{3}) = (∫absnz_uv, ∫absnx_uv, ∫absny_uv)
 
 ## space assembly
 # function update_space_matrices!(X, solver, mass_concentrations)
@@ -106,12 +61,6 @@ ny(n, m::DiscreteModel{N, T}) where {N, T} = dot(n, ey(m))
 #     ∂Xpp = [assemble_bilinear(a, (model, ), U[1], V[1]) for a ∈ ∫absn_uv(model.model)]
 #     return (Xpp=Xpp, Xmm=Xmm, dXpm=dXpm, dXmp=dXmp, ∂Xpp=∂Xpp)
 # end
-
-∫μv(v, μ, (model, R, dx, ∂R, dΓ, n)) = ∫(μ*v)dx
-∫v(v, (model, R, dx, ∂R, dΓ, n)) = ∫(v)dx
-∫nzgv(v, g, (model, R, dx, ∂R, dΓ, n)) = ∫(nz(n, model)*g*v)dΓ
-∫nxgv(v, g, (model, R, dx, ∂R, dΓ, n)) = ∫(nx(n, model)*g*v)dΓ
-∫nygv(v, g, (model, R, dx, ∂R, dΓ, n)) = ∫(ny(n, model)*g*v)dΓ
 
 function assemble_space_source((U, V, model), μ_x)
     return (p=assemble_linear(∫μv, (μ_x, model), U[1], V[1]), m=assemble_linear(∫μv, (μ_x, model), U[2], V[2]))

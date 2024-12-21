@@ -3,9 +3,17 @@ const ∫S²_Ωzuv = Val{:∫S²_Ωzuv}()
 const ∫S²_Ωxuv = Val{:∫S²_Ωxuv}()
 const ∫S²_Ωyuv = Val{:∫S²_Ωyuv}()
 
+∫S²_Ωuv(::_1D) = (∫S²_Ωzuv, )
+∫S²_Ωuv(::_2D) = (∫S²_Ωzuv, ∫S²_Ωxuv)
+∫S²_Ωuv(::_3D) = (∫S²_Ωzuv, ∫S²_Ωxuv, ∫S²_Ωyuv)
+
 const ∫S²_absΩzuv = Val{:∫S²_absΩzuv}()
 const ∫S²_absΩxuv = Val{:∫S²_absΩxuv}()
 const ∫S²_absΩyuv = Val{:∫S²_absΩyuv}()
+
+∫S²_absΩuv(::_1D) = (∫S²_absΩzuv, )
+∫S²_absΩuv(::_2D) = (∫S²_absΩzuv, ∫S²_absΩxuv)
+∫S²_absΩuv(::_3D) = (∫S²_absΩzuv, ∫S²_absΩxuv, ∫S²_absΩyuv)
 
 dim(::Val{:∫S²_Ωzuv}) = Z()
 dim(::Val{:∫S²_Ωxuv}) = X()
@@ -15,10 +23,6 @@ dim(::Val{:∫S²_absΩzuv}) = Z()
 dim(::Val{:∫S²_absΩxuv}) = X()
 dim(::Val{:∫S²_absΩyuv}) = Y()
 
-Ωz(Ω::VectorValue{3}) = Ω[1]
-Ωx(Ω::VectorValue{3}) = Ω[2]
-Ωy(Ω::VectorValue{3}) = Ω[3]
-
 int_func(::Val{:∫S²_uv}, Ω) = 1
 int_func(::Val{:∫S²_Ωxuv}, Ω) = Ωx(Ω)
 int_func(::Val{:∫S²_Ωyuv}, Ω) = Ωy(Ω)
@@ -27,45 +31,92 @@ int_func(::Val{:∫S²_absΩxuv}, Ω) = abs(Ωx(Ω))
 int_func(::Val{:∫S²_absΩyuv}, Ω) = abs(Ωy(Ω))
 int_func(::Val{:∫S²_absΩzuv}, Ω) = abs(Ωz(Ω))
 
-const IntFuncIntegral = Union{Val{:∫S²_uv}, Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv}, Val{:∫S²_Ωyuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}, Val{:∫S²_absΩzuv}}
-
-function lebedev_quadrature(f!, cache, model)
-    N = max_degree(model)*3 #TODO: this should be checked somehow..
-    available_orders = getavailableorders()
-    idx = findfirst(o -> o > N, available_orders)
-    x, y, z, w = lebedev_by_order(available_orders[idx])
-    I = zero(cache)
-    for (x_, y_, z_, w_) in zip(x, y, z, w)
-        f!(cache, VectorValue(z_, x_, y_))
-        I .+= w_ .* cache
-    end
-    return 4π.*I
+@concrete struct ∫S²_kuv
+    k
 end
 
-function hcubature_quadrature(f!, cache, model, tol=1e-10)
+const IntFuncIntegral = Union{Val{:∫S²_uv}, Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv}, Val{:∫S²_Ωyuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}, Val{:∫S²_absΩzuv}}
+
+abstract type SphericalQuadrature end
+struct lebedev_quadrature <: SphericalQuadrature
+    order::Int64
+end
+function guess_lebedev_order_from_model(model, fac=3)
+    N = max_degree(model)*fac #TODO: this should be checked somehow..
+    available_orders = getavailableorders()
+    idx = findfirst(o -> o > N, available_orders)
+    if isnothing(idx)
+        return available_orders[end]
+    end
+    return available_orders[idx]
+end
+
+function lebedev_points(quad)
+    x, y, z, w = lebedev_by_order(quad.order)
+    Ω = to_Ω.(z, x, y)
+    return Ω, 4π*w
+end
+
+struct hcubature_quadrature <: SphericalQuadrature
+    atol::Float64
+    rtol::Float64
+    maxevals::Int64
+end
+hcubature_quadrature(atol, rtol) = hcubature_quadrature(atol, rtol, typemax(Int))
+
+struct exact_quadrature <: SphericalQuadrature end
+
+function (quad::lebedev_quadrature)(f!, cache)
+    Ω, w = lebedev_points(quad)
+    I = zero(cache)
+    for (Ω_, w_) in zip(Ω, w)
+        f!(cache, Ω_)
+        I .+= w_ .* cache
+    end
+    return I
+end
+
+function (quad::hcubature_quadrature)(f!, cache)
     function integrand((θ, ϕ))
-        Ω = VectorValue(sin(θ)*cos(ϕ), sin(θ)*sin(ϕ), cos(θ))
+        Ω = unitsphere_spherical_to_cartesian((θ, ϕ))
         f!(cache, Ω)
         return cache.*sin(θ)
     end
-    return hcubature(integrand, (0, 0), (π, 2π), atol=tol, rtol=tol)[1]
+    return hcubature(integrand, (0, 0), (π, 2π), atol=quad.atol, rtol=quad.rtol, maxevals=quad.maxevals)[1]
 end
 
-## dummy function to dispatch on
-function exact_quadrature() end 
+function assemble_bilinear(integral::∫S²_kuv, model, U, V, quad::hcubature_quadrature)
+    N = max_degree(model)
+    Σl = 2*π*hquadrature(μ -> integral.k(μ).*Pl.(μ, 0:N), -1.0, 1.0, rtol=quad.rtol, atol=quad.atol, maxevals=quad.maxevals)[1]
+    A = zeros(length(V), length(U))
+    all_harmonics = SphericalHarmonics.ML(0:max_degree(model)) |> collect
 
-const Quadrature = Union{typeof(lebedev_quadrature), typeof(hcubature_quadrature)}
+    for i in eachindex(V)
+        for j in eachindex(U)
+            v = SphericalHarmonic(all_harmonics[V[i]]...)
+            u = SphericalHarmonic(all_harmonics[U[j]]...)
+            if u == v # isotropic scattering is diagonal (in spherical harmonic basis)
+                l = degree(u) #  == degree(v)
+                A[i, j] = Σl[l+1]
+            else
+                A[i, j] = 0.0
+            end
+        end
+    end
+    return A
+    # return Diagonal([Σl[l+1] for (l, k) in get_even_moments(N, nd)]), Diagonal([Σl[l+1] for (l, k) in get_odd_moments(N, nd)])
+end
 
-function assemble_bilinear(integral::IntFuncIntegral, model, U, V, quad::Quadrature=lebedev_quadrature)
+function assemble_bilinear(integral::IntFuncIntegral, model, U, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
     cache = zeros(length(V), length(U))
     function f!(cache, Ω)
         Y_U, Y_V = _eval_basis_functions!(model, Ω, U, V)
         mul!(cache, Y_V, transpose(Y_U), int_func(integral, Ω), 0.0)
     end
-    return quad(f!, cache, model)
+    return quad(f!, cache)
 end
 
-function assemble_bilinear(::Val{:∫S²_uv}, model, U, V, ::typeof(exact_quadrature))
+function assemble_bilinear(::Val{:∫S²_uv}, model, U, V, ::exact_quadrature)
     if U == V
         A = Diagonal(ones(length(U)))
         return A
@@ -79,7 +130,7 @@ function assemble_bilinear(::Val{:∫S²_uv}, model, U, V, ::typeof(exact_quadra
     return A
 end
 
-function assemble_bilinear(integral::Union{Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv}, Val{:∫S²_Ωyuv}}, model, U, V, ::typeof(exact_quadrature))
+function assemble_bilinear(integral::Union{Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv}, Val{:∫S²_Ωyuv}}, model, U, V, ::exact_quadrature)
     all_harmonics = SphericalHarmonics.ML(0:max_degree(model)) |> collect
     A = zeros(length(V), length(U))
 
@@ -93,7 +144,7 @@ function assemble_bilinear(integral::Union{Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv
     return A
 end
 
-function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}}, model, U, V, ::typeof(exact_quadrature))
+function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}}, model, U, V, ::exact_quadrature)
     all_harmonics = SphericalHarmonics.ML(0:max_degree(model)) |> collect
     A = zeros(length(V), length(U))
 

@@ -59,33 +59,34 @@ function assemble_rhs_p_midpoint!(b, rhs::DiscretePNVector{true}, i, Δ; bxp=rhs
     end
 end
 
-function assemble_rhs_p!(b, rhs::Rank1DiscretePNRHS, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
-    fill!(b, zero(eltype(b)))
+# TODO! 
+# function assemble_rhs_p!(b, rhs::Rank1DiscretePNRHS, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+#     fill!(b, zero(eltype(b)))
 
-    nLp = length(bxp)
-    nRp = length(bΩp)
+#     nLp = length(bxp)
+#     nRp = length(bΩp)
 
-    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
-    # bp = pview(b, rhs.model)
+#     bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
+#     # bp = pview(b, rhs.model)
 
-    bϵ2 = rhs.bϵ[i]
-    bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
-    bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
-    mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
-end
+#     bϵ2 = rhs.bϵ[i]
+#     bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
+#     bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
+#     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
+# end
 
-function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNRHS, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+# function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNRHS, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
 
-    fill!(b, zero(eltype(b)))
+#     fill!(b, zero(eltype(b)))
 
-    nLp = length(bxp)
-    nRp = length(bΩp)
+#     nLp = length(bxp)
+#     nRp = length(bΩp)
 
-    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
-    # bp = pview(b, rhs.model)
+#     bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
+#     # bp = pview(b, rhs.model)
 
-    bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
-    bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
-    bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
-    mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
-end
+#     bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
+#     bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
+#     bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
+#     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
+# end

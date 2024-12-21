@@ -15,6 +15,8 @@ function get_all_viable_harmonics_up_to(N, ND)
 end
 
 abstract type AbstractSphericalHarmonicsModel{ND} end
+dimensionality(::AbstractSphericalHarmonicsModel{ND}) where {ND} = dimensionality_type(ND)
+
 @concrete struct EOSphericalHarmonicsModel{ND} <: AbstractSphericalHarmonicsModel{ND}
     N
     num_dofs
@@ -23,7 +25,8 @@ abstract type AbstractSphericalHarmonicsModel{ND} end
 end
 
 function EOSphericalHarmonicsModel(N, ND)
-    viable_moments = get_all_viable_harmonics_up_to(N, ND)
+    _XD = dimensionality_type(ND)
+    viable_moments = get_all_viable_harmonics_up_to(N, _XD)
     sort!(viable_moments, lt=isless_evenodd)
 
     # compute the index to evaluate using SphericalHarmonics.jl
@@ -58,7 +61,8 @@ end
 end
 
 function EEEOSphericalHarmonicsModel(N, ND)
-    viable_moments = get_all_viable_harmonics_up_to(N, ND)
+    _XD = dimensionality_type(ND)
+    viable_moments = get_all_viable_harmonics_up_to(N, _XD)
     sort!(viable_moments, lt=isless_eeevenodd)
 
     # compute the index to evaluate using SphericalHarmonics.jl
@@ -114,9 +118,13 @@ function num_dofs(model::EEEOSphericalHarmonicsModel)
     return model.num_dofs.even + model.num_dofs.odd
 end
 
+function n_basis(model::AbstractSphericalHarmonicsModel)
+    return (p=model.num_dofs.even, m=model.num_dofs.odd)
+end
+
 function _eval_basis_functions_cache!(model::AbstractSphericalHarmonicsModel, Ω::VectorValue{3})
     # TODO (check): we mirror x and y to fit the definition on wikipedia https://en.wikipedia.org/wiki/Spherical_harmonics
-    θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ω[1], -Ω[2], -Ω[3]))
+    θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ωz(Ω), -Ωx(Ω), -Ωy(Ω)))
     SphericalHarmonics.computePlmcostheta!(model.sh_cache, θ)
     SphericalHarmonics.computeYlm!(model.sh_cache, θ, ϕ)
 end

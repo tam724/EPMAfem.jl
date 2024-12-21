@@ -1,9 +1,5 @@
-module GridapBiFormProjectors
+# module GridapBiFormProjectors
 
-using Gridap
-using Graphs
-using LinearAlgebra
-using SparseArrays
 # function find_nzval_index2(A, i, j)::Int64
 #     for nzval_idx in nzrange(A, j)
 #         if A.rowval[nzval_idx] == i
@@ -123,15 +119,18 @@ function compute_projector_projector(domain_contrib, U, V, A_skeleton)
 end
 
 
-function build_projector(f, U, V)
+function build_projector(a, model, U, V)
+    U_trial = TrialFESpace(U)
+    u = get_trial_fe_basis(U_trial)
     v = get_fe_basis(V)
-    u = get_trial_fe_basis(U)
 
-    domain_contrib = f(u, v)
+    args = get_args(model)
 
-    A_skeleton = compute_projector_sparsity_structure(domain_contrib, U, V)
+    domain_contrib = a(u, v, args)
 
-    projector = compute_projector_projector(domain_contrib, U, V, A_skeleton)
+    A_skeleton = compute_projector_sparsity_structure(domain_contrib, U_trial, V)
+
+    projector = compute_projector_projector(domain_contrib, U_trial, V, A_skeleton)
 
     # detect piecewise constant basis functions
     if length(get_cell_dof_ids(U) |> first) == 1
@@ -139,6 +138,14 @@ function build_projector(f, U, V)
         projector = isdiag(projector) ? Diagonal(Vector(diag(projector))) : projector
     end
     return A_skeleton, projector
+end
+
+SparseArrays.nonzeros(A::Diagonal) = A.diag
+
+function project_matrices(ρs, ρ_projector, vals)
+    for (ρi, vi) in zip(ρs, vals)
+        mul!(nonzeros(ρi), ρ_projector, vi, 1.0, 0.0)
+    end
 end
 
 function get_coloring(edgelist)
@@ -337,7 +344,7 @@ function backproject!(res, (skeletons, projectors), u, v)
     return res
 end
 
-end
+# end
 
 # function backproject_old!(b, backprojector, u, v)
 #     cache, backpr = backprojector

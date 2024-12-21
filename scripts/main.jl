@@ -2,18 +2,38 @@ using Revise
 
 using EPMAfem
 using Plots
-using GLMakie
+#using GLMakie
 
 import EPMAfem.SphericalHarmonicsModels as SH
+import EPMAfem.SpaceModels as SM
 using LinearAlgebra
+using Gridap
 
-new_dict = filter(p -> p[2][2] == 0.0, SH.boundary_matrix_dict)
-new_dict = Dict(((key, val[1]) for (key, val) in new_dict))
+space_model = SM.GridapSpaceModel(CartesianDiscreteModel((0, 1, 0, 1), (10, 10)))
+direction_model = SH.EEEOSphericalHarmonicsModel(11, 2)
+
+SM.dimensionality(space_model)
+SH.dimensionality(direction_model)
+
+model = EPMAfem.PNGridapModel(space_model, 0:0.01:1, direction_model, EPMAfem.cpu())
+equations = EPMAfem.PNEquations()
+
+discrete_problem = EPMAfem.discretize_problem(equations, model)
+
+A = SM.assemble_bilinear(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
+
+
+# new_dict = filter(p -> p[2][2] == 0.0, SH.boundary_matrix_dict)
+# new_dict = Dict(((key, val[1]) for (key, val) in new_dict))
 
 using Serialization
 serialize("boundary_matrix_dict2.jls", new_dict)
 
-model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(5, 1)
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscrereModel((0, 1), 10))
+
+sing 
+
+model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(11, 1)
 
 n = 100
 θ = [0;(0.5:n-0.5)/n;1]
@@ -34,7 +54,18 @@ for i in 1:SH.num_dofs(model)
 end
 
 using BenchmarkTools
-A1 = SH.assemble_bilinear(SH.∫S²_absΩyuv, model, SH.even(model), SH.even(model), SH.hcubature_quadrature)
+A1 = SH.assemble_bilinear(SH.∫S²_Ωzuv, model, SH.even(model), SH.odd(model), SH.exact_quadrature())
+A2 = SH.assemble_bilinear(SH.∫S²_Ωzuv, model, SH.even(model), SH.odd(model), SH.hcubature_quadrature(1e-5, 1e-5))
+A3 = SH.assemble_bilinear(SH.∫S²_Ωzuv, model, SH.even(model), SH.odd(model))
+
+maximum(abs.(A1 .- A2))
+maximum(abs.(A1 .- A3))
+
+
+A1 = SH.assemble_bilinear(SH.∫S²_absΩyuv, model, SH.even(model), SH.even(model), SH.exact_quadrature())
+A1 = SH.assemble_bilinear(SH.∫S²_absΩyuv, model, SH.even(model), SH.even(model), SH.hcubature_quadrature(1e-5, 1e-5, 1000))
+A1 = SH.assemble_bilinear(SH.∫S²_absΩyuv, model, SH.even(model), SH.even(model), SH.lebedev_quadrature(SH.guess_lebedev_order_from_model(model, 1000)))
+
 #A1x = SH.assemble_bilinear(SH.∫S²_absΩxuv, model, SH.even(model), SH.even(model), SH.lebedev_quadrature)
 A1y = SH.assemble_bilinear(SH.∫S²_absΩyuv, model, SH.even(model), SH.even(model), SH.exact_quadrature)
 
@@ -46,6 +77,8 @@ Plots.spy(A1)
 isapprox.(A1 .- A1y, 0.0, atol=1e-13) |> all
 
 A1 .- A1y
+
+nothing
 
 A1 
 A1y

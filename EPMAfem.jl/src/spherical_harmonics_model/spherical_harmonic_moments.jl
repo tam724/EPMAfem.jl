@@ -36,8 +36,6 @@ is_odd(m::SphericalHarmonic) = !is_even(m)
     classification of spherical harmonics with respect to the cartesian unit vectors
     see https://publications.rwth-aachen.de/record/819622/files/819622.pdf (page 72)
 """
-is_even_in(m::SphericalHarmonic, D::Int) = (D in (1, 2, 3)) ? is_even_in(m, Val(D)) : error("D must be 1, 2 or 3 (x, y or z)")
-
 function is_even_in(m::SphericalHarmonic, ::Z) # z basis vector
     return iseven(degree(m) + order(m))
 end
@@ -51,7 +49,7 @@ function is_even_in(m::SphericalHarmonic, ::Y) # y basis vector
     return order(m) >= 0
 end
 
-is_odd_in(m::SphericalHarmonic, d::Val) = !is_even_in(m, d)
+is_odd_in(m::SphericalHarmonic, d::SpaceDimension) = !is_even_in(m, d)
 
 function get_eee(m::SphericalHarmonic)
     return map(d -> is_even_in(m, d), dimensions())

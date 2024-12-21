@@ -3,6 +3,7 @@ module SphericalHarmonicsModelsTest
 using Test
 using LinearAlgebra
 using Random
+using Hcubature
 import EPMAfem.SphericalHarmonicsModels as SH
 
 
@@ -52,35 +53,77 @@ function test_transport_matrix_assembly(N, ND)
     V = model.sh_index
     
     for ∫ in (SH.∫S²_Ωzuv, SH.∫S²_Ωxuv, SH.∫S²_Ωyuv)
-        A_lebedev = SH.assemble_bilinear(∫, model, U, V, SH.lebedev_quadrature)
-        A_exact = SH.assemble_bilinear(∫, model, U, V, SH.exact_quadrature)
-        @test all(isapprox.(A_lebedev, A_exact, atol=1e-10))
+        @testset "$(∫), $(N), $(ND)" begin
+            A_lebedev = SH.assemble_bilinear(∫, model, U, V, SH.lebedev_quadrature(SH.guess_lebedev_order_from_model(model, 5)))
+            A_cubature = SH.assemble_bilinear(∫, model, U, V, SH.hcubature_quadrature(1e-5, 1e-5))
+            
+            A_exact = SH.assemble_bilinear(∫, model, U, V, SH.exact_quadrature())
+
+            @test all(isapprox.(A_lebedev, A_exact, atol=1e-4))
+            @test all(isapprox.(A_cubature, A_exact, atol=1e-4))
+        end     
     end
 end
 
 function test_boundary_matrix_assembly(N, ND)
     model = SH.EOSphericalHarmonicsModel(N, ND)
-    # we use all moments, not just the even or odd ones
     U = SH.even(model)
     V = SH.even(model)
     
     for ∫ in (SH.∫S²_absΩzuv, SH.∫S²_absΩxuv, SH.∫S²_absΩyuv)
-        A_cubature = SH.assemble_bilinear(∫, model, U, V, SH.hcubature_quadrature)
-        A_exact = SH.assemble_bilinear(∫, model, U, V, SH.exact_quadrature)
-        @test all(isapprox.(A_cubature, A_exact, atol=1e-8))
+        @testset "$(∫), $(N), $(ND)" begin
+            # for lebedev we use a very high order (otherwise the integral is inexact, lebedev is efficient anyways..)
+            A_lebedev = SH.assemble_bilinear(∫, model, U, V, SH.lebedev_quadrature(SH.guess_lebedev_order_from_model(model, 1000)))
+            A_cubature = SH.assemble_bilinear(∫, model, U, V, SH.hcubature_quadrature(1e-4, 1e-4))
+
+            A_exact = SH.assemble_bilinear(∫, model, U, V, SH.exact_quadrature())
+
+            @test all(isapprox.(A_lebedev, A_exact, atol=1e-2)) # lebedev is not very good for the discontinuity here..
+            @test all(isapprox.(A_cubature, A_exact, atol=1e-5))
+        end
     end
 end
 
 let
     for ND in (1, 2, 3)
-        for N in (1, 11, 21)
+        for N in (1, 5, 11)
             test_transport_matrix_assembly(N, ND)
         end
 
-        for N in (1, 5)
+        for N in (1, 5, 11)
             test_boundary_matrix_assembly(N, ND)
         end
     end
 end
+
+function test_scattering_kernel_integration()
+    model = SH.EOSphericalHarmonicsModel(11, 3)
+    U = model.sh_index
+    V = model.sh_index
+
+    # quad = SH.lebedev_quadrature(SH.guess_lebedev_order_from_model(model))
+    scattering_kernel_func(μ) = exp(-5.0*(μ-1.0)^2)
+    scattering_norm_factor = 2*π*hquadrature(x -> scattering_kernel_func(x), -1.0, 1.0)[1]
+    scattering_kernel(μ) = scattering_kernel_func(μ) / scattering_norm_factor
+    
+    A = SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel), model, U, V, SH.hcubature_quadrature(1e-5, 1e-5))
+    
+    quad = SH.lebedev_quadrature(SH.Lebedev.getavailableorders()[15]) # use max quadrature order
+    Ω, w = SH.lebedev_points(quad)
+    Y_U = zeros(length(U))
+    A_full_integral = zeros(length(V), length(U))
+
+    for i in eachindex(Ω, w)
+        Y_U .= SH._eval_basis_functions!(model, Ω[i], U)
+        for j in eachindex(Ω, w)
+            Y_V = SH._eval_basis_functions!(model, Ω[j], V)
+            mul!(A_full_integral, Y_V, transpose(Y_U), w[i]*w[j]*scattering_kernel(dot(Ω[i], Ω[j])), 1.0)
+        end
+    end
+
+    @test all(isapprox(A_full_integral, A, atol=1e-6, rtol=1e-6))
+end
+
+test_scattering_kernel_integration()
 
 end

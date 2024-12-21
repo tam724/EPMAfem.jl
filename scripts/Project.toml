@@ -1,5 +1,7 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 EPMAfem = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+HCubature = "19dc6840-f33b-545b-b366-655c7e3ffd49"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"

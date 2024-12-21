@@ -11,12 +11,15 @@ using SphericalHarmonics
 
 using HCubature
 using Lebedev
+using EPMAfem.Dimensions
 
-include("../space_dimensions.jl")
 include("spherical_harmonic_moments.jl")
 include("spherical_harmonics_model.jl")
 include("spherical_harmonic_matrices.jl")
 include("spherical_harmonics_transport.jl")
 include("spherical_harmonics_boundary.jl")
+
+export AbstractSphericalHarmonicsModel, EOSphericalHarmonicsModel, EEEOSphericalHarmonicsModel, even, odd
+export assemble_bilinear, assemble_linear
 
 end

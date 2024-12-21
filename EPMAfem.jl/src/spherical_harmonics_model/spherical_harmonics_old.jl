@@ -166,10 +166,7 @@ function assemble_boundary_matrix_old(N, ::Val{D}, parity, nd::Val{ND}) where {D
     return round.(sparse(A), digits=8)
 end
 
-function assemble_scattering_matrices(N, scattering_kernel, nd::Val{ND}) where ND
-    Σl = 2*π*hquadrature(x -> scattering_kernel(x).*Pl.(x, 0:N), -1.0, 1.0, rtol=1e-8, atol=1e-8, maxevals=100000)[1]
-    return Diagonal([Σl[l+1] for (l, k) in get_even_moments(N, nd)]), Diagonal([Σl[l+1] for (l, k) in get_odd_moments(N, nd)])
-end
+
 
 # function assemble_direction_source(N, qΩ, nd::Val{ND}) where ND
 #     eo_moms = get_eo_moments(N, nd)
