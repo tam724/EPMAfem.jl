@@ -101,7 +101,7 @@ function even(model::EEEOSphericalHarmonicsModel)
 end
 
 function odd(model::EEEOSphericalHarmonicsModel)
-    return @view(model.sh_index[(:oee, :eoe, :ooe, :ooo)])
+    return @view(model.sh_index[(:oee, :eoe, :eeo, :ooo)])
 end
 
 function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND

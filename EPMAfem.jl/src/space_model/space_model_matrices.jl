@@ -5,7 +5,7 @@
 
 ∫R_ρuv(u, v, ρ, (dims, R, dx, ∂R, dΓ, n)) = ∫(ρ*u*v)dx
 ∫R_uv(u, v, (dims, R, dx, ∂R, dΓ, n)) = ∫(u*v)dx
-∫R_v(v, (dims, R, dx, ∂R, dΓ, n)) = ∫(v)dx
+# ∫R_v(v, (dims, R, dx, ∂R, dΓ, n)) = ∫(v)dx
 
 ∫R_∂zu_v(u, v, (dims, R, dx, ∂R, dΓ, n)) = ∫(∂z(u, dims)*v)dx
 ∫R_∂xu_v(u, v, (dims, R, dx, ∂R, dΓ, n)) = ∫(∂x(u, dims)*v)dx

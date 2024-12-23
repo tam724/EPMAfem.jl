@@ -51,6 +51,7 @@ end
 
 number_of_elements(eq::PNEquations) = number_of_elements(eq.eq)
 number_of_scatterings(eq::PNEquations) = number_of_scatterings(eq.eq)
+
 number_of_beam_energies(eq::PNEquations) = number_of_beam_energies(eq.eq)
 number_of_beam_positions(eq::PNEquations) = number_of_beam_positions(eq.eq)
 number_of_beam_directions(eq::PNEquations) = number_of_beam_directions(eq.eq)

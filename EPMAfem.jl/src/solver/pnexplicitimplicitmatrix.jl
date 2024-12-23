@@ -128,8 +128,12 @@ end
 Base.eltype(M::FullBlockMat) = Base.eltype(first(M.ρp)) # maybe we should check more here or in the constructor of FullBlockMat
 
 function block_size(FBM::FullBlockMat)
-    nLm, nLp = size(first(FBM.∇pm))
-    nRm, nRp = size(first(FBM.Ωpm))
+    nLp = size(first(FBM.ρp), 1)
+    nLm = size(first(FBM.ρm), 1)
+    #nLm, nLp = size(first(FBM.∇pm))
+    nRp = size(FBM.Ip, 1)
+    nRm = size(FBM.Im, 1)
+    # nRm, nRp = size(first(FBM.Ωpm))
     return ((nLp, nLm), (nRp, nRm))
 end
 
@@ -140,11 +144,16 @@ function Base.size(FBM::FullBlockMat)
 end
 
 function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, kp, km, Ωpm, absΩp, a, b, c, tmp, tmp2, sym)::FullBlockMat{Tρp, Tρm, T∇pm, T∂p, TIp, TIm}, x::AbstractVector, α::Number, β::Number) where {Tρp, Tρm, T∇pm, T∂p, TIp<:Diagonal, TIm<:Diagonal}
-    nLm, nLp = size(first(∇pm))
-    nRm, nRp = size(first(Ωpm))
+    nLp = size(first(ρp), 1)
+    nLm = size(first(ρm), 1)
+    #nLm, nLp = size(first(FBM.∇pm))
+    nRp = size(Ip, 1)
+    nRm = size(Im, 1)
 
     np = nLp*nRp
     nm = nLm*nRm
+
+    # @show nLp, nLm, nRp, nRm
 
     (b1, b2, d) = b
 
@@ -153,7 +162,7 @@ function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, 
     mul!(@view(y[1:np]), ZMatrix(ρp, Ip, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), @view(x[1:np]), α, β)
     mul!(@view(y[1:np]), DMatrix(∂p, absΩp, d, mat_view(tmp, nLp, nRp)), @view(x[1:np]), α, true)
     # mp
-    mul!(@view(y[1:np]), DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b1, mat_view(tmp, nLp, nRm)), @view(x[np+1:np+nm]), α, true)
+    mul!(@view(y[1:np]), DMatrix(∇pm, Ωpm, b1, mat_view(tmp, nLp, nRm)), @view(x[np+1:np+nm]), α, true)
 
     # *(-1) for the lower part of the matrix if symmetrized
     γ = sym ? -1 : 1
@@ -161,12 +170,15 @@ function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, 
     # mm
     mul!(@view(y[np+1:np+nm]), ZMatrix(ρm, Im, km, a, c, mat_view(tmp, nLm, nRm), Diagonal(@view(tmp2[1:nRm]))), @view(x[np+1:np+nm]), γ*α, β)
     # pm
-    mul!(@view(y[np+1:np+nm]), DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b2, mat_view(tmp, nLm, nRp)), @view(x[1:np]), γ*α, true)
+    mul!(@view(y[np+1:np+nm]), DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), (transpose(Ωpmd) for Ωpmd in Ωpm), b2, mat_view(tmp, nLm, nRp)), @view(x[1:np]), γ*α, true)
 end
 
 function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, kp, km, Ωpm, absΩp, a, b, c, tmp, tmp2, sym)::FullBlockMat, x::AbstractVector, α::Number, β::Number)
-    nLm, nLp = size(first(∇pm))
-    nRm, nRp = size(first(Ωpm))
+    nLp = size(first(ρp), 1)
+    nLm = size(first(ρm), 1)
+    #nLm, nLp = size(first(FBM.∇pm))
+    nRp = size(Ip, 1)
+    nRm = size(Im, 1)
 
     np = nLp*nRp
     nm = nLm*nRm
@@ -178,14 +190,14 @@ function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ρm, ∇pm, ∂p, Ip, Im, 
     mul!(@view(y[1:np]), ZMatrix(ρp, Ip, kp, a, c, mat_view(tmp, nLp, nRp), reshape(@view(tmp2[1:nRp*nRp]), (nRp, nRp))), @view(x[1:np]), α, β)
     mul!(@view(y[1:np]), DMatrix(∂p, absΩp, d, mat_view(tmp, nLp, nRp)), @view(x[1:np]), α, true)
     # mp
-    mul!(@view(y[1:np]), DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b1, mat_view(tmp, nLp, nRm)), @view(x[np+1:np+nm]), α, true)
+    mul!(@view(y[1:np]), DMatrix(∇pm, Ωpm, b1, mat_view(tmp, nLp, nRm)), @view(x[np+1:np+nm]), α, true)
 
     # *(-1) for the lower part of the matrix if symmetrized
     γ = sym ? -1 : 1
     # mm
     mul!(@view(y[np+1:np+nm]), ZMatrix(ρm, Im, km, a, c, mat_view(tmp, nLm, nRm), reshape(@view(tmp2[1:nRm*nRm]), (nRm, nRm))), @view(x[np+1:np+nm]), γ*α, β)
     # pm
-    mul!(@view(y[np+1:np+nm]), DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b2, mat_view(tmp, nLm, nRp)), @view(x[1:np]), γ*α, true)
+    mul!(@view(y[np+1:np+nm]), DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), (transpose(Ωpmd) for Ωpmd in Ωpm), b2, mat_view(tmp, nLm, nRp)), @view(x[1:np]), γ*α, true)
 end
 
 ## SCHUR STUFF
@@ -209,7 +221,7 @@ end
 Base.eltype(M::SchurBlockMat) = Base.eltype(first(M.ρp))
 
 function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, Ip, kp, Ωpm, absΩp, D, a, b, c, tmp, tmp2, tmp3)::SchurBlockMat, x::AbstractVector, α::Number, β::Number)
-    nLm, nLp = size(first(∇pm))
+    nLp, nLm = size(first(∇pm))
     nRm, nRp = size(first(Ωpm))
 
     # Xp = reshape(@view(x[:]), (nLp, nRp))
@@ -222,11 +234,11 @@ function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, Ip, kp, Ωpm, absΩp, D, a,
     # this operator Cp = mp ∘ D-1 ∘ pm(Bp) is still quite sparse. maybe it is reasonable to construct it once before the krylov loop
     fill!(mat_view(tmp3, nLm, nRm), zero(eltype(tmp3)))
     # pm 
-    mul!(tmp3, DMatrix(∇pm, (transpose(Ωpmd) for Ωpmd in Ωpm), b2, mat_view(tmp, nLm, nRp)), x, true, false)
+    mul!(tmp3, DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), (transpose(Ωpmd) for Ωpmd in Ωpm), b2, mat_view(tmp, nLm, nRp)), x, true, false)
     # D^-1
     ldiv!(D, @view(tmp3[1:nLm*nRm]))
     # mp
-    mul!(y, DMatrix((transpose(∇pmd) for ∇pmd in ∇pm), Ωpm, b1, mat_view(tmp, nLp, nRm)), tmp3, -α, β)
+    mul!(y, DMatrix(∇pm, Ωpm, b1, mat_view(tmp, nLp, nRm)), tmp3, -α, β)
 
     #pp
     mul!(y, ZMatrix(ρp, Ip, kp, a, c, mat_view(tmp, nLp, nRp), Diagonal(@view(tmp2[1:nRp]))), x, α, true)
@@ -234,7 +246,7 @@ function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, Ip, kp, Ωpm, absΩp, D, a,
 end
 
 function block_size(SBM::SchurBlockMat)
-    nLm, nLp = size(first(SBM.∇pm))
+    nLp, nLm = size(first(SBM.∇pm))
     nRm, nRp = size(first(SBM.Ωpm))
     return ((nLp, nLm), (nRp, nRm))
 end

@@ -49,7 +49,7 @@ function Base.iterate(it::NonAdjointIterator, i)
         # here we update the solver state from i+1 to i! NOTE: NonAdjoint means from higher to lower energies/times
         ϵi, ϵip1 = ϵs[i-1], ϵs[i]
         Δϵ = ϵip1-ϵi
-        step_hightolow!(it.solver, it.system, it.rhs, i, Δϵ)
+        step_nonadjoint!(it.solver, it.system, it.rhs, i, Δϵ)
         return (ϵi, i-1), i-1
     end
 end
@@ -79,7 +79,7 @@ function Base.iterate(it::AdjointIterator, i)
         # here we update the solver state from i to i+1! NOTE: Adjoint means from lower to higher energies/times
         ϵi, ϵip1 = ϵs[i], ϵs[i+1]
         Δϵ = ϵip1-ϵi
-        step_lowtohigh!(it.solver, it.system, it.rhs, i, Δϵ)
+        step_adjoint!(it.solver, it.system, it.rhs, i, Δϵ)
         return (ϵip1, i+1), i+1
     end
 end

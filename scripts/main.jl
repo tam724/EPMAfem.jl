@@ -9,7 +9,7 @@ import EPMAfem.SpaceModels as SM
 using LinearAlgebra
 using Gridap
 
-space_model = SM.GridapSpaceModel(CartesianDiscreteModel((0, 1, 0, 1), (10, 10)))
+space_model = SM.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (50, 100)))
 direction_model = SH.EEEOSphericalHarmonicsModel(11, 2)
 
 SM.dimensionality(space_model)
@@ -17,12 +17,28 @@ SH.dimensionality(direction_model)
 
 model = EPMAfem.PNGridapModel(space_model, 0:0.01:1, direction_model, EPMAfem.cpu())
 equations = EPMAfem.PNEquations()
+excitation = EPMAfem.PNExcitation([(x=0.0, y=0.0), (x=0.5, y=0.0)], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
+extraction = EPMAfem.PNExtraction()
 
 discrete_problem = EPMAfem.discretize_problem(equations, model)
+discrete_rhs = EPMAfem.discretize_rhs(excitation, model)
+discrete_ext = EPMAfem.discretize_extraction(extraction, model)
 
-A = SM.assemble_bilinear(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
+solver = EPMAfem.pn_schurimplicitmidpointsolver(equations, model)
+solution2 = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 1, 1], solver)
+solution = EPMAfem.iterator(discrete_problem, discrete_ext[1], solver)
 
+@gif for i in solution
+    sol = EPMAfem.current_solution(solver)
+    sol_p = EPMAfem.pview(sol, model)
+    cpu_vec = collect(@view(sol_p[:, 1]))
+    # @show sol_p |> size
+    heatmap(reshape(cpu_vec, (101, 201)))
+end
 
+discrete_rhs[1, 1, 1](solution)
+discrete_rhs(solution)
+discrete_ext(solution2)
 # new_dict = filter(p -> p[2][2] == 0.0, SH.boundary_matrix_dict)
 # new_dict = Dict(((key, val[1]) for (key, val) in new_dict))
 

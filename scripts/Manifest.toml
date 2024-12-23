@@ -2,7 +2,7 @@
 
 julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "116030844a4a77cbddd7b1f6a9ec15c949bbc40d"
+project_hash = "d0cc5a03b8ecbccf349811d0a4251514549326ca"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -336,9 +336,9 @@ version = "1.1.1+0"
 
 [[deps.ComponentArrays]]
 deps = ["Adapt", "ArrayInterface", "ChainRulesCore", "ConstructionBase", "ForwardDiff", "Functors", "LinearAlgebra", "StaticArrayInterface", "StaticArraysCore"]
-git-tree-sha1 = "e9b355215c05eeaaa7bf7d2ae0d329074e3cb045"
+git-tree-sha1 = "9921db9efec9f395210f02b56b87b93dbb6cfd2b"
 uuid = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
-version = "0.15.19"
+version = "0.15.20"
 
     [deps.ComponentArrays.extensions]
     ComponentArraysGPUArraysExt = "GPUArrays"
@@ -481,7 +481,7 @@ uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 version = "1.6.0"
 
 [[deps.EPMAfem]]
-deps = ["CUDA", "ComponentArrays", "ConcreteStructs", "Graphs", "Gridap", "HCubature", "Lebedev", "LegendrePolynomials", "LinearAlgebra", "Random", "Serialization", "SparseArrays", "SphericalHarmonics", "Test"]
+deps = ["CUDA", "ComponentArrays", "ConcreteStructs", "Distributions", "Graphs", "Gridap", "HCubature", "Krylov", "Lebedev", "LegendrePolynomials", "LinearAlgebra", "Random", "Serialization", "SparseArrays", "SphericalHarmonics", "Test"]
 path = "../EPMAfem.jl"
 uuid = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
 version = "0.1.0"
@@ -997,6 +997,12 @@ deps = ["Distributions", "DocStringExtensions", "FFTW", "Interpolations", "Stats
 git-tree-sha1 = "7d703202e65efa1369de1279c162b915e245eed1"
 uuid = "5ab0869b-81aa-558d-bb23-cbf5423bbe9b"
 version = "0.6.9"
+
+[[deps.Krylov]]
+deps = ["LinearAlgebra", "Printf", "SparseArrays"]
+git-tree-sha1 = "4f20a2df85a9e5d55c9e84634bbf808ed038cabd"
+uuid = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
+version = "0.9.8"
 
 [[deps.LAME_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]

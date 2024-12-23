@@ -2,12 +2,12 @@
     model
     bϵ
 
-    # might be moded to gpu
+    # might be moved to gpu
     bxp
     bΩp
 end
 
-struct DiscretePNVector{co} <: AbstractDiscretePNVector{co}
+@concrete struct DiscretePNVector{co} <: AbstractDiscretePNVector{co}
     model
 
     weights
@@ -17,6 +17,130 @@ struct DiscretePNVector{co} <: AbstractDiscretePNVector{co}
     bxp
     bΩp
 end
+
+@concrete struct ArrayOfRank1DiscretePNVector{co} <: AbstractDiscretePNVector{co}
+    model
+    bϵs
+
+    # might be moved to gpu
+    bxps
+    bΩps
+end
+
+function Base.size(vec_r1::ArrayOfRank1DiscretePNVector)
+    return length(vec_r1.bϵs), length(vec_r1.bxps), length(vec_r1.bΩps)
+end
+
+function Base.getindex(vec_r1::ArrayOfRank1DiscretePNVector{co}, i, j, k) where co
+    return Rank1DiscretePNVector{co}(vec_r1.model, vec_r1.bϵs[i], vec_r1.bxps[j], vec_r1.bΩps[k])
+end
+
+@concrete struct VecOfRank1DiscretePNVector{co} <: AbstractDiscretePNVector{co}
+    model
+
+    bϵs
+
+    #(might be moved to gpu)
+    bxps
+    bΩps
+end
+
+function Base.size(vec::VecOfRank1DiscretePNVector)
+    @assert length(vec.bϵs) == length(vec.bxps) == length(vec.bΩps)
+    return length(vec.bϵs)
+end
+
+function Base.getindex(vec::VecOfRank1DiscretePNVector{co}, i) where co
+    return Rank1DiscretePNVector{co}(vec.model, vec.bϵs[i], vec.bxps[i], vec.bΩps[i])
+end 
+
+function (b::Rank1DiscretePNVector{true})(it::NonAdjointIterator)
+    Δϵ = step(b.model.energy_model)
+    integral = 0.0
+    for (ϵ, i_ϵ) in it
+        ψp = pview(current_solution(it.solver), it.system.model)
+        integral += Δϵ * b.bϵ[i_ϵ]*dot(b.bxp, ψp * b.bΩp)   
+    end
+    return integral
+end
+
+function (b::ArrayOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
+    Δϵ = step(b.model.energy_model)
+    integral = zeros(size(b))
+    for (ϵ, i_ϵ) in it
+        ψp = pview(current_solution(it.solver), it.system.model)
+
+        for i in 1:length(b.bϵs)
+            for j in 1:length(b.bxps)
+                for k in 1:length(b.bΩps)
+                    integral[i, j, k] += Δϵ * b.bϵs[i][i_ϵ]*dot(b.bxps[j], ψp * b.bΩps[k])   
+                end
+            end
+        end
+    end
+    return integral
+end
+
+function (b::VecOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
+    Δϵ = step(b.model.energy_model)
+    integral = zeros(size(b))
+    for (ϵ, i_ϵ) in it
+        ψp = pview(current_solution(it.solver), it.system.model)
+
+        for i in 1:length(b.bϵs)
+            integral[i] += Δϵ * b.bϵs[i][i_ϵ]*dot(b.bxps[i], ψp * b.bΩps[i])   
+        end
+    end
+    return integral
+end
+
+function (b::Rank1DiscretePNVector{false})(it::AdjointIterator)
+    Δϵ = step(b.model.energy_model)
+    integral = 0.0
+    for (ϵ, i_ϵ) in it
+        ψp = pview(current_solution(it.solver), it.system.model)
+
+        if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
+            integral += Δϵ * 0.5 * (b.bϵ[i_ϵ] + b.bϵ[i_ϵ-1])*dot(b.bxp, ψp * b.bΩp)
+        end  
+    end
+    return integral
+end
+
+function (b::ArrayOfRank1DiscretePNVector{false})(it::AdjointIterator)
+    Δϵ = step(b.model.energy_model)
+    integral = zeros(size(b))
+    for (ϵ, i_ϵ) in it
+        ψp = pview(current_solution(it.solver), it.system.model)
+
+        for i in 1:length(b.bϵs)
+            for j in 1:length(b.bxps)
+                for k in 1:length(b.bΩps)
+                    if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
+                        integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot(b.bxps[j], ψp * b.bΩps[k])
+                    end  
+                end
+            end
+        end
+    end
+    return integral
+end
+
+function (b::VecOfRank1DiscretePNVector{false})(it::AdjointIterator)
+    Δϵ = step(b.model.energy_model)
+    integral = zeros(size(b))
+    for (ϵ, i_ϵ) in it
+        ψp = pview(current_solution(it.solver), it.system.model)
+
+        for i in 1:length(b.bϵs)
+            if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
+                integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot(b.bxps[i], ψp * b.bΩps[i])
+            end  
+        end
+    end
+    return integral
+end
+
 
 
 function assemble_rhs_p!(b, rhs::DiscretePNVector{false}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
@@ -59,34 +183,33 @@ function assemble_rhs_p_midpoint!(b, rhs::DiscretePNVector{true}, i, Δ; bxp=rhs
     end
 end
 
-# TODO! 
-# function assemble_rhs_p!(b, rhs::Rank1DiscretePNRHS, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
-#     fill!(b, zero(eltype(b)))
+function assemble_rhs_p!(b, rhs::Rank1DiscretePNVector{true}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+    fill!(b, zero(eltype(b)))
 
-#     nLp = length(bxp)
-#     nRp = length(bΩp)
+    nLp = length(bxp)
+    nRp = length(bΩp)
 
-#     bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
-#     # bp = pview(b, rhs.model)
+    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
+    # bp = pview(b, rhs.model)
 
-#     bϵ2 = rhs.bϵ[i]
-#     bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
-#     bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
-#     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
-# end
+    bϵ2 = rhs.bϵ[i]
+    bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
+    bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
+    mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
+end
 
-# function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNRHS, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNVector{false}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
 
-#     fill!(b, zero(eltype(b)))
+    fill!(b, zero(eltype(b)))
 
-#     nLp = length(bxp)
-#     nRp = length(bΩp)
+    nLp = length(bxp)
+    nRp = length(bΩp)
 
-#     bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
-#     # bp = pview(b, rhs.model)
+    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
+    # bp = pview(b, rhs.model)
 
-#     bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
-#     bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
-#     bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
-#     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
-# end
+    bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
+    bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
+    bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
+    mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
+end

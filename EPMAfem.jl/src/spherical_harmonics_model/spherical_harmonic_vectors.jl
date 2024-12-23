@@ -1,26 +1,32 @@
-const ∫S²_nΩgv = Val{:∫S²_nΩgv}()
-const ∫S²_hv = Val{:∫S²_hv}()
+@concrete struct ∫S²_nΩgv
+    n
+    g
+end
 
-function assemble_linear(::Val{:∫S²_nΩgv}, n, g, model, V, quad::Quadrature=lebedev_quadrature)
+@concrete struct ∫S²_hv
+    h
+end
+
+function assemble_linear(int::∫S²_nΩgv, model, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
     cache = zeros(length(V))
     function f!(cache, Ω)
         Y_V = _eval_basis_functions!(model, Ω, V)
-        dot_n_Ω = dot(n, Ω)
+        dot_n_Ω = dot(int.n, Ω)
         if dot_n_Ω <= 0
             # TODO: maybe add the two here.
-            cache .= (dot_n_Ω * g_Ω(Ω)) .* Y_V
+            cache .= (dot_n_Ω * int.g(Ω)) .* Y_V
         else
             cache .= zero(cache)
         end
     end
-    return quad(f!, cache, model)
+    return quad(f!, cache)
 end
 
-function assemble_linear(::Val{:∫S²_hv}, h, model, V, quad::Quadrature=lebedev_quadrature)
+function assemble_linear(int::∫S²_hv, model, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
     cache = zeros(length(V))
     function f!(cache, Ω)
         Y_V = _eval_basis_functions!(model, Ω, V)
-        cache .= h(Ω) .* Y_V
+        cache .= int.h(Ω) .* Y_V
     end
-    return quad(f!, cache, model)
+    return quad(f!, cache)
 end

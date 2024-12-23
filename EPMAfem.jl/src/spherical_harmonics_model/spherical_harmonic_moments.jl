@@ -29,30 +29,30 @@ degreeorder(sh::SphericalHarmonic) = sh.degree, sh.order
 """
     classification of spherical harmonics in even f(Ω) = f(-Ω) and odd f(Ω) = -f(-Ω) functions
 """
-is_even(m::SphericalHarmonic) = mod(degree(m), 2) == 0
-is_odd(m::SphericalHarmonic) = !is_even(m)
+is_even(sh::SphericalHarmonic) = mod(degree(sh), 2) == 0
+is_odd(sh::SphericalHarmonic) = !is_even(sh)
 
 """
     classification of spherical harmonics with respect to the cartesian unit vectors
     see https://publications.rwth-aachen.de/record/819622/files/819622.pdf (page 72)
 """
-function is_even_in(m::SphericalHarmonic, ::Z) # z basis vector
-    return iseven(degree(m) + order(m))
+function is_even_in(sh::SphericalHarmonic, ::Z) # z basis vector
+    return iseven(degree(sh) + order(sh))
 end
 
-function is_even_in(m::SphericalHarmonic, ::X) # x basis vector
-    k = order(m)
+function is_even_in(sh::SphericalHarmonic, ::X) # x basis vector
+    k = order(sh)
     return (k < 0 && isodd(k)) || (k >= 0 && iseven(k))
 end
 
-function is_even_in(m::SphericalHarmonic, ::Y) # y basis vector
-    return order(m) >= 0
+function is_even_in(sh::SphericalHarmonic, ::Y) # y basis vector
+    return order(sh) >= 0
 end
 
-is_odd_in(m::SphericalHarmonic, d::SpaceDimension) = !is_even_in(m, d)
+is_odd_in(sh::SphericalHarmonic, d::SpaceDimension) = !is_even_in(sh, d)
 
-function get_eee(m::SphericalHarmonic)
-    return map(d -> is_even_in(m, d), dimensions())
+function get_eee(sh::SphericalHarmonic)
+    return map(d -> is_even_in(sh, d), dimensions())
 end
 
 function has_same_eee(m1, m2)
