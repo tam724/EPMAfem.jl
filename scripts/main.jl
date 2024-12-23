@@ -9,15 +9,15 @@ import EPMAfem.SpaceModels as SM
 using LinearAlgebra
 using Gridap
 
-space_model = SM.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (50, 100)))
-direction_model = SH.EEEOSphericalHarmonicsModel(11, 2)
+space_model = SM.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (100, 200)))
+direction_model = SH.EEEOSphericalHarmonicsModel(21, 2)
 
 SM.dimensionality(space_model)
 SH.dimensionality(direction_model)
 
-model = EPMAfem.PNGridapModel(space_model, 0:0.01:1, direction_model, EPMAfem.cpu())
+model = EPMAfem.PNGridapModel(space_model, 0:0.01:1, direction_model, EPMAfem.cuda())
 equations = EPMAfem.PNEquations()
-excitation = EPMAfem.PNExcitation([(x=0.0, y=0.0), (x=0.5, y=0.0)], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
+excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.05:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
 extraction = EPMAfem.PNExtraction()
 
 discrete_problem = EPMAfem.discretize_problem(equations, model)
@@ -28,7 +28,7 @@ solver = EPMAfem.pn_schurimplicitmidpointsolver(equations, model)
 solution2 = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 1, 1], solver)
 solution = EPMAfem.iterator(discrete_problem, discrete_ext[1], solver)
 
-@gif for i in solution
+@gif for i in solution2
     sol = EPMAfem.current_solution(solver)
     sol_p = EPMAfem.pview(sol, model)
     cpu_vec = collect(@view(sol_p[:, 1]))
@@ -37,8 +37,28 @@ solution = EPMAfem.iterator(discrete_problem, discrete_ext[1], solver)
 end
 
 discrete_rhs[1, 1, 1](solution)
-discrete_rhs(solution)
+
+measurements = discrete_rhs(solution)
+
+plot(measurements[1, :, 1])
+plot!(measurements[2, :, 1])
+plot!(measurements[1, :, 2])
+plot!(measurements[2, :, 2])
+
 discrete_ext(solution2)
+weights = rand(size(discrete_rhs)...)
+new_rhs = EPMAfem.weight_array_of_r1(weights, discrete_rhs)
+solution3 = EPMAfem.iterator(discrete_problem, new_rhs, solver)
+
+@gif for i in solution3
+    sol = EPMAfem.current_solution(solver)
+    sol_p = EPMAfem.pview(sol, model)
+    cpu_vec = collect(@view(sol_p[:, 1]))
+    # @show sol_p |> size
+    heatmap(reshape(cpu_vec, (51, 101)))
+end
+
+
 # new_dict = filter(p -> p[2][2] == 0.0, SH.boundary_matrix_dict)
 # new_dict = Dict(((key, val[1]) for (key, val) in new_dict))
 

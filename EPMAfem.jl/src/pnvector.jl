@@ -27,14 +27,17 @@ end
     bΩps
 end
 
-function Base.size(vec_r1::ArrayOfRank1DiscretePNVector)
-    return length(vec_r1.bϵs), length(vec_r1.bxps), length(vec_r1.bΩps)
+function Base.size(arr_r1::ArrayOfRank1DiscretePNVector)
+    return length(arr_r1.bϵs), length(arr_r1.bxps), length(arr_r1.bΩps)
 end
 
-function Base.getindex(vec_r1::ArrayOfRank1DiscretePNVector{co}, i, j, k) where co
-    return Rank1DiscretePNVector{co}(vec_r1.model, vec_r1.bϵs[i], vec_r1.bxps[j], vec_r1.bΩps[k])
+function Base.getindex(arr_r1::ArrayOfRank1DiscretePNVector{co}, i, j, k) where co
+    return Rank1DiscretePNVector{co}(arr_r1.model, arr_r1.bϵs[i], arr_r1.bxps[j], arr_r1.bΩps[k])
 end
 
+function weight_array_of_r1(weights, arr_r1::ArrayOfRank1DiscretePNVector{co}) where co
+    return DiscretePNVector{co}(arr_r1.model, weights, arr_r1.bϵs, arr_r1.bxps, arr_r1.bΩps)
+end
 @concrete struct VecOfRank1DiscretePNVector{co} <: AbstractDiscretePNVector{co}
     model
 
@@ -141,9 +144,7 @@ function (b::VecOfRank1DiscretePNVector{false})(it::AdjointIterator)
     return integral
 end
 
-
-
-function assemble_rhs_p!(b, rhs::DiscretePNVector{false}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+function assemble_rhs_p!(b, rhs::DiscretePNVector{true}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
     fill!(b, zero(eltype(b)))
 
     nLp = length(first(bxp))
@@ -163,7 +164,7 @@ function assemble_rhs_p!(b, rhs::DiscretePNVector{false}, i, Δ; bxp=rhs.bxp, b�
     end
 end
 
-function assemble_rhs_p_midpoint!(b, rhs::DiscretePNVector{true}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+function assemble_rhs_p_midpoint!(b, rhs::DiscretePNVector{false}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
     fill!(b, zero(eltype(b)))
 
     nLp = length(first(bxp))
@@ -199,7 +200,6 @@ function assemble_rhs_p!(b, rhs::Rank1DiscretePNVector{true}, i, Δ; bxp=rhs.bxp
 end
 
 function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNVector{false}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
-
     fill!(b, zero(eltype(b)))
 
     nLp = length(bxp)
