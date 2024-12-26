@@ -9,6 +9,9 @@ using HCubature
 using Distributions
 using Krylov
 
+include("special_matrices/sparse3tensor.jl")
+import EPMAfem.Sparse3Tensor
+
 include("space_dimensions.jl")
 import EPMAfem.Dimensions
 

@@ -1,7 +1,10 @@
+module Sparse3Tensor
+
 using SparseArrays
 using Graphs
 using LinearAlgebra
 using CUDA
+using ConcreteStructs
 
 struct Sparse3TensorCOO{Tv, Ti<:Integer}
     i::Vector{Ti}
@@ -15,6 +18,14 @@ Base.size(A::Sparse3TensorCOO) = A.size
 Base.size(A::Sparse3TensorCOO, i) = A.size[i]
 SparseArrays.nonzeros(A::Sparse3TensorCOO) = A.vals
 sparsity_rate(A::Sparse3TensorCOO) = 1.0 - length(nonzeros(A))/prod(size(A))
+eltype(::Sparse3TensorCOO{Tv, Ti}) where {Tv, Ti} = Tv
+function Base.Array(A::Sparse3TensorCOO)
+    full = zeros(eltype(A), size(A))
+    for (i, j, k, v) in zip(A.i, A.j, A.k, A.vals)
+        full[i, j, k] = v
+    end
+    return full
+end
 
 function sparse3tensor(I::AbstractVector{Ti}, J::AbstractVector{Ti}, K::AbstractVector{Ti}, V::AbstractVector{Tv}, size=nothing) where {Tv, Ti<:Integer}
     @assert length(I) == length(J) == length(K) == length(V) "Lengths of I, J, K, and V must be equal. Got lengths: I=$(length(I)), J=$(length(J)), K=$(length(K)), V=$(length(V))"
@@ -25,7 +36,8 @@ function sparse3tensor(I::AbstractVector{Ti}, J::AbstractVector{Ti}, K::Abstract
     vals = Vector{Tv}(undef, length(indices))
     
     last_seen = nothing
-    accum = zero(Tv)  # Accumulator for values
+    group_accum = zero(Tv)  # Accumulator for values
+    group_index = nothing
     counter = 0       # Counter for unique entries
 
     # loop over all the indices, filter the duplicates and accumulate the V of the duplicates in vals
@@ -33,21 +45,22 @@ function sparse3tensor(I::AbstractVector{Ti}, J::AbstractVector{Ti}, K::Abstract
         if last_seen != (K[i], J[i], I[i])
             if !isnothing(last_seen)
                 counter += 1
-                filtered_order[counter] = order[counter]
-                vals[counter] = accum
+                filtered_order[counter] = group_index
+                vals[counter] = group_accum
             end
             last_seen = (K[i], J[i], I[i])
-            accum = V[i]
+            group_accum = V[i]
+            group_index = i
         else
-            accum += V[i]
+            group_accum += V[i]
         end
     end
 
     # Add the last accumulated value
     if !isnothing(last_seen)
         counter += 1
-        filtered_order[counter] = order[counter]
-        vals[counter] = accum
+        filtered_order[counter] = group_index
+        vals[counter] = group_accum
     end
 
     resize!(filtered_order, counter)
@@ -73,7 +86,7 @@ function sparse3tensor(A::AbstractArray{Tv, 3}, Ti=Int64) where Tv
         end
     end
 
-    @show "sparsity rate is $(1.0 - n_nonzeros/length(A))"
+    # @show "sparsity rate is $(1.0 - n_nonzeros/length(A))"
     
     I = zeros(Ti, n_nonzeros)
     J = zeros(Ti, n_nonzeros)
@@ -119,7 +132,25 @@ function tensordot(A::Sparse3TensorCOO{T}, u::Vector{T}, v::Vector{T}, w::Vector
     return ret
 end
 
-function find_nzval_index(A, i, j)::Int64
+@concrete struct Sparse3TensorSSM
+	# sum of sparse matrix (tensor compression)
+	skeleton
+	projector
+	size::NTuple{3, <:Integer}
+end
+
+function SparseArrays.nonzeros(D::Diagonal)
+    return D.diag
+end
+
+function find_nzval_index(::Diagonal, i, j)::Int64
+    if i == j
+        return i
+    end
+    @error "index not found"
+end
+
+function find_nzval_index(A::SparseArrays.SparseMatrixCSC, i, j)::Int64
     # idx = findfirst(v -> A.rowval[v] == i, nzrange(A, j))
     # @show idx
     idx = searchsorted(@view(A.rowval[nzrange(A, j)]), i)
@@ -129,19 +160,7 @@ function find_nzval_index(A, i, j)::Int64
     @error "index not found"
 end
 
-function convert_to_SSM(A::Sparse3TensorCOO{Tv, Ti}, ordering=:ijk) where {Tv, Ti}
-    n_vals = length(nonzeros(A))
-    # compute coloring
-
-    # (val[i, j, k] * w[k])[i, j] * u[i] * v[j]
-    if ordering == :ijk
-        I, J, K = A.i, A.j, A.k
-        S = A.size
-    elseif ordering == :kij
-        I, J, K = A.k, A.i, A.j
-        S = (A.size[3], A.size[1], A.size[2])
-    end
-
+function compute_coloring(I::AbstractVector{Ti}, J::AbstractVector{Ti}, n_vals) where Ti
     g_dict = Dict{Tuple{Ti, Ti}, Vector{Ti}}()
     for i in 1:n_vals
         key = (I[i], J[i])
@@ -154,7 +173,7 @@ function convert_to_SSM(A::Sparse3TensorCOO{Tv, Ti}, ordering=:ijk) where {Tv, T
 
     g = SimpleGraph(n_vals)
 
-    for ((i, j), ks) in g_dict
+    for (_, ks) in g_dict
         for k in 1:length(ks)
             for l in k+1:length(ks)
                 add_edge!(g, Edge(ks[k], ks[l]))
@@ -162,131 +181,95 @@ function convert_to_SSM(A::Sparse3TensorCOO{Tv, Ti}, ordering=:ijk) where {Tv, T
         end
     end
 
-    coloring = Graphs.degree_greedy_color(g)
+    return Graphs.degree_greedy_color(g)
+end
 
-    Is = [Ti[] for _ in 1:coloring.num_colors]
-    Js = [Ti[] for _ in 1:coloring.num_colors]
+function assemble_skeleton(I::AbstractVector{Ti}, J::AbstractVector{Ti}, n_vals, S::NTuple{3, Ti}, coloring, Tv) where Ti
+    Is = Ti[]
+    Js = Ti[]
 
     for i in 1:n_vals
-        c = coloring.colors[i]
-        push!(Is[c], I[i])
-        push!(Js[c], J[i])
+        if coloring.colors[i] == 1
+            push!(Is, I[i])
+            push!(Js, J[i])
+        end
     end
 
-    skeletons = [sparse(Is[i], Js[i], zeros(Tv, length(Is[i])), S[1], S[2]) for i in 1:coloring.num_colors]
+    # detect diagonality
+    if S[1] == S[2] && all(Is .== Js)
+        return Diagonal(zeros(Tv, S[1]))
+    else 
+        return sparse(Is, Js, zeros(Tv, length(Is)), S[1], S[2])
+    end
+end
 
+function compute_projectors(I::AbstractVector{Ti}, J::AbstractVector{Ti}, K::AbstractVector{Ti}, V::AbstractVector{Tv}, n_vals, S::NTuple{3, Ti}, coloring, skeleton) where {Tv, Ti}
     p_Is = [Ti[] for _ in 1:coloring.num_colors]
     p_Js = [Ti[] for _ in 1:coloring.num_colors]
     p_Vs = [Tv[] for _ in 1:coloring.num_colors]
 
     for i in 1:n_vals
         c = coloring.colors[i]
-        idx = find_nzval_index(skeletons[c], I[i], J[i])
+        idx = find_nzval_index(skeleton, I[i], J[i])
         push!(p_Is[c], idx)
         push!(p_Js[c], K[i])
-        push!(p_Vs[c], A.vals[i])
+        push!(p_Vs[c], V[i])
+    end
+    return [sparse(p_Is[i], p_Js[i], p_Vs[i], length(nonzeros(skeleton)), S[3]) for i in 1:coloring.num_colors]
+end
+
+function convert_to_SSM(A::Sparse3TensorCOO{Tv, Ti}, ordering=:ijk) where {Tv, Ti}
+    n_vals = length(nonzeros(A))
+
+    if ordering == :ijk
+        I, J, K = A.i, A.j, A.k
+        V = A.vals
+        S = A.size
+    elseif ordering == :kij
+        I, J, K = A.k, A.i, A.j
+        V = A.vals
+        S = (A.size[3], A.size[1], A.size[2])
     end
 
-    projectors = [sparse(p_Is[i], p_Js[i], p_Vs[i], length(nonzeros(skeletons[i])), S[3]) for i in 1:coloring.num_colors]
+    coloring = compute_coloring(I, J, n_vals)
+    skeleton = assemble_skeleton(I, J, n_vals, S, coloring, Tv)
+    projectors = compute_projectors(I, J, K, V, n_vals, S, coloring, skeleton)
 
-    return Sparse3TensorSSM{Tv, Ti, SparseMatrixCSC{Tv, Ti}}(skeletons, projectors, S)
+    return Sparse3TensorSSM(skeleton, projectors, S)
 end
 
-struct Sparse3TensorSSM{Tv, Ti<:Integer, SMT<:AbstractSparseMatrix{Tv, Ti}}
-	# sum of sparse matrix (tensor compression)
-	skeleton::Vector{SMT}
-	projector::Vector{SMT}
-	size::Tuple{Ti, Ti, Ti}
-end
-
-function CUDA.cu(A::Sparse3TensorSSM{Tv, Ti, SMT}) where {Tv, Ti, SMT}
-    skeletons = [CUDA.cu(sk) for sk in A.skeleton]
+function CUDA.cu(A::Sparse3TensorSSM)
+    skeleton = CUDA.cu(A.skeleton)
     projectors = [CUDA.cu(pr) for pr in A.projector]
-    @show typeof(skeletons[1])  
-    return Sparse3TensorSSM{Float32, Int32, CUDA.CUSPARSE.CuSparseMatrixCSC{Float32, Int32}}(skeletons, projectors, A.size)
+    return Sparse3TensorSSM(skeleton, projectors, A.size)
 end
 
-function tensordot(A::Sparse3TensorSSM{T}, u::AbstractVector{T}, v::AbstractVector{T}, w::AbstractVector{T}) where T
-	ret = zero(T)
-	for (sk_, pr_) in zip(A.skeleton, A.projector)
-		mul!(nonzeros(sk_), pr_, w)
-		ret += dot(u, sk_, v)
+function tensordot(A::Sparse3TensorSSM, u::AbstractVector{T}, v::AbstractVector{T}, w::AbstractVector{T}) where T
+    β = zero(T)
+	for pr_ in A.projector
+		mul!(nonzeros(A.skeleton), pr_, w, one(T), β)
+        β = one(T)
 	end
-	return ret
+    return dot(u, A.skeleton, v)
 end
 
-## tests
-let 
-    A = rand(10, 11, 12)
-    u = rand(10)
-    v = rand(11)
-    w = rand(12)
-
-    A_sparse = sparse3tensor(A)
-    A_SSM = convert_to_SSM(A_sparse)
-
-    v1 = tensordot(A, u, v, w)
-    v2 = tensordot(A_sparse, u, v, w)
-    v3 = tensordot(A_SSM, u, v, w)
-
-    @assert isapprox(v1, v2)
-    @assert isapprox(v1, v3)
+function project!(A::Sparse3TensorSSM, w::AbstractVector{T}) where T
+    β = zero(T)
+    for pr_ in A.projector
+        mul!(nonzeros(A.skeleton), pr_, w, one(T), β)
+        β = one(T)
+    end
+    return A.skeleton
 end
 
-A = sprand(10, 10, 0.1)
-A_cu = CUDA.cu(A)
-
-A_sparse = rand(10, 11, 12) |> sparse3tensor
-
-Asize = (125000, 125000, 125000)
-n_vals = 125000*10*3
-I = rand(1:Asize[1], n_vals)
-J = rand(1:Asize[2], n_vals)
-K = rand(1:Asize[3], n_vals)
-vals = rand(n_vals)
-@profview sparse3tensor(I, J, K, vals, Asize)
-sparsity_rate(A_sparse)
-
-A_SSM_uvw = convert_to_SSM2(A_sparse, :ijk)
-A_SSM_uvw_cu = CUDA.cu(A_SSM_uvw)
-
-A_SSM_wuv = convert_to_SSM2(A_sparse, :kij)
-@profview convert_to_SSM2(A_sparse)
-
-u = rand(size(A_sparse, 1))
-v = rand(size(A_sparse, 2))
-w = rand(size(A_sparse, 3))
-u_cu, v_cu, w_cu = CUDA.cu(u), CUDA.cu(v), CUDA.cu(w)
-
-tensordot(A_sparse, u, v, w)
-
-@time tensordot(A_SSM_uvw, u, v, w)
-@time tensordot(A_SSM_uvw_cu, u_cu, v_cu, w_cu)
-
-tensordot(A_SSM_wuv, w, u, v)
-
-using BenchmarkTools
-@benchmark tensordot(A_sparse, u, v, w) 
-@benchmark tensordot(A_SSM_uvw, u, v, w)
-@benchmark tensordot(A_SSM_wuv, w, u, v)
-
-@profview tensordot(A_sparse, u, v, w)
-@profview tensordot(A_SSM, u, v, w)
-
-begin
-	i = [1, 1, 1, 1, 2, 2, 2, 2]
-	j = [1, 1, 2, 2, 1, 1, 2, 2]
-	k = [1, 2, 1, 2, 1, 2, 1, 2]
-	vals2 = rand(8)
-	
-	sparse3tensor(i, j, k, vals2, nothing)
+function contract!(y::AbstractVector{T}, A::Sparse3TensorSSM, v::AbstractVector{T}, w::AbstractVector{T}, α_, β_) where T
+    β = zero(T)
+    for pr_ in A.projector
+        mul!(nonzeros(A.skeleton), pr_, w, one(T), β)
+        β = one(T)
+    end
+    mul!(y, A.skeleton, v, α_, β_)
+    return y
 end
 
-begin
-	i = Int64[]
-	j = Int64[]
-	k = Int64[]
-	vals2 = Float64[]
-	
-	sparse3tensor(i, j, k, vals2, nothing)
 end
