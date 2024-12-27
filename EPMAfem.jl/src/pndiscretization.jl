@@ -23,21 +23,29 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
     SH = EPMAfem.SphericalHarmonicsModels
 
     ## assemble all the space matrices
-    ρp_skeleton, ρp_projector = SM.build_projector(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
+    ρp_tensor = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model)))
+    ρp = [copy(ρp_tensor.skeleton) for _ in 1:number_of_elements(pn_eq)]
+    # ρp_skeleton, ρp_projector = SM.build_projector(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
     # ρp = [SMT((assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[1], V[1]))) for e in 1:number_of_elements(pn_eq)] 
-    ρp = [SMT(ρp_skeleton) for _ in 1:number_of_elements(pn_eq)] 
-    ρp_proj = SMT(ρp_projector)
+    # ρp = [SMT(ρp_skeleton) for _ in 1:number_of_elements(pn_eq)] 
+    # ρp_proj = SMT(ρp_projector)
 
-    ρm_skeleton, ρm_projector = SM.build_projector(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
+    ρm_tensor = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model)))
+    ρm = [copy(ρm_tensor.skeleton) for _ in 1:number_of_elements(pn_eq)]
+    # ρm_skeleton, ρm_projector = SM.build_projector(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
     # ρm = [Diagonal(VT(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
-    ρm = [Diagonal(VT(diag(ρm_skeleton))) for _ in 1:number_of_elements(pn_eq)]
-    ρm_proj = Diagonal(VT(diag(ρm_projector)))
+    # ρm = [Diagonal(VT(diag(ρm_skeleton))) for _ in 1:number_of_elements(pn_eq)]
+    # ρm_proj = Diagonal(VT(diag(ρm_projector)))
 
     ## fill the ρ*s
     # ρ_space = SM.material(space_model)
     ρs = [VT(SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_model)) for e in 1:number_of_elements(pn_eq)]
-    SM.project_matrices(ρp, ρp_proj, ρs)
-    SM.project_matrices(ρm, ρm_proj, ρs)
+    for i in 1:number_of_elements(pn_eq)
+        Sparse3Tensor._project!(ρp[i], ρp_tensor, ρs[i])
+        Sparse3Tensor._project!(ρm[i], ρm_tensor, ρs[i])
+    end
+    # .project_matrices(ρp, ρp_proj, ρs)
+    # SM.project_matrices(ρm, ρm_proj, ρs)
 
     ∂p = [SMT(dropzeros(SM.assemble_bilinear(∫, space_model, SM.even(space_model), SM.even(space_model)))) for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(discrete_model))]
     ∇pm = [SMT(SM.assemble_bilinear(∫, space_model, SM.odd(space_model), SM.even(space_model))) for ∫ ∈ SM.∫R_u_∂v(dimensionality(discrete_model))]
@@ -53,7 +61,16 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
     absΩp = [MT(SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.even(direction_model), SH.exact_quadrature())) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(discrete_model))]
     Ωpm = [MT(SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.odd(direction_model), SH.exact_quadrature())) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(discrete_model))]
 
-    DiscretePNSystem(discrete_model, s, τ, σ, ρp, ρp_proj, ρm, ρm_proj, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
+    DiscretePNSystem(discrete_model, s, τ, σ, ρp, ρp_tensor, ρm, ρm_tensor, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
+end
+
+function update_problem!(discrete_system, ρs)
+    for (ρp, ρ) in zip(discrete_system.ρp, ρs)
+        Sparse3Tensor._project!(ρp, discrete_system.ρp_tens, ρ)
+    end
+    for (ρm, ρ) in zip(discrete_system.ρm, ρs)
+        Sparse3Tensor._project!(ρm, discrete_system.ρm_tens, ρ)
+    end
 end
 
 function discretize_rhs(pn_ex::PNExcitation, discrete_model::PNGridapModel)
@@ -108,9 +125,3 @@ function discretize_extraction(pn_ex::PNExtraction, discrete_model::PNGridapMode
 
     return VecOfRank1DiscretePNVector{true}(discrete_model, μϵs, μxps, μΩps)
 end
-
-# function discretize_rhs(pn_eq::PNEquations, discrete_model::PNGridapModel)
-
-
-
-#     return VecOfRank1DiscretePNVector{true}(discrete_model, )

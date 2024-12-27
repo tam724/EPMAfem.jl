@@ -8,9 +8,9 @@
 
     # space (might be moved to gpu)
     ρp
-    ρp_proj
+    ρp_tens
     ρm
-    ρm_proj
+    ρm_tens
 
     ∂p
     ∇pm
@@ -109,4 +109,21 @@ function Base.iterate(it::AdjointIterator, i)
         step_adjoint!(it.solver, it.system, it.rhs, i, Δϵ)
         return (ϵip1, i+1), i+1
     end
+end
+
+@concrete struct SaveAll
+    it
+    cache
+end
+
+function saveall(it)
+    cache = Dict{Int, typeof(current_solution(it.solver))}()
+    for (ϵ, i) in it
+        cache[i] = current_solution(it.solver) |> copy
+    end
+    return SaveAll(it, cache)
+end
+
+function Base.getindex(it::SaveAll, i)
+    return it.cache[i]
 end

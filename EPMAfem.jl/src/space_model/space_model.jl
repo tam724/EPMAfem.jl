@@ -29,10 +29,10 @@ function odd(model::GridapSpaceModel)
     return TestFESpace(model.discrete_model, reffe, conformity=:L2)
 end
 
-# function material(model::GridapSpaceModel)
-#     reffe = ReferenceFE(lagrangian, Float64, 0)
-#     return TestFESpace(model.discrete_model, reffe, conformity=:L2)
-# end
+function material(model::GridapSpaceModel)
+    reffe = ReferenceFE(lagrangian, Float64, 0)
+    return TestFESpace(model.discrete_model, reffe, conformity=:L2)
+end
 
 function n_basis(model::GridapSpaceModel)
     return (p=num_free_dofs(even(model)), m=num_free_dofs(odd(model)))
@@ -40,8 +40,7 @@ end
 
 function L2_projection(f, model)
     (dims, R, dx, Γ, dΓ, n) = get_args(model)
-    reffe = ReferenceFE(lagrangian, Float64, 0)
-    V = TestFESpace(model.discrete_model, reffe, conformity=:L2)
+    V = material(model)
     U = TrialFESpace(V)
     op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, V)
     return Gridap.solve(op).free_values

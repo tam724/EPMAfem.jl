@@ -144,7 +144,7 @@ function (b::VecOfRank1DiscretePNVector{false})(it::AdjointIterator)
     return integral
 end
 
-function assemble_rhs_p!(b, rhs::DiscretePNVector{true}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+function assemble_rhs!(b, rhs::DiscretePNVector{true}, i, Δ, sym; bxp=rhs.bxp, bΩp=rhs.bΩp)
     fill!(b, zero(eltype(b)))
 
     nLp = length(first(bxp))
@@ -162,9 +162,10 @@ function assemble_rhs_p!(b, rhs::DiscretePNVector{true}, i, Δ; bxp=rhs.bxp, bΩ
             end
         end
     end
+    # sym is not used since we only assemble the p part of b here
 end
 
-function assemble_rhs_p_midpoint!(b, rhs::DiscretePNVector{false}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+function assemble_rhs_midpoint!(b, rhs::DiscretePNVector{false}, i, Δ, sym; bxp=rhs.bxp, bΩp=rhs.bΩp)
     fill!(b, zero(eltype(b)))
 
     nLp = length(first(bxp))
@@ -182,9 +183,10 @@ function assemble_rhs_p_midpoint!(b, rhs::DiscretePNVector{false}, i, Δ; bxp=rh
             end
         end
     end
+    # sym is not used since we only assemble the p part of b here
 end
 
-function assemble_rhs_p!(b, rhs::Rank1DiscretePNVector{true}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+function assemble_rhs!(b, rhs::Rank1DiscretePNVector{true}, i, Δ, sym; bxp=rhs.bxp, bΩp=rhs.bΩp)
     fill!(b, zero(eltype(b)))
 
     nLp = length(bxp)
@@ -199,7 +201,7 @@ function assemble_rhs_p!(b, rhs::Rank1DiscretePNVector{true}, i, Δ; bxp=rhs.bxp
     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
 end
 
-function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNVector{false}, i, Δ; bxp=rhs.bxp, bΩp=rhs.bΩp)
+function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNVector{false}, i, Δ, sym; bxp=rhs.bxp, bΩp=rhs.bΩp)
     fill!(b, zero(eltype(b)))
 
     nLp = length(bxp)
@@ -212,4 +214,72 @@ function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNVector{false}, i, Δ; b
     bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
     bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
+end
+
+@concrete struct ArrayOfTangentDiscretePNVector <: AbstractDiscretePNVector{true}
+    ρp_tangent
+    ρm_tangent
+
+    cached_solution
+end
+
+function tangent(it::AdjointIterator)
+    cached = saveall(it)
+
+    ρp_tangent = copy(it.system.ρp_tens.skeleton)
+    ρm_tangent = copy(it.system.ρm_tens.skeleton)
+    return ArrayOfTangentDiscretePNVector(ρp_tangent, ρm_tangent, cached)
+end
+
+function Base.getindex(arr::ArrayOfTangentDiscretePNVector, i_e, i_x)
+    discrete_system = arr.cached_solution.it.system
+    onehot = zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model))))
+    onehot[i_x] = 1.0
+    Sparse3Tensor._project!(arr.ρp_tangent, discrete_system.ρp_tens, onehot)
+    Sparse3Tensor._project!(arr.ρm_tangent, discrete_system.ρm_tens, onehot)
+    return TangentDiscretePNVector(arr, i_x, i_e)
+    # return DiscretePNVector(arr.ρp_tangent[i], arr.ρm_tangent[i], arr.cached_solution)
+end
+
+@concrete struct TangentDiscretePNVector <: AbstractDiscretePNVector{true}
+    parent
+    i_x
+    i_e
+end
+
+function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
+    discrete_system = rhs.parent.cached_solution.it.system
+    Δϵ = step(discrete_system.model.energy_model)
+
+    fill!(b, zero(eltype(b)))
+
+    n_basis = number_of_basis_functions(discrete_system.model)
+    nxp, nxm, nΩp, nΩm = n_basis.x.p, n_basis.x.m, n_basis.Ω.p, n_basis.Ω.m
+    np = nxp*nΩp
+    nm = nxm*nΩm
+
+    bp = @view(b[1:np])
+    bm = @view(b[np+1:np+nm])
+
+    si = discrete_system.s[rhs.i_e, i]
+    τi = discrete_system.τ[rhs.i_e, i]
+    σi = discrete_system.σ[rhs.i_e, :, i]
+
+    Λ_im2 = rhs.parent.cached_solution[i]
+    Λ_ip2 = rhs.parent.cached_solution[i+1]
+
+    tmp = zeros(max(np, nm))
+    tmp2 = zeros(max(nΩp, nΩm))
+
+    a = [(si/Δϵ + τi*0.5)]
+    c = [(-σi.*0.5)]
+    γ = sym ? -1 : 1
+
+    mul!(bp, ZMatrix([rhs.parent.ρp_tangent], discrete_system.Ip, [discrete_system.kp[rhs.i_e]], a, c, mat_view(tmp, nxp, nΩp), Diagonal(@view(tmp2[1:nΩp]))), @view(Λ_ip2[1:np]), Δ, 0.0)
+    mul!(bm, ZMatrix([rhs.parent.ρm_tangent], discrete_system.Im, [discrete_system.km[rhs.i_e]], a, c, mat_view(tmp, nxm, nΩm), Diagonal(@view(tmp2[1:nΩm]))), @view(Λ_ip2[np+1:np+nm]), γ*Δ, 0.0)
+
+    a = [(-si/Δϵ + τi*0.5)]
+    c = [(-σi.*0.5)]
+    mul!(bp, ZMatrix([rhs.parent.ρp_tangent], discrete_system.Ip, [discrete_system.kp[rhs.i_e]], a, c, mat_view(tmp, nxp, nΩp), Diagonal(@view(tmp2[1:nΩp]))), @view(Λ_im2[1:np]), Δ, 1.0)
+    mul!(bm, ZMatrix([rhs.parent.ρm_tangent], discrete_system.Im, [discrete_system.km[rhs.i_e]], a, c, mat_view(tmp, nxm, nΩm), Diagonal(@view(tmp2[1:nΩm]))), @view(Λ_im2[np+1:np+nm]), γ*Δ, 1.0)
 end

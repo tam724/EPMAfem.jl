@@ -77,7 +77,7 @@ end
 function update_rhs_nonadjoint!(solver::PNImplicitMidpointSolver, problem::DiscretePNSystem, rhs::AbstractDiscretePNVector{false}, i, Δϵ, sym)
     # minus because we have to bring b to the right side of the equation 
     # bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i-1])
-    assemble_rhs_p_midpoint!(solver.rhs, rhs, i-1, -Δϵ)
+    assemble_rhs_midpoint!(solver.rhs, rhs, i-1, -Δϵ, sym)
     a, b, c = update_coefficients_rhs_nonadjoint!(solver, problem, i, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2, sym)
@@ -88,7 +88,7 @@ end
 function update_rhs_adjoint!(solver::PNImplicitMidpointSolver, problem::DiscretePNSystem, rhs::AbstractDiscretePNVector{true}, i, Δϵ, sym)
     # minus because we have to bring b to the right side of the equation 
     # bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
-    assemble_rhs_p!(solver.rhs, rhs, i, -Δϵ)
+    assemble_rhs!(solver.rhs, rhs, i, -Δϵ, sym)
     a, b, c = update_coefficients_rhs_adjoint!(solver, problem, i, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2, sym)

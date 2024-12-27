@@ -9,24 +9,141 @@ import EPMAfem.SpaceModels as SM
 using LinearAlgebra
 using Gridap
 
-space_model = SM.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (100, 200)))
-direction_model = SH.EEEOSphericalHarmonicsModel(21, 2)
+space_model = SM.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (20, 40)))
 
-SM.dimensionality(space_model)
-SH.dimensionality(direction_model)
+# sparsetensor = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
+# A_SSM = ST.convert_to_SSM(sparsetensor)
 
-model = EPMAfem.PNGridapModel(space_model, 0:0.01:1, direction_model, EPMAfem.cuda())
+# (space_model |> SM.get_args)[2] |> num_cells
+direction_model = SH.EEEOSphericalHarmonicsModel(7, 2)
+
+# SM.dimensionality(space_model)
+# SH.dimensionality(direction_model)
+
+model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cpu())
 equations = EPMAfem.PNEquations()
 excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.05:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
 extraction = EPMAfem.PNExtraction()
 
 discrete_problem = EPMAfem.discretize_problem(equations, model)
 discrete_rhs = EPMAfem.discretize_rhs(excitation, model)
+#test_rhs = EPMAfem.discretize_stange_rhs(excitation, model)
 discrete_ext = EPMAfem.discretize_extraction(extraction, model)
 
-solver = EPMAfem.pn_schurimplicitmidpointsolver(equations, model)
-solution2 = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 1, 1], solver)
-solution = EPMAfem.iterator(discrete_problem, discrete_ext[1], solver)
+solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, 1e-16)
+solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model, 1e-16)
+
+solution = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 14, 1], solver)
+
+cache = EPMAfem.saveall(solution)
+
+forward_store = Dict()
+@gif for (ϵ, i) in solution
+    @show i
+    sol = EPMAfem.current_solution(solver)
+    forward_store[i] = copy(sol)
+    sol_p = EPMAfem.pview(sol, model)
+    cpu_vec = collect(@view(sol_p[:, 1]))
+    # @show sol_p |> size
+    heatmap(reshape(cpu_vec, (31, 61)))
+end
+
+final_state = copy(EPMAfem.current_solution(solver))
+
+# to_copy = discrete_rhs[1, 14, 1]
+# zero_rhs = EPMAfem.Rank1DiscretePNVector{false}(model, zero(to_copy.bϵ), zero(to_copy.bxp), zero(to_copy.bΩp))
+
+rev_solution = EPMAfem.reverse_iterator(discrete_problem, discrete_rhs[1, 14, 1], solver, final_state)
+
+@animate for (ϵ, i) in rev_solution
+    @show (ϵ, i)
+    sol = EPMAfem.current_solution(solver)
+    sol_p = EPMAfem.pview(sol, model)
+    cpu_vec = collect(@view(sol_p[:, 1]))
+    cpu_vec_fwd = collect(@view(EPMAfem.pview(forward_store[i], model)[:, 1]))
+    # @show sol_p |> size
+    p1 = heatmap(reshape(cpu_vec, (31, 61)))
+    p2 = heatmap(reshape(cpu_vec_fwd, (31, 61)))
+    p3 = heatmap(reshape(cpu_vec .- cpu_vec_fwd, (31, 61)))
+    # correct the current solution
+    # sol .= forward_store[i]
+    plot(p1, p2, p3)
+    title!("ϵ = $ϵ")
+end fps = 5
+
+
+solution_schur = EPMAfem.iterator(discrete_problem, discrete_ext[1], solver_schur)
+solution_full = EPMAfem.iterator(discrete_problem, discrete_ext[1], solver_full)
+meas_schur = discrete_rhs(solution_schur)
+meas_full = discrete_rhs(solution_full)
+
+plot(meas_schur[1, :, 1])
+plot!(meas_full[1, :, 1])
+plot!(meas_schur[2, :, 1])
+plot!(meas_full[2, :, 1])
+
+ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)]
+
+ρs_err = deepcopy(ρs)
+ρs_err[1][400] += 1e-4
+EPMAfem.update_problem!(discrete_problem, ρs_err)
+meas_err_schur = discrete_rhs(solution_schur)
+meas_err_full = discrete_rhs(solution_full)
+
+meas_grad_schur = (meas_err_schur .- meas_schur) / 1e-4
+meas_grad_full = (meas_err_full .- meas_full) / 1e-4
+
+plot(meas_grad_schur[1, :, 1])
+plot!(meas_grad_full[1, :, 1])
+
+plot!(meas_grad_schur[2, :, 1])
+plot!(meas_grad_full[2, :, 1])
+
+#savesol = EPMAfem.saveall(solution)
+ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)]
+
+EPMAfem.update_problem!(discrete_problem, ρs)
+tangent_rhs_schur = EPMAfem.tangent(solution_schur)
+tangent_rhs_full = EPMAfem.tangent(solution_full)
+
+new_rhs_schur = tangent_rhs_schur[1, 400];
+new_rhs_full = tangent_rhs_full[1, 400];
+
+der_sol_schur = EPMAfem.iterator(discrete_problem, new_rhs_schur, solver_schur);
+der_sol_full = EPMAfem.iterator(discrete_problem, new_rhs_full, solver_full);
+
+meas_tang_schur = discrete_rhs(der_sol_schur)
+meas_tang_full = discrete_rhs(der_sol_full)
+
+plot(meas_tang_schur[1, :, 1])
+plot!(meas_tang_schur[2, :, 1])
+plot!(meas_tang_full[1, :, 1])
+plot!(meas_tang_full[2, :, 1])
+
+meas_schur = discrete_rhs(solution_schur)
+meas_full = discrete_rhs(solution_full)
+
+ρs_err = deepcopy(ρs)
+ρs_err[1][400] += 1e-4
+
+EPMAfem.update_problem!(discrete_problem, ρs_err)
+meas_err_schur = discrete_rhs(solution_schur)
+meas_err_full = discrete_rhs(solution_full)
+
+meas_grad_schur = (meas_err_schur .- meas_schur) / 1e-4
+meas_grad_full = (meas_err_full .- meas_full) / 1e-4
+plot!(meas_grad_schur[1, :, 1])
+plot!(meas_grad_schur[2, :, 1])
+plot!(meas_grad_full[1, :, 1])
+plot!(meas_grad_full[1, :, 1])
+
+@gif for i in der_sol
+    sol = EPMAfem.current_solution(solver)
+    sol_p = EPMAfem.pview(sol, model)
+    cpu_vec = collect(@view(sol_p[:, 1]))
+    # @show sol_p |> size
+    heatmap(reshape(cpu_vec, (21, 41)))
+end
 
 @gif for i in solution2
     sol = EPMAfem.current_solution(solver)
