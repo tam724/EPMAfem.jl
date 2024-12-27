@@ -253,6 +253,15 @@ function tensordot(A::Sparse3TensorSSM, u::AbstractVector{T}, v::AbstractVector{
     return dot(u, A.skeleton, v)
 end
 
+function _project!(B::AbstractMatrix, A::Sparse3TensorSSM, w::AbstractVector{T}) where T
+    β = zero(T)
+    for pr_ in A.projector
+        mul!(nonzeros(B), pr_, w, one(T), β)
+        β = one(T)
+    end
+    return B
+end
+
 function project!(A::Sparse3TensorSSM, w::AbstractVector{T}) where T
     β = zero(T)
     for pr_ in A.projector
