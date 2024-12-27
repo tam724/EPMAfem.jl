@@ -74,6 +74,22 @@ function discretize_rhs(pn_ex::PNExcitation, discrete_model::PNGridapModel)
     return ArrayOfRank1DiscretePNVector{false}(discrete_model, gϵs, gxps, gΩps)
 end
 
+function discretize_stange_rhs(pn_ex::PNExcitation, discrete_model::PNGridapModel)
+    VT = vec_type(discrete_model)
+    T = base_type(discrete_model)
+
+    SM = EPMAfem.SpaceModels
+    SH = EPMAfem.SphericalHarmonicsModels
+
+    space_model = space(discrete_model)
+    direction_model = direction(discrete_model)
+    ## assemble excitation 
+    gϵs = Vector{T}([beam_energy_distribution(pn_ex, 1, ϵ) for ϵ ∈ energy(discrete_model)])
+    gxps = VT(SM.assemble_linear(SM.∫R_μv(x -> -exp(-100.0*((x[1]+0.5)^2+(x[2])^2))), space_model, SM.even(space_model)))
+    gΩps = VT(SH.assemble_linear(SH.∫S²_hv(Ω -> 1.0), direction_model, SH.even(direction_model)))
+    return Rank1DiscretePNVector{false}(discrete_model, gϵs, gxps, gΩps)
+end
+
 function discretize_extraction(pn_ex::PNExtraction, discrete_model::PNGridapModel)
     VT = vec_type(discrete_model)
     T = base_type(discrete_model)

@@ -60,7 +60,7 @@ end
 
 function beam_space_distribution(eq::PNExcitation, i, (z, x, y))
     # should not depend on z (well dirac maybe..)
-    return isapprox(0.0, z)*expm2((x, y), (eq.beam_positions[i].x, eq.beam_positions[i].y), (0.05, 0.05))
+    return isapprox(0.0, z)*expm2((x, y), (eq.beam_positions[i].x, eq.beam_positions[i].y), (0.1, 0.1))
 end
 
 function beam_direction_distribution(eq::PNExcitation, i, Ω)
@@ -68,7 +68,7 @@ function beam_direction_distribution(eq::PNExcitation, i, Ω)
 end
 
 function beam_energy_distribution(eq::PNExcitation, i, ϵ)
-    return expm2(ϵ, eq.beam_energies[i], 0.04)
+    return expm2(ϵ, eq.beam_energies[i], 0.1)
 end
 
 @concrete struct PNExtraction

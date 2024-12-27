@@ -103,11 +103,17 @@ struct PNFullImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplici
     tmp2::V
     rhs::V
     lin_solver::Tsolv
+    rtol::T
+    atol::T
 end
 
 function initialize!(pn_solv::PNFullImplicitMidpointSolver{T}, problem) where T
     # use initial condition from problem
     fill!(pn_solv.lin_solver.x, zero(T))
+end
+
+function initialize_from_state!(pn_solv::PNFullImplicitMidpointSolver{T}, state) where T
+    copy!(pn_solv.lin_solver.x, state)
 end
 
 function current_solution(solv::PNFullImplicitMidpointSolver)
@@ -118,7 +124,7 @@ function step_nonadjoint!(solver::PNFullImplicitMidpointSolver{T}, problem::Disc
     update_rhs_nonadjoint!(solver, problem, rhs, i, Δϵ, true)
     a, b, c = update_coefficients_mat_nonadjoint!(solver, problem, i, Δϵ)
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2, true)
-    Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=T(1e-14), atol=T(1e-14))
+    Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=solver.rtol, atol=solver.atol)
     # @show solver.lin_solver.stats
 end
 
@@ -126,11 +132,11 @@ function step_adjoint!(solver::PNFullImplicitMidpointSolver{T}, problem::Discret
     update_rhs_adjoint!(solver, problem, rhs, i, Δϵ, true)
     a, b, c = update_coefficients_mat_adjoint!(solver, problem, i, Δϵ)
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2, true)
-    Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=T(1e-14), atol=T(1e-14))
+    Krylov.solve!(solver.lin_solver, A, solver.rhs, rtol=solver.rtol, atol=solver.atol)
     # @show solver.lin_solver.stats
 end
 
-function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel)
+function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=1e-14)
     n = number_of_basis_functions(discrete_model)
     VT = vec_type(discrete_model)
     T = base_type(discrete_model)
@@ -142,7 +148,9 @@ function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGri
         VT(undef, max(n.x.p, n.x.m)*max(n.Ω.p, n.Ω.m)),
         VT(undef, max(n.Ω.p, n.Ω.m)),
         VT(undef, n_tot),
-        Krylov.MinresSolver(n_tot, n_tot, VT)
+        Krylov.MinresSolver(n_tot, n_tot, VT),
+        T(tol),
+        T(tol),
     )
 end
 
@@ -208,9 +216,11 @@ struct PNSchurImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplic
     rhs::V
     sol::V
     lin_solver::Tsolv
+    rtol::T
+    atol::T
 end
 
-function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel)
+function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=1e-14)
     n = number_of_basis_functions(discrete_model)
     VT = vec_type(discrete_model)
     T = base_type(discrete_model)
@@ -228,12 +238,18 @@ function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGr
         VT(undef, n_tot),
         VT(undef, n_tot),
         Krylov.MinresSolver(np, np, VT),
+        T(tol),
+        T(tol)
     )
 end
 
 function initialize!(solver::PNSchurImplicitMidpointSolver{T}, problem) where T
     # use initial condition from problem
     fill!(solver.sol, zero(T))
+end
+
+function initialize_from_state!(solver::PNSchurImplicitMidpointSolver{T}, state) where T
+    copy!(solver.sol, state)
 end
 
 function current_solution(solver::PNSchurImplicitMidpointSolver)
@@ -246,7 +262,7 @@ function step_nonadjoint!(solver::PNSchurImplicitMidpointSolver{T}, problem::Dis
     _update_D(solver, problem, a, b, c) # assembles the right lower block (diagonal)
     _compute_schur_rhs(solver, problem, a, b, c) # computes the schur rhs (using the inverse of D)
     A_schur = SchurBlockMat(problem.ρp, problem.∇pm, problem.∂p, problem.Ip, problem.kp, problem.Ωpm, problem.absΩp, Diagonal(solver.D), a, b, c, solver.tmp, solver.tmp2, solver.tmp3)
-    Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=T(1e-14), atol=T(1e-14))
+    Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=solver.rtol, atol=solver.atol)
     # @show solver.lin_solver.stats
     _compute_full_solution_schur(solver, problem, a, b, c) # reconstructs lower part of the solution vector
     return
@@ -258,7 +274,7 @@ function step_adjoint!(solver::PNSchurImplicitMidpointSolver{T}, problem::Discre
     _update_D(solver, problem, a, b, c)
     _compute_schur_rhs(solver, problem, a, b, c)
     A_schur = SchurBlockMat(problem.ρp, problem.∇pm, problem.∂p, problem.Ip, problem.kp, problem.Ωpm, problem.absΩp, Diagonal(solver.D), a, b, c, solver.tmp, solver.tmp2, solver.tmp3)
-    Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=T(1e-14), atol=T(1e-14))
+    Krylov.solve!(solver.lin_solver, A_schur, solver.rhs_schur, rtol=solver.rtol, atol=solver.atol)
     # @show pn_solv.lin_solver.stats
     _compute_full_solution_schur(solver, problem, a, b, c)
     # @show pn_solv.lin_solver.stats

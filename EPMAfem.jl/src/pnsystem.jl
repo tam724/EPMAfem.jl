@@ -28,13 +28,26 @@ end
     system
     rhs
     solver
+    reverse
+    state
 end
 
 function iterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNVector{false}, solver)
-    return NonAdjointIterator(system, rhs, solver)
+    return NonAdjointIterator(system, rhs, solver, false, nothing)
+end
+
+function reverse_iterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNVector{false}, solver, state)
+    return NonAdjointIterator(system, rhs, solver, true, state)
 end
 
 function Base.iterate(it::NonAdjointIterator)
+    if it.reverse
+        initialize_from_state!(it.solver, it.state)
+        ϵs = energy(it.system.model)
+        ϵ = ϵs[1]
+        return (ϵ, 1), 1
+    end
+
     initialize!(it.solver, it.system)
     ϵs = energy(it.system.model)
     ϵ = ϵs[end]
@@ -42,6 +55,20 @@ function Base.iterate(it::NonAdjointIterator)
 end
 
 function Base.iterate(it::NonAdjointIterator, i)
+    if it.reverse
+        ϵs = energy(it.system.model)
+        if i >= length(ϵs)
+            return nothing
+        else
+            # here we update the solver state from i to i+1! 
+            i = i+1
+            ϵi, ϵip1 = ϵs[i-1], ϵs[i]
+            Δϵ = ϵip1-ϵi
+            step_nonadjoint!(it.solver, it.system, it.rhs, i, -Δϵ)
+            return (ϵip1, i), i
+        end
+    end
+
     if i <= 1
         return nothing
     else
