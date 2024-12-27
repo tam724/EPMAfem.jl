@@ -23,14 +23,18 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
     SH = EPMAfem.SphericalHarmonicsModels
 
     ## assemble all the space matrices
-    ρp_tensor = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model)))
+    ρp_tens = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
+    ρp_tensor = Sparse3Tensor.convert_to_SSM(ρp_tens)
+    ρp_tensor2 = Sparse3Tensor.convert_to_SSM(ρp_tens, :kij)
     ρp = [copy(ρp_tensor.skeleton) for _ in 1:number_of_elements(pn_eq)]
     # ρp_skeleton, ρp_projector = SM.build_projector(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
     # ρp = [SMT((assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[1], V[1]))) for e in 1:number_of_elements(pn_eq)] 
     # ρp = [SMT(ρp_skeleton) for _ in 1:number_of_elements(pn_eq)] 
     # ρp_proj = SMT(ρp_projector)
 
-    ρm_tensor = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model)))
+    ρm_tens = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
+    ρm_tensor = Sparse3Tensor.convert_to_SSM(ρm_tens)
+    ρm_tensor2 = Sparse3Tensor.convert_to_SSM(ρm_tens, :kij)
     ρm = [copy(ρm_tensor.skeleton) for _ in 1:number_of_elements(pn_eq)]
     # ρm_skeleton, ρm_projector = SM.build_projector(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
     # ρm = [Diagonal(VT(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
@@ -61,7 +65,7 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
     absΩp = [MT(SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.even(direction_model), SH.exact_quadrature())) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(discrete_model))]
     Ωpm = [MT(SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.odd(direction_model), SH.exact_quadrature())) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(discrete_model))]
 
-    DiscretePNSystem(discrete_model, s, τ, σ, ρp, ρp_tensor, ρm, ρm_tensor, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
+    DiscretePNSystem(discrete_model, s, τ, σ, ρp, ρp_tensor, ρp_tensor2, ρm, ρm_tensor, ρm_tensor2, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
 end
 
 function update_problem!(discrete_system, ρs)

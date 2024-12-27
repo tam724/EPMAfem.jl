@@ -201,7 +201,7 @@ function assemble_rhs!(b, rhs::Rank1DiscretePNVector{true}, i, Δ, sym; bxp=rhs.
     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, 1.0)
 end
 
-function assemble_rhs_p_midpoint!(b, rhs::Rank1DiscretePNVector{false}, i, Δ, sym; bxp=rhs.bxp, bΩp=rhs.bΩp)
+function assemble_rhs_midpoint!(b, rhs::Rank1DiscretePNVector{false}, i, Δ, sym; bxp=rhs.bxp, bΩp=rhs.bΩp)
     fill!(b, zero(eltype(b)))
 
     nLp = length(bxp)
@@ -239,6 +239,43 @@ function Base.getindex(arr::ArrayOfTangentDiscretePNVector, i_e, i_x)
     Sparse3Tensor._project!(arr.ρm_tangent, discrete_system.ρm_tens, onehot)
     return TangentDiscretePNVector(arr, i_x, i_e)
     # return DiscretePNVector(arr.ρp_tangent[i], arr.ρm_tangent[i], arr.cached_solution)
+end
+
+function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
+    discrete_system = arr.cached_solution.it.system
+    Δϵ = step(energy(discrete_system.model))
+
+    ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model)))) for _ in 1:length(discrete_system.ρp)]
+    skip_initial = true
+    for (ϵ, i_ϵ) in it
+        if skip_initial
+            skip_initial = false
+            continue
+        end
+        Φp = pview(current_solution(it.solver), discrete_system.model)
+        Φm = mview(current_solution(it.solver), discrete_system.model)
+
+        Λ_im2p = pview(arr.cached_solution[i_ϵ], discrete_system.model)
+        Λ_im2m = mview(arr.cached_solution[i_ϵ], discrete_system.model)
+        Λ_ip2p = pview(arr.cached_solution[i_ϵ+1], discrete_system.model)
+        Λ_ip2m = mview(arr.cached_solution[i_ϵ+1], discrete_system.model)
+
+        for i_e in 1:1:length(discrete_system.ρp)
+            s_i = discrete_system.s[i_e, i_ϵ]
+            τ_i = discrete_system.τ[i_e, i_ϵ]
+            for i_m in 1:size(Λ_im2p, 2)
+                σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.kp[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2))
+                Λp = s_i / Δϵ * (Λ_ip2p[:, i_m] .- Λ_im2p[:, i_m]) .+ (τ_i - σ_i) * 0.5 * (Λ_ip2p[:, i_m] .+ Λ_im2p[:, i_m])
+                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens2, Λp, @view(Φp[:, i_m]), Δϵ, 1.0)
+            end
+            for i_m in 1:size(Λ_im2m, 2)
+                σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.km[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2))
+                Λm = s_i / Δϵ * (Λ_ip2m[:, i_m] .- Λ_im2m[:, i_m]) .+ (τ_i - σ_i) * 0.5 * (Λ_ip2m[:, i_m] .+ Λ_im2m[:, i_m])
+                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens2, Λm, @view(Φm[:, i_m]), Δϵ, 1.0)
+            end
+        end
+    end
+    return ρs_adjoint
 end
 
 @concrete struct TangentDiscretePNVector <: AbstractDiscretePNVector{true}

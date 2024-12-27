@@ -106,7 +106,7 @@ end
 
 @inline function mview(v::AbstractVector, model::PNGridapModel)
     (_, (nxp, nxm), (nΩp, nΩm)) = model.n_basis
-    return reshape(@view(v[nxp*nΩp:nxp*nΩp + nxm*nΩm]), (nxm, nΩm))
+    return reshape(@view(v[nxp*nΩp+1:nxp*nΩp + nxm*nΩm]), (nxm, nΩm))
 end
 
 # @concrete struct MonoChromPNGridapModel{PNA<:PNArchitecture, S<:DiscreteModel} <: AbstractPNGridapModel{PNA}

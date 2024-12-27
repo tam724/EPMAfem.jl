@@ -35,6 +35,16 @@ solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model, 1e-16)
 
 solution = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 14, 1], solver)
 
+
+g = discrete_rhs
+A_gi = EPMAfem.iterator(discrete_problem, g[1, 14, 1], solver_schur)
+h = discrete_ext
+
+hh = h(A_gi)
+
+Astar_hi = EPMAfem.iterator(discrete_problem, h[1], solver_schur)
+gg = g(Astar_hi)
+
 cache = EPMAfem.saveall(solution)
 
 forward_store = Dict()
@@ -103,6 +113,7 @@ plot!(meas_grad_full[2, :, 1])
 ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)]
 
 EPMAfem.update_problem!(discrete_problem, ρs)
+
 tangent_rhs_schur = EPMAfem.tangent(solution_schur)
 tangent_rhs_full = EPMAfem.tangent(solution_full)
 
@@ -113,6 +124,27 @@ der_sol_schur = EPMAfem.iterator(discrete_problem, new_rhs_schur, solver_schur);
 der_sol_full = EPMAfem.iterator(discrete_problem, new_rhs_full, solver_full);
 
 meas_tang_schur = discrete_rhs(der_sol_schur)
+
+
+weights = zeros(size(discrete_rhs))
+weights[1, 15, 1] = 1.0
+adjoint_rhs_schur = EPMAfem.weight_array_of_r1(weights, discrete_rhs)
+adjoint_adjoint_solution_schur = EPMAfem.iterator(discrete_problem, adjoint_rhs_schur, solver_schur) 
+ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
+
+ρs_adjoint[1][400]
+meas_tang_schur[1, 15, 1]
+
+m = FEFunction(EPMAfem.SpaceModels.material(EPMAfem.space(model)), ρs_adjoint[1])
+
+trian = EPMAfem.SpaceModels.get_args(EPMAfem.space(model))[2]
+Gridap.writevtk(trian, "output", cellfields=Dict("m" => m))
+
+heatmap(-1:0.01:0, -1:0.01:1, (x, y) -> m(Point(x, y)))
+
+plot(ρs_adjoint[1])
+
+
 meas_tang_full = discrete_rhs(der_sol_full)
 
 plot(meas_tang_schur[1, :, 1])
