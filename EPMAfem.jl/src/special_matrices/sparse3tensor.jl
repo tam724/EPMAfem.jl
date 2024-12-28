@@ -195,11 +195,24 @@ function assemble_skeleton(I::AbstractVector{Ti}, J::AbstractVector{Ti}, n_vals,
         end
     end
 
-    # detect diagonality
-    if S[1] == S[2] && all(Is .== Js)
-        return Diagonal(zeros(Tv, S[1]))
-    else 
-        return sparse(Is, Js, zeros(Tv, length(Is)), S[1], S[2])
+    # # detect diagonality
+    # if S[1] == S[2] && all(Is .== Js)
+    #     return Diagonal(zeros(Tv, S[1]))
+    # else 
+    #     return sparse(Is, Js, zeros(Tv, length(Is)), S[1], S[2])
+    # end
+    return sparse_or_diagonal(Is, Js, zeros(Tv, length(Is)), S[1], S[2])
+end
+
+function sparse_or_diagonal(Is, Js, Vs::AbstractVector{Tv}, m, n) where Tv
+    if m == n && all(ij -> ij[1] == ij[2], zip(Is, Js))
+        diag = zeros(Tv, m)
+        for i in eachindex(Is, Vs)
+            diag[Is[i]] = Vs[i]
+        end
+        return Diagonal(diag)
+    else
+        return sparse(Is, Js, Vs, m, n)
     end
 end
 
@@ -215,7 +228,9 @@ function compute_projectors(I::AbstractVector{Ti}, J::AbstractVector{Ti}, K::Abs
         push!(p_Js[c], K[i])
         push!(p_Vs[c], V[i])
     end
-    return [sparse(p_Is[i], p_Js[i], p_Vs[i], length(nonzeros(skeleton)), S[3]) for i in 1:coloring.num_colors]
+    # detect diagonality
+
+    return [sparse_or_diagonal(p_Is[i], p_Js[i], p_Vs[i], length(nonzeros(skeleton)), S[3]) for i in 1:coloring.num_colors]
 end
 
 function convert_to_SSM(A::Sparse3TensorCOO{Tv, Ti}, ordering=:ijk) where {Tv, Ti}

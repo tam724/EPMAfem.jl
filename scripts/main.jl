@@ -9,8 +9,9 @@ using Plots
 using LinearAlgebra
 using Gridap
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (20, 40)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(7, 2)
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (100, 200)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
+
 equations = EPMAfem.PNEquations()
 excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.05:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
 extraction = EPMAfem.PNExtraction()
@@ -71,12 +72,6 @@ discrete_rhs = EPMAfem.discretize_rhs(excitation, model)
 discrete_ext = EPMAfem.discretize_extraction(extraction, model)
 
 solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, sqrt(eps(Float64)))
-solver_schur.tmp .= NaN
-solver_schur.tmp2 .= NaN
-solver_schur.tmp3 .= NaN
-solver_schur.D .= NaN
-solver_schur.rhs .= NaN
-solver_schur.sol .= NaN
 
 
 #solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model)
@@ -205,7 +200,20 @@ weights = zeros(size(discrete_rhs))
 weights[1, 15, 1] = 1.0
 adjoint_rhs_schur = EPMAfem.weight_array_of_r1(weights, discrete_rhs)
 adjoint_adjoint_solution_schur = EPMAfem.iterator(discrete_problem, adjoint_rhs_schur, solver_schur) 
-ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
+EPMAfem.CUDA.@profile ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
+@profview ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
+
+Ag = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 15, 1], solver_schur)
+EPMAfem.CUDA.@profile discrete_ext(Ag)
+
+tensor = discrete_problem.ρp_tens2
+using CUDA
+using BenchmarkTools
+y = CUDA.zeros(800)
+y2 = CUDA.zeros(800)
+u = CUDA.rand(861)
+v = CUDA.rand(861)
+@benchmark CUDA.@sync EPMAfem.Sparse3Tensor.contract!(y, tensor, u, v, true, false)
 
 @gif for _ in adjoint_adjoint_solution_schur
     sol = EPMAfem.current_solution(solver_schur)

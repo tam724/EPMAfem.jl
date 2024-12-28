@@ -103,7 +103,7 @@ function (b::VecOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
     integral = zeros(T, size(b))
 
     for (ϵ, i_ϵ) in it
-        @show i_ϵ
+        # @show i_ϵ
         ψp = pview(current_solution(it.solver), it.system.model)
 
         for i in 1:length(b.bϵs)
