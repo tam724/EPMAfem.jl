@@ -20,7 +20,7 @@ direction_model = SH.EEEOSphericalHarmonicsModel(7, 2)
 # SM.dimensionality(space_model)
 # SH.dimensionality(direction_model)
 
-model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
+model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cpu())
 equations = EPMAfem.PNEquations()
 excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.05:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
 extraction = EPMAfem.PNExtraction()
@@ -40,10 +40,10 @@ g = discrete_rhs
 A_gi = EPMAfem.iterator(discrete_problem, g[1, 14, 1], solver_schur)
 h = discrete_ext
 
-hh = h(A_gi)
+@profview hh = h(A_gi)
 
 Astar_hi = EPMAfem.iterator(discrete_problem, h[1], solver_schur)
-gg = g(Astar_hi)
+@profview gg = g(Astar_hi)
 
 hh[1]
 gg[1, 14, 1]
@@ -136,7 +136,7 @@ new_rhs_full = tangent_rhs_full[1, 400];
 der_sol_schur = EPMAfem.iterator(discrete_problem, new_rhs_schur, solver_schur);
 der_sol_full = EPMAfem.iterator(discrete_problem, new_rhs_full, solver_full);
 
-meas_tang_schur = discrete_rhs(der_sol_schur)
+@time meas_tang_schur = discrete_rhs(der_sol_schur)
 
 weights = zeros(size(discrete_rhs))
 weights[1, 15, 1] = 1.0

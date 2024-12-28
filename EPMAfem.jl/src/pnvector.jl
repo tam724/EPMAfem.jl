@@ -62,7 +62,7 @@ function (b::Rank1DiscretePNVector{true})(it::NonAdjointIterator)
     integral = 0.0
     for (ϵ, i_ϵ) in it
         ψp = pview(current_solution(it.solver), it.system.model)
-        integral += Δϵ * b.bϵ[i_ϵ]*dot(b.bxp, ψp * b.bΩp)   
+        integral += Δϵ * b.bϵ[i_ϵ]*dot(b.bxp, ψp, b.bΩp)   
     end
     return integral
 end
@@ -76,7 +76,7 @@ function (b::ArrayOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
         for i in 1:length(b.bϵs)
             for j in 1:length(b.bxps)
                 for k in 1:length(b.bΩps)
-                    integral[i, j, k] += Δϵ * b.bϵs[i][i_ϵ]*dot(b.bxps[j], ψp * b.bΩps[k])   
+                    integral[i, j, k] += Δϵ * b.bϵs[i][i_ϵ]*dot(b.bxps[j], ψp, b.bΩps[k])   
                 end
             end
         end
@@ -91,7 +91,7 @@ function (b::VecOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
         ψp = pview(current_solution(it.solver), it.system.model)
 
         for i in 1:length(b.bϵs)
-            integral[i] += Δϵ * b.bϵs[i][i_ϵ]*dot(b.bxps[i], ψp * b.bΩps[i])   
+            integral[i] += Δϵ * b.bϵs[i][i_ϵ]*dot(b.bxps[i], ψp, b.bΩps[i])   
         end
     end
     return integral
@@ -104,7 +104,7 @@ function (b::Rank1DiscretePNVector{false})(it::AdjointIterator)
         ψp = pview(current_solution(it.solver), it.system.model)
 
         if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
-            integral += Δϵ * 0.5 * (b.bϵ[i_ϵ] + b.bϵ[i_ϵ-1])*dot(b.bxp, ψp * b.bΩp)
+            integral += Δϵ * 0.5 * (b.bϵ[i_ϵ] + b.bϵ[i_ϵ-1])*dot(b.bxp, ψp, b.bΩp)
         end  
     end
     return integral
@@ -120,7 +120,7 @@ function (b::ArrayOfRank1DiscretePNVector{false})(it::AdjointIterator)
             for j in 1:length(b.bxps)
                 for k in 1:length(b.bΩps)
                     if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
-                        integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot(b.bxps[j], ψp * b.bΩps[k])
+                        integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot(b.bxps[j], ψp, b.bΩps[k])
                     end  
                 end
             end
@@ -137,7 +137,7 @@ function (b::VecOfRank1DiscretePNVector{false})(it::AdjointIterator)
 
         for i in 1:length(b.bϵs)
             if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
-                integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot(b.bxps[i], ψp * b.bΩps[i])
+                integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot(b.bxps[i], ψp, b.bΩps[i])
             end  
         end
     end
@@ -315,6 +315,7 @@ function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
     Λ_im2 = rhs.parent.cached_solution[i]
     Λ_ip2 = rhs.parent.cached_solution[i+1]
 
+    #TODO: move temporary allocations somwhere else
     tmp = VT(undef, max(np, nm))
     tmp2 = VT(undef, max(nΩp, nΩm))
 
