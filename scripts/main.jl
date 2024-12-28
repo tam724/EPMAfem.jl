@@ -20,7 +20,7 @@ direction_model = SH.EEEOSphericalHarmonicsModel(7, 2)
 # SM.dimensionality(space_model)
 # SH.dimensionality(direction_model)
 
-model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cpu())
+model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
 equations = EPMAfem.PNEquations()
 excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.05:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
 extraction = EPMAfem.PNExtraction()
@@ -30,10 +30,10 @@ discrete_rhs = EPMAfem.discretize_rhs(excitation, model)
 #test_rhs = EPMAfem.discretize_stange_rhs(excitation, model)
 discrete_ext = EPMAfem.discretize_extraction(extraction, model)
 
-solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, 1e-16)
-solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model, 1e-16)
+solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, 1e-13)
+solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model, 1e-13)
 
-solution = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 14, 1], solver)
+# solution = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 14, 1], solver)
 
 
 g = discrete_rhs
@@ -44,6 +44,9 @@ hh = h(A_gi)
 
 Astar_hi = EPMAfem.iterator(discrete_problem, h[1], solver_schur)
 gg = g(Astar_hi)
+
+hh[1]
+gg[1, 14, 1]
 
 cache = EPMAfem.saveall(solution)
 
@@ -92,16 +95,26 @@ plot!(meas_full[1, :, 1])
 plot!(meas_schur[2, :, 1])
 plot!(meas_full[2, :, 1])
 
-ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)]
+cv(x) = EPMAfem.convert_to_architecture(EPMAfem.architecture(model), x)
+
+ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
 
 ρs_err = deepcopy(ρs)
-ρs_err[1][400] += 1e-4
+EPMAfem.CUDA.@allowscalar begin ρs_err[1][400] += 5e-1 end
 EPMAfem.update_problem!(discrete_problem, ρs_err)
 meas_err_schur = discrete_rhs(solution_schur)
 meas_err_full = discrete_rhs(solution_full)
 
-meas_grad_schur = (meas_err_schur .- meas_schur) / 1e-4
-meas_grad_full = (meas_err_full .- meas_full) / 1e-4
+@gif for (i, ϵ) in solution_schur
+    sol = EPMAfem.current_solution(solver_schur)
+    sol_p = EPMAfem.pview(sol, model)
+    cpu_vec = collect(@view(sol_p[:, 1]))
+    # @show sol_p |> size
+    heatmap(reshape(cpu_vec, (21, 41)))
+end
+
+meas_grad_schur = (meas_err_schur .- meas_schur) ./ 5e-1
+meas_grad_full = (meas_err_full .- meas_full) ./ 5e-1
 
 plot(meas_grad_schur[1, :, 1])
 plot!(meas_grad_full[1, :, 1])
@@ -110,7 +123,7 @@ plot!(meas_grad_schur[2, :, 1])
 plot!(meas_grad_full[2, :, 1])
 
 #savesol = EPMAfem.saveall(solution)
-ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)]
+ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
 
 EPMAfem.update_problem!(discrete_problem, ρs)
 
@@ -125,14 +138,13 @@ der_sol_full = EPMAfem.iterator(discrete_problem, new_rhs_full, solver_full);
 
 meas_tang_schur = discrete_rhs(der_sol_schur)
 
-
 weights = zeros(size(discrete_rhs))
 weights[1, 15, 1] = 1.0
 adjoint_rhs_schur = EPMAfem.weight_array_of_r1(weights, discrete_rhs)
 adjoint_adjoint_solution_schur = EPMAfem.iterator(discrete_problem, adjoint_rhs_schur, solver_schur) 
-ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
+@profview ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
 
-ρs_adjoint[1][400]
+Vector(ρs_adjoint[1])[400]
 meas_tang_schur[1, 15, 1]
 
 m = FEFunction(EPMAfem.SpaceModels.material(EPMAfem.space(model)), ρs_adjoint[1])
@@ -147,11 +159,14 @@ plot(ρs_adjoint[1])
 
 meas_tang_full = discrete_rhs(der_sol_full)
 
-plot(meas_tang_schur[1, :, 1])
+plot!(meas_tang_schur[1, :, 1])
 plot!(meas_tang_schur[2, :, 1])
+
 plot!(meas_tang_full[1, :, 1])
 plot!(meas_tang_full[2, :, 1])
 
+
+# end
 meas_schur = discrete_rhs(solution_schur)
 meas_full = discrete_rhs(solution_full)
 

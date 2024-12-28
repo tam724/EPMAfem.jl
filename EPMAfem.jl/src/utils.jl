@@ -5,12 +5,12 @@ function CUSPARSE.CuSparseMatrixCSC{T, Ti}(A::SparseMatrixCSC) where {T, Ti}
     )
 end
 
-function to_diag(VT, A::Matrix)
+function to_diag(A::Matrix)
     @assert isdiag(A)
-    return Diagonal(VT(diag(A)))
+    return Diagonal(diag(A))
 end
 
-function to_diag(VT, A::Diagonal)
+function to_diag(A::Diagonal)
     @assert isdiag(A)
-    return Diagonal(VT(A.diag))
+    return Diagonal(A.diag)
 end

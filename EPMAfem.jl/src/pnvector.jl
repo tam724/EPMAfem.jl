@@ -233,8 +233,13 @@ end
 
 function Base.getindex(arr::ArrayOfTangentDiscretePNVector, i_e, i_x)
     discrete_system = arr.cached_solution.it.system
-    onehot = zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model))))
-    onehot[i_x] = 1.0
+    T = base_type(architecture(discrete_system.model))
+    VT = vec_type(architecture(discrete_system.model))
+
+    onehot = VT(undef, num_free_dofs(SpaceModels.material(space(discrete_system.model))))
+    onehot .= zero(T)
+    CUDA.@allowscalar onehot[i_x] = one(T)
+    
     Sparse3Tensor._project!(arr.ρp_tangent, discrete_system.ρp_tens, onehot)
     Sparse3Tensor._project!(arr.ρm_tangent, discrete_system.ρm_tens, onehot)
     return TangentDiscretePNVector(arr, i_x, i_e)
@@ -243,9 +248,13 @@ end
 
 function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
     discrete_system = arr.cached_solution.it.system
-    Δϵ = step(energy(discrete_system.model))
 
-    ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model)))) for _ in 1:length(discrete_system.ρp)]
+    T = base_type(architecture(discrete_system.model))
+    cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
+
+    Δϵ = T(step(energy(discrete_system.model)))
+
+    ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model)))) for _ in 1:length(discrete_system.ρp)] |> cv
     skip_initial = true
     for (ϵ, i_ϵ) in it
         if skip_initial
@@ -264,14 +273,14 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
             s_i = discrete_system.s[i_e, i_ϵ]
             τ_i = discrete_system.τ[i_e, i_ϵ]
             for i_m in 1:size(Λ_im2p, 2)
-                σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.kp[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2))
-                Λp = s_i / Δϵ * (Λ_ip2p[:, i_m] .- Λ_im2p[:, i_m]) .+ (τ_i - σ_i) * 0.5 * (Λ_ip2p[:, i_m] .+ Λ_im2p[:, i_m])
-                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens2, Λp, @view(Φp[:, i_m]), Δϵ, 1.0)
+                CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.kp[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
+                Λp = s_i / Δϵ * (@view(Λ_ip2p[:, i_m]) .- @view(Λ_im2p[:, i_m])) .+ (τ_i - σ_i) * T(0.5) * (@view(Λ_ip2p[:, i_m]) .+ @view(Λ_im2p[:, i_m]))
+                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens2, Λp, @view(Φp[:, i_m]), Δϵ, one(T))
             end
             for i_m in 1:size(Λ_im2m, 2)
-                σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.km[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2))
-                Λm = s_i / Δϵ * (Λ_ip2m[:, i_m] .- Λ_im2m[:, i_m]) .+ (τ_i - σ_i) * 0.5 * (Λ_ip2m[:, i_m] .+ Λ_im2m[:, i_m])
-                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens2, Λm, @view(Φm[:, i_m]), Δϵ, 1.0)
+                CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.km[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
+                Λm = s_i / Δϵ * (@view(Λ_ip2m[:, i_m]) .- @view(Λ_im2m[:, i_m])) .+ (τ_i - σ_i) * T(0.5) * (@view(Λ_ip2m[:, i_m]) .+ @view(Λ_im2m[:, i_m]))
+                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens2, Λm, @view(Φm[:, i_m]), Δϵ, one(T))
             end
         end
     end
@@ -286,6 +295,7 @@ end
 
 function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
     discrete_system = rhs.parent.cached_solution.it.system
+    VT = vec_type(architecture(discrete_system.model))
     Δϵ = step(discrete_system.model.energy_model)
 
     fill!(b, zero(eltype(b)))
@@ -305,8 +315,8 @@ function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
     Λ_im2 = rhs.parent.cached_solution[i]
     Λ_ip2 = rhs.parent.cached_solution[i+1]
 
-    tmp = zeros(max(np, nm))
-    tmp2 = zeros(max(nΩp, nΩm))
+    tmp = VT(undef, max(np, nm))
+    tmp2 = VT(undef, max(nΩp, nΩm))
 
     a = [(si/Δϵ + τi*0.5)]
     c = [(-σi.*0.5)]

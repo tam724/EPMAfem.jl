@@ -138,8 +138,8 @@ end
 
 function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=1e-14)
     n = number_of_basis_functions(discrete_model)
-    VT = vec_type(discrete_model)
-    T = base_type(discrete_model)
+    T = base_type(architecture(discrete_model))
+    VT = vec_type(architecture(discrete_model))
 
     n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m
     return PNFullImplicitMidpointSolver(
@@ -222,8 +222,8 @@ end
 
 function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=1e-14)
     n = number_of_basis_functions(discrete_model)
-    VT = vec_type(discrete_model)
-    T = base_type(discrete_model)
+    T = base_type(architecture(discrete_model))
+    VT = vec_type(architecture(discrete_model))
 
     np = n.x.p*n.Ω.p
     n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m

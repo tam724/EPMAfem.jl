@@ -19,12 +19,22 @@ smat_type(::PNCUDA{T}) where T = CUSPARSE.CuSparseMatrixCSC{T, index_type(T)}
 vec_type(::PNCUDA{T}) where T = CuVector{T}
 base_type(::PNCUDA{T}) where T = T
 
-abstract type AbstractPNGridapModel{PNA<:PNArchitecture} end
+convert_to_architecture(arch::PNArchitecture{T}, x::Matrix) where T = mat_type(arch)(x)
+convert_to_architecture(arch::PNArchitecture{T}, x::SparseMatrixCSC) where T = smat_type(arch)(x)
+convert_to_architecture(arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(arch)(x)
+convert_to_architecture(arch::PNArchitecture{T}, x::Vector) where T = [convert_to_architecture(arch, xi) for xi in x]
+function convert_to_architecture(arch::PNArchitecture{T}, x::Sparse3Tensor.Sparse3TensorSSM) where T
+    return Sparse3Tensor.Sparse3TensorSSM(
+        convert_to_architecture(arch, x.skeleton),
+        convert_to_architecture(arch, x.projector),
+        x.size
+    )
+end
+convert_to_architecture(arch::PNArchitecture{T}, x::Diagonal) where T = Diagonal(convert_to_architecture(arch, x.diag))
 
-mat_type(discrete_model::AbstractPNGridapModel) = mat_type(architecture(discrete_model))
-smat_type(discrete_model::AbstractPNGridapModel) = smat_type(architecture(discrete_model))
-vec_type(discrete_model::AbstractPNGridapModel) = vec_type(architecture(discrete_model))
-base_type(discrete_model::AbstractPNGridapModel) = base_type(architecture(discrete_model))
+allocate_vec(arch::PNArchitecture{T}, n::Int) where T = vec_type(arch)(undef, n)
+
+abstract type AbstractPNGridapModel{PNA<:PNArchitecture} end
 
 @concrete struct PNGridapModel{PNA<:PNArchitecture} <: AbstractPNGridapModel{PNA}
     architecture::PNA
