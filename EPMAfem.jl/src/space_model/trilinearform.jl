@@ -144,7 +144,7 @@ SparseArrays.nonzeros(A::Diagonal) = A.diag
 
 function project_matrices(ρs, ρ_projector, vals)
     for (ρi, vi) in zip(ρs, vals)
-        mul!(nonzeros(ρi), ρ_projector, vi, 1.0, 0.0)
+        mul!(nonzeros(ρi), ρ_projector, vi, true, false)
     end
 end
 
@@ -339,7 +339,7 @@ function backproject!(res, (skeletons, projectors), u, v)
         mul_into_nonzero!(skeleton, projector, v)
     end
     for skeleton in skeletons
-        mul!(res, skeleton, u, 1.0, 1.0)
+        mul!(res, skeleton, u, true, true)
     end
     return res
 end

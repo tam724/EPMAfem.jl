@@ -245,37 +245,30 @@ function CUDA.cu(A::Sparse3TensorSSM)
 end
 
 function tensordot(A::Sparse3TensorSSM, u::AbstractVector{T}, v::AbstractVector{T}, w::AbstractVector{T}) where T
-    β = zero(T)
+    β = false
 	for pr_ in A.projector
-		mul!(nonzeros(A.skeleton), pr_, w, one(T), β)
-        β = one(T)
+		mul!(nonzeros(A.skeleton), pr_, w, true, β)
+        β = true
 	end
     return dot(u, A.skeleton, v)
 end
 
 function _project!(B::AbstractMatrix, A::Sparse3TensorSSM, w::AbstractVector{T}) where T
-    β = zero(T)
+    β = false
     for pr_ in A.projector
-        mul!(nonzeros(B), pr_, w, one(T), β)
-        β = one(T)
+        mul!(nonzeros(B), pr_, w, true, β)
+        β = true
     end
     return B
 end
 
-function project!(A::Sparse3TensorSSM, w::AbstractVector{T}) where T
-    β = zero(T)
-    for pr_ in A.projector
-        mul!(nonzeros(A.skeleton), pr_, w, one(T), β)
-        β = one(T)
-    end
-    return A.skeleton
-end
+project!(A::Sparse3TensorSSM, w::AbstractVector{T}) where T = _project!(A.skeleton, A, w)
 
 function contract!(y::AbstractVector{T}, A::Sparse3TensorSSM, v::AbstractVector{T}, w::AbstractVector{T}, α_, β_) where T
-    β = zero(T)
+    β = false
     for pr_ in A.projector
-        mul!(nonzeros(A.skeleton), pr_, w, one(T), β)
-        β = one(T)
+        mul!(nonzeros(A.skeleton), pr_, w, true, β)
+        β = true
     end
     mul!(y, A.skeleton, v, α_, β_)
     return y

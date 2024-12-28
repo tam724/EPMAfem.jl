@@ -111,7 +111,7 @@ function assemble_bilinear(integral::IntFuncIntegral, model, U, V, quad::Spheric
     cache = zeros(length(V), length(U))
     function f!(cache, Ω)
         Y_U, Y_V = _eval_basis_functions!(model, Ω, U, V)
-        mul!(cache, Y_V, transpose(Y_U), int_func(integral, Ω), 0.0)
+        mul!(cache, Y_V, transpose(Y_U), int_func(integral, Ω), false)
     end
     return quad(f!, cache)
 end

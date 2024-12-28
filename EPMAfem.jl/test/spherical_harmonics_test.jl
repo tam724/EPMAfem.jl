@@ -3,7 +3,7 @@ module SphericalHarmonicsModelsTest
 using Test
 using LinearAlgebra
 using Random
-using Hcubature
+using HCubature
 import EPMAfem.SphericalHarmonicsModels as SH
 
 
@@ -117,7 +117,7 @@ function test_scattering_kernel_integration()
         Y_U .= SH._eval_basis_functions!(model, Ω[i], U)
         for j in eachindex(Ω, w)
             Y_V = SH._eval_basis_functions!(model, Ω[j], V)
-            mul!(A_full_integral, Y_V, transpose(Y_U), w[i]*w[j]*scattering_kernel(dot(Ω[i], Ω[j])), 1.0)
+            mul!(A_full_integral, Y_V, transpose(Y_U), w[i]*w[j]*scattering_kernel(dot(Ω[i], Ω[j])), true)
         end
     end
 

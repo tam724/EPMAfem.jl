@@ -81,7 +81,7 @@ function update_rhs_nonadjoint!(solver::PNImplicitMidpointSolver, problem::Discr
     a, b, c = update_coefficients_rhs_nonadjoint!(solver, problem, i, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2, sym)
-    mul!(solver.rhs, A, current_solution(solver), -1.0, 1.0)
+    mul!(solver.rhs, A, current_solution(solver), -1.0, true)
     return
 end
 
@@ -92,7 +92,7 @@ function update_rhs_adjoint!(solver::PNImplicitMidpointSolver, problem::Discrete
     a, b, c = update_coefficients_rhs_adjoint!(solver, problem, i, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, solver.tmp, solver.tmp2, sym)
-    mul!(solver.rhs, A, current_solution(solver), -1.0, 1.0)
+    mul!(solver.rhs, A, current_solution(solver), -1.0, true)
     return
 end
 
@@ -467,7 +467,7 @@ function step_nonadjoint!(solver::PNDLRFullImplicitMidpointSolver{T, V}, problem
         mul!(K0.Up, U.Up, S.Sp)
         mul!(K0.Um, U.Um, S.Sm)
         # minus because we have to bring b to the right side of the equation
-        mul!(rhs_K, A, K0_vec, -1.0, 1.0)
+        mul!(rhs_K, A, K0_vec, -1.0, true)
         K0 = nothing # forget about K0, it will be overwritten by the solve
     # solve the system 
         a, b, c = update_coefficients_mat_nonadjoint!(solver, problem, i, Δϵ)
