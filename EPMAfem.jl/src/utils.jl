@@ -14,3 +14,8 @@ function to_diag(A::Diagonal)
     @assert isdiag(A)
     return Diagonal(A.diag)
 end
+
+function dot_buf(x::AbstractVector, A::AbstractMatrix, y::AbstractVector, buf::AbstractVector)
+    mul!(buf, A, y)
+    return dot(x, buf)
+end

@@ -136,10 +136,14 @@ function step_adjoint!(solver::PNFullImplicitMidpointSolver{T}, problem::Discret
     # @show solver.lin_solver.stats
 end
 
-function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=1e-14)
+function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=nothing)
     n = number_of_basis_functions(discrete_model)
     T = base_type(architecture(discrete_model))
     VT = vec_type(architecture(discrete_model))
+
+    if isnothing(tol)
+        tol = sqrt(eps(T))
+    end
 
     n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m
     return PNFullImplicitMidpointSolver(
@@ -150,7 +154,7 @@ function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGri
         VT(undef, n_tot),
         Krylov.MinresSolver(n_tot, n_tot, VT),
         T(tol),
-        T(tol),
+        T(0),
     )
 end
 
@@ -220,10 +224,14 @@ struct PNSchurImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplic
     atol::T
 end
 
-function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=1e-14)
+function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=nothing)
     n = number_of_basis_functions(discrete_model)
     T = base_type(architecture(discrete_model))
     VT = vec_type(architecture(discrete_model))
+
+    if isnothing(tol)
+        tol = sqrt(eps(T))
+    end
 
     np = n.x.p*n.Ω.p
     n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m
@@ -239,7 +247,7 @@ function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGr
         VT(undef, n_tot),
         Krylov.MinresSolver(np, np, VT),
         T(tol),
-        T(tol)
+        T(0)
     )
 end
 

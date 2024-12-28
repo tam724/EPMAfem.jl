@@ -59,24 +59,34 @@ end
 
 function (b::Rank1DiscretePNVector{true})(it::NonAdjointIterator)
     Δϵ = step(b.model.energy_model)
-    integral = 0.0
+    VT = vec_type(architecture(b.model))
+    T = base_type(architecture(b.model))
+
+    buf = VT(undef, length(b.bxp))
+    integral = zero(T)
+
     for (ϵ, i_ϵ) in it
         ψp = pview(current_solution(it.solver), it.system.model)
-        integral += Δϵ * b.bϵ[i_ϵ]*dot(b.bxp, ψp, b.bΩp)   
+        integral += Δϵ * b.bϵ[i_ϵ]*dot_buf(b.bxp, ψp, b.bΩp, buf)   
     end
     return integral
 end
 
 function (b::ArrayOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
     Δϵ = step(b.model.energy_model)
-    integral = zeros(size(b))
+    VT = vec_type(architecture(b.model))
+    T = base_type(architecture(b.model))
+
+    buf = VT(undef, length(b.bxps |> first))
+    integral = zeros(T, size(b))
+
     for (ϵ, i_ϵ) in it
         ψp = pview(current_solution(it.solver), it.system.model)
 
         for i in 1:length(b.bϵs)
             for j in 1:length(b.bxps)
                 for k in 1:length(b.bΩps)
-                    integral[i, j, k] += Δϵ * b.bϵs[i][i_ϵ]*dot(b.bxps[j], ψp, b.bΩps[k])   
+                    integral[i, j, k] += Δϵ * b.bϵs[i][i_ϵ]*dot_buf(b.bxps[j], ψp, b.bΩps[k], buf)   
                 end
             end
         end
@@ -86,12 +96,18 @@ end
 
 function (b::VecOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
     Δϵ = step(b.model.energy_model)
-    integral = zeros(size(b))
+    VT = vec_type(architecture(b.model))
+    T = base_type(architecture(b.model))
+
+    buf = VT(undef, length(b.bxps |> first))
+    integral = zeros(T, size(b))
+
     for (ϵ, i_ϵ) in it
+        @show i_ϵ
         ψp = pview(current_solution(it.solver), it.system.model)
 
         for i in 1:length(b.bϵs)
-            integral[i] += Δϵ * b.bϵs[i][i_ϵ]*dot(b.bxps[i], ψp, b.bΩps[i])   
+            integral[i] += Δϵ * b.bϵs[i][i_ϵ]*dot_buf(b.bxps[i], ψp, b.bΩps[i], buf)   
         end
     end
     return integral
@@ -99,12 +115,17 @@ end
 
 function (b::Rank1DiscretePNVector{false})(it::AdjointIterator)
     Δϵ = step(b.model.energy_model)
-    integral = 0.0
+    VT = vec_type(architecture(b.model))
+    T = base_type(architecture(b.model))
+
+    buf = VT(undef, length(b.bxp))
+    integral = zero(T)
+
     for (ϵ, i_ϵ) in it
         ψp = pview(current_solution(it.solver), it.system.model)
 
         if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
-            integral += Δϵ * 0.5 * (b.bϵ[i_ϵ] + b.bϵ[i_ϵ-1])*dot(b.bxp, ψp, b.bΩp)
+            integral += Δϵ * T(0.5) * (b.bϵ[i_ϵ] + b.bϵ[i_ϵ-1])*dot_buf(b.bxp, ψp, b.bΩp, buf)
         end  
     end
     return integral
@@ -112,7 +133,12 @@ end
 
 function (b::ArrayOfRank1DiscretePNVector{false})(it::AdjointIterator)
     Δϵ = step(b.model.energy_model)
-    integral = zeros(size(b))
+    VT = vec_type(architecture(b.model))
+    T = base_type(architecture(b.model))
+
+    buf = VT(undef, length(b.bxps |> first))
+    integral = zeros(T, size(b))
+
     for (ϵ, i_ϵ) in it
         ψp = pview(current_solution(it.solver), it.system.model)
 
@@ -120,7 +146,7 @@ function (b::ArrayOfRank1DiscretePNVector{false})(it::AdjointIterator)
             for j in 1:length(b.bxps)
                 for k in 1:length(b.bΩps)
                     if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
-                        integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot(b.bxps[j], ψp, b.bΩps[k])
+                        integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot_buf(b.bxps[j], ψp, b.bΩps[k], buf)
                     end  
                 end
             end
@@ -131,13 +157,18 @@ end
 
 function (b::VecOfRank1DiscretePNVector{false})(it::AdjointIterator)
     Δϵ = step(b.model.energy_model)
-    integral = zeros(size(b))
+    VT = vec_type(architecture(b.model))
+    T = base_type(architecture(b.model))
+
+    buf = VT(undef, length(b.bxps |> first))
+    integral = zeros(T, size(b))
+
     for (ϵ, i_ϵ) in it
         ψp = pview(current_solution(it.solver), it.system.model)
 
         for i in 1:length(b.bϵs)
             if i_ϵ != 1 # (where ψp is initialized to 0 anyways..)
-                integral[i, j, k] += Δϵ * 0.5 * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot(b.bxps[i], ψp, b.bΩps[i])
+                integral[i] += Δϵ * T(0.5) * (b.bϵs[i][i_ϵ] + b.bϵs[i][i_ϵ-1])*dot_buf(b.bxps[i], ψp, b.bΩps[i], buf)
             end  
         end
     end
@@ -272,15 +303,39 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
         for i_e in 1:1:length(discrete_system.ρp)
             s_i = discrete_system.s[i_e, i_ϵ]
             τ_i = discrete_system.τ[i_e, i_ϵ]
-            for i_m in 1:size(Λ_im2p, 2)
-                CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.kp[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
-                Λp = s_i / Δϵ * (@view(Λ_ip2p[:, i_m]) .- @view(Λ_im2p[:, i_m])) .+ (τ_i - σ_i) * T(0.5) * (@view(Λ_ip2p[:, i_m]) .+ @view(Λ_im2p[:, i_m]))
-                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens2, Λp, @view(Φp[:, i_m]), Δϵ, one(T))
+            σp_i = similar(discrete_system.kp[i_e][1])
+            fill!(σp_i, zero(eltype(σp_i)))
+            for i in 1:size(discrete_system.σ, 2)
+                σp_i.diag .+= discrete_system.σ[i_e, i, i_ϵ] .* discrete_system.kp[i_e][i].diag
             end
+            # Λp = s_i / Δϵ * (Λ_ip2p .- Λ_im2p) .+ T(0.5) * (Λ_ip2p .+ Λ_im2p) * (τ_i - σp_i)
+            Λp = similar(Λ_ip2p)
+            mul!(Λp, Λ_ip2p, σp_i, -T(0.5), zero(T))
+            mul!(Λp, Λ_im2p, σp_i, -T(0.5), one(T))
+            Λp .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2p
+            Λp .+= (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2p
+
+            for i_m in 1:size(Λ_im2p, 2)
+                # CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.kp[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
+                # Λp = s_i / Δϵ * (@view(Λ_ip2p[:, i_m]) .- @view(Λ_im2p[:, i_m])) .+ (τ_i - σp_i.diag[i_m]) * T(0.5) * (@view(Λ_ip2p[:, i_m]) .+ @view(Λ_im2p[:, i_m]))
+                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens2, @view(Λp[:, i_m]), @view(Φp[:, i_m]), Δϵ, one(T))
+            end
+
+            σm_i = similar(discrete_system.km[i_e][1])
+            fill!(σm_i, zero(eltype(σm_i)))
+            for i in 1:size(discrete_system.σ, 2)
+                σm_i.diag .+= discrete_system.σ[i_e, i, i_ϵ] .* discrete_system.km[i_e][i].diag
+            end
+            # Λm = s_i / Δϵ * (Λ_ip2m .- Λ_im2m) .+ T(0.5) * (Λ_ip2m .+ Λ_im2m) * (τ_i - σm_i)
+            Λm = similar(Λ_ip2m)
+            mul!(Λm, Λ_ip2m, σm_i, -T(0.5), zero(T))
+            mul!(Λm, Λ_im2m, σm_i, -T(0.5), one(T))
+            Λm .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2m
+            Λm .+= (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2m
             for i_m in 1:size(Λ_im2m, 2)
-                CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.km[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
-                Λm = s_i / Δϵ * (@view(Λ_ip2m[:, i_m]) .- @view(Λ_im2m[:, i_m])) .+ (τ_i - σ_i) * T(0.5) * (@view(Λ_ip2m[:, i_m]) .+ @view(Λ_im2m[:, i_m]))
-                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens2, Λm, @view(Φm[:, i_m]), Δϵ, one(T))
+                # CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.km[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
+                # Λm = s_i / Δϵ * (@view(Λ_ip2m[:, i_m]) .- @view(Λ_im2m[:, i_m])) .+ (τ_i - σm_i.diag[i_m]) * T(0.5) * (@view(Λ_ip2m[:, i_m]) .+ @view(Λ_im2m[:, i_m]))
+                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens2, @view(Λm[:, i_m]), @view(Φm[:, i_m]), Δϵ, one(T))
             end
         end
     end
