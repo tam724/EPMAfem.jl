@@ -45,10 +45,10 @@ function test_sparse3tensor_construction(; nvals, n1, n2, n3)
 end
 
 # make sure we have duplicates
-test_sparse3tensor_construction(; n1 = 5, n2 = 5, n3 = 5, nvals = 1000)
+test_sparse3tensor_construction(; n1 = 5, n2 = 6, n3 = 7, nvals = 1000)
 
 # probably no duplicates
-test_sparse3tensor_construction(; n1 = 5, n2 = 5, n3 = 5, nvals = 5)
+test_sparse3tensor_construction(; n1 = 5, n2 = 6, n3 = 7, nvals = 5)
 
 function test_simple_dense_tensor()
     A = rand(5, 10, 20)
@@ -81,13 +81,13 @@ function test_ssm_conversion(; n1, n2, n3, nvals)
     a_sparse = ST.project!(A_ssm, w)
     @test ST.tensordot(A_ssm, u, v, w) ≈ dot(u, a_sparse, v)
 
-    y = zeros(n1)
-    ST.contract!(y, A_ssm, v, w, 1.0, 0.0)
-    @test ST.tensordot(A_ssm, u, v, w) ≈ dot(y, u)
+    y = zeros(n3)
+    ST.contract!(y, A_ssm, u, v, true, false)
+    @test ST.tensordot(A_ssm, u, v, w) ≈ dot(y, w)
 end
 
-test_ssm_conversion(; n1=5, n2=5, n3=5, nvals=1000)
-test_ssm_conversion(; n1=5, n2=5, n3=5, nvals=5)
+test_ssm_conversion(; n1=5, n2=6, n3=7, nvals=1000)
+test_ssm_conversion(; n1=5, n2=6, n3=7, nvals=5)
 
 function test_diagonal(; n, nvals)
     I = rand(1:n, nvals)
@@ -103,6 +103,7 @@ function test_diagonal(; n, nvals)
     A = Array(A_tensor)
 
     @test A_ssm.skeleton isa Diagonal
+    @test all([proj isa Diagonal for proj in A_ssm.projector])
 
     @test ST.tensordot(A, u, v, w) ≈ ST.tensordot(A_tensor, u, v, w)
     @test ST.tensordot(A, u, v, w) ≈ ST.tensordot(A_ssm, u, v, w)
@@ -147,10 +148,10 @@ function test_sparse3tensor_gridap_assembly()
 
     @test gmat ≈ mat
 
-    tensor_ssm_kij = ST.convert_to_SSM(tensor, :kij)
+    #tensor_ssm_kij = ST.convert_to_SSM(tensor, :kij)
     y = zeros(num_free_dofs(W))
     qy = zeros(num_free_dofs(W))
-    ST.contract!(y, tensor_ssm_kij, u.free_values, v.free_values, 1.0, 0.0)
+    ST.contract!(y, tensor_ssm, u.free_values, v.free_values, 1.0, 0.0)
 
     w_ = FEFunction(W, zeros(num_free_dofs(W)))
     for i in 1:num_free_dofs(W)
@@ -162,5 +163,47 @@ function test_sparse3tensor_gridap_assembly()
 end
 
 test_sparse3tensor_gridap_assembly()
+
+function test_tensor_matrix_multiplication(; n1, n2, n3, nu, nvals)
+    A_sparse = rand_tensor((n1, n2, n3), nvals)
+    A = Array(A_sparse)
+    A_ssm = ST.convert_to_SSM(A_sparse)
+
+
+    u = rand(n1, nu)
+    u2 = rand(n1, nu)
+    v = rand(n2, nu)
+    v2 = rand(n2, nu)
+    w = rand(n3)
+
+    @test ST.tensordot(A_sparse, u, v, w) ≈ ST.tensordot(A, u, v, w)
+    @test ST.tensordot(A_ssm, u, v, w) ≈ ST.tensordot(A, u, v, w)
+
+    y = rand(length(w)) #initialize with random number to test the zero out
+    ST.contract!(y, A_ssm, u, v, true, false)
+    @test ST.tensordot(A_ssm, u, v, w) ≈ dot(y, w)
+
+    is, js = ST.get_ijs(A_ssm)
+    nz_vals = rand(length(is)) # init with random
+    y_2 = rand(length(w)) #init with random
+    ST.special_matmul!(nz_vals, is, js, u, v, true, false)
+    ST.contract!(y_2, A_ssm, nz_vals, true, false)
+    @test y ≈ y_2
+    @test ST.tensordot(A_ssm, u, v, w) ≈ dot(y_2, w)
+
+    # now test accumulation
+    α = rand()
+    ST.contract!(y, A_ssm, u2, v2, α, true)
+    @test ST.tensordot(A_ssm, u, v, w) + α * ST.tensordot(A_ssm, u2, v2, w) ≈ dot(y, w)
+
+    # also for the searated accumulation
+    ST.special_matmul!(nz_vals, is, js, u2, v2, α, true)
+    ST.contract!(y_2, A_ssm, nz_vals, true, false)
+    @test y ≈ y_2
+    @test ST.tensordot(A_ssm, u, v, w) + α * ST.tensordot(A_ssm, u2, v2, w) ≈ dot(y_2, w)
+end
+
+test_tensor_matrix_multiplication(; n1=5, n2=6, n3=7, nu=5, nvals=1000)
+test_tensor_matrix_multiplication(; n1=5, n2=6, n3=7, nu=5, nvals=25)
 
 end
