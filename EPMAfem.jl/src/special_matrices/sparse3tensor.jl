@@ -5,6 +5,7 @@ using Graphs
 using LinearAlgebra
 using CUDA
 using ConcreteStructs
+using KernelAbstractions
 
 struct Sparse3TensorCOO{Tv, Ti<:Integer}
     i::Vector{Ti}
@@ -18,7 +19,7 @@ Base.size(A::Sparse3TensorCOO) = A.size
 Base.size(A::Sparse3TensorCOO, i) = A.size[i]
 SparseArrays.nonzeros(A::Sparse3TensorCOO) = A.vals
 sparsity_rate(A::Sparse3TensorCOO) = 1.0 - length(nonzeros(A))/prod(size(A))
-eltype(::Sparse3TensorCOO{Tv, Ti}) where {Tv, Ti} = Tv
+Base.eltype(::Sparse3TensorCOO{Tv, Ti}) where {Tv, Ti} = Tv
 function Base.Array(A::Sparse3TensorCOO)
     full = zeros(eltype(A), size(A))
     for (i, j, k, v) in zip(A.i, A.j, A.k, A.vals)
@@ -253,12 +254,6 @@ function convert_to_SSM(A::Sparse3TensorCOO{Tv, Ti}, ordering=:ijk) where {Tv, T
     return Sparse3TensorSSM(skeleton, projectors, S)
 end
 
-function CUDA.cu(A::Sparse3TensorSSM)
-    skeleton = CUDA.cu(A.skeleton)
-    projectors = [CUDA.cu(pr) for pr in A.projector]
-    return Sparse3TensorSSM(skeleton, projectors, A.size)
-end
-
 function tensordot(A::Sparse3TensorSSM, u::AbstractVector{T}, v::AbstractVector{T}, w::AbstractVector{T}) where T
     β = false
 	for pr_ in A.projector
@@ -278,6 +273,82 @@ function _project!(B::AbstractMatrix, A::Sparse3TensorSSM, w::AbstractVector{T})
 end
 
 project!(A::Sparse3TensorSSM, w::AbstractVector{T}) where T = _project!(A.skeleton, A, w)
+
+function nzrows(::Diagonal, j)
+    return (j, )
+end
+
+function nzrows(A::SparseMatrixCSC, j)
+    return (A.rowval[k] for k in nzrange(A, j))
+end
+
+function contract!(Δ_w, A::Sparse3TensorSSM, u, v, α, β)
+    Δ_skeleton = similar(nonzeros(A.skeleton))
+    i_nz = 0
+    temp = (u * transpose(v)) |> collect
+    for j in 1:size(A.skeleton, 2)
+        for i in nzrows(A.skeleton, j)
+            # i = A.skeleton.rowval[rowptr]
+            i_nz += 1
+            # Δ_skeleton[i_nz] = dot(@view(u[i, :]), @view(v[j, :]))
+            Δ_skeleton[i_nz] = temp[i, j]
+            # @show i_nz
+        end
+    end
+    for pr_ in A.projector
+        mul!(Δ_w, transpose(pr_), Δ_skeleton, α, β)
+    end
+    return Δ_w
+end
+
+function special_matmul!(out, is, js, u, v, α, β)
+    @kernel function special_matmul_kernel!(out, is, js, u, v, α, β)
+        k = @index(Global, Linear)
+        i = is[k]
+        j = js[k]
+        tmp = zero(Base.eltype(out))
+        for l in 1:size(u, 2)
+            tmp += u[i, l] * v[j, l]
+        end
+        out[k] = α * tmp + β * out[k]
+    end
+    backend = KernelAbstractions.get_backend(out)
+    kernel! = special_matmul_kernel!(backend)
+    kernel!(out, is, js, u, v, α, β, ndrange=length(is))
+end
+
+function get_ijs(A::Sparse3TensorSSM)
+    is = zeros(Int64, length(nonzeros(A.skeleton)))
+    js = zeros(Int64, length(nonzeros(A.skeleton)))
+    i_nz = 0
+    for j in 1:size(A.skeleton, 2)
+        for i in nzrows(A.skeleton, j)
+            i_nz += 1
+            is[i_nz] = i
+            js[i_nz] = j
+        end
+    end
+    return is, js
+end
+
+function contract!(Δ_w, A::Sparse3TensorSSM, uv, α, β)
+    # Δ_skeleton = similar(nonzeros(A.skeleton))
+    # i_nz = 0
+    temp = uv |> collect
+    # for j in 1:size(A.skeleton, 2)
+    #     for i in nzrows(A.skeleton, j)
+    #         # i = A.skeleton.rowval[rowptr]
+    #         i_nz += 1
+    #         # Δ_skeleton[i_nz] = dot(@view(u[i, :]), @view(v[j, :]))
+    #         Δ_skeleton[i_nz] = temp[i, j]
+    #         # @show i_nz
+    #     end
+    # end
+    for pr_ in A.projector
+        mul!(Δ_w, transpose(pr_), temp, α, β)
+    end
+    return Δ_w
+end
 
 function contract!(y::AbstractVector{T}, A::Sparse3TensorSSM, v::AbstractVector{T}, w::AbstractVector{T}, α_, β_) where T
     β = false

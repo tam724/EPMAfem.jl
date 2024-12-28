@@ -12,16 +12,19 @@ index_type(::Type{Float16}) = Int32
 mat_type(::PNCPU{T}) where T = Matrix{T}
 smat_type(::PNCPU{T}) where T = SparseMatrixCSC{T, index_type(T)}
 vec_type(::PNCPU{T}) where T = Vector{T}
+vec_type(Tv, ::PNCPU{T}) where T = Vector{Tv}
 base_type(::PNCPU{T}) where T = T
 
 mat_type(::PNCUDA{T}) where T = CuMatrix{T}
 smat_type(::PNCUDA{T}) where T = CUSPARSE.CuSparseMatrixCSC{T, index_type(T)}
 vec_type(::PNCUDA{T}) where T = CuVector{T}
+vec_type(Tv, ::PNCUDA{T}) where T = CuVector{Tv}
 base_type(::PNCUDA{T}) where T = T
 
 convert_to_architecture(arch::PNArchitecture{T}, x::Matrix) where T = mat_type(arch)(x)
 convert_to_architecture(arch::PNArchitecture{T}, x::SparseMatrixCSC) where T = smat_type(arch)(x)
 convert_to_architecture(arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(arch)(x)
+convert_to_architecture(Tv, arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(Tv, arch)(x)
 convert_to_architecture(arch::PNArchitecture{T}, x::Vector) where T = [convert_to_architecture(arch, xi) for xi in x]
 function convert_to_architecture(arch::PNArchitecture{T}, x::Sparse3Tensor.Sparse3TensorSSM) where T
     return Sparse3Tensor.Sparse3TensorSSM(
@@ -33,6 +36,7 @@ end
 convert_to_architecture(arch::PNArchitecture{T}, x::Diagonal) where T = Diagonal(convert_to_architecture(arch, x.diag))
 
 allocate_vec(arch::PNArchitecture{T}, n::Int) where T = vec_type(arch)(undef, n)
+allocate_mat(arch::PNArchitecture{T}, m::Int, n::Int) where T = mat_type(arch)(undef, m, n)
 
 abstract type AbstractPNGridapModel{PNA<:PNArchitecture} end
 

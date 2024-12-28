@@ -22,18 +22,18 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
 
     ## assemble all the space matrices
     ρp_tens = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
-    ρp_tensor = Sparse3Tensor.convert_to_SSM(ρp_tens) |> cv
-    ρp_tensor2 = Sparse3Tensor.convert_to_SSM(ρp_tens, :kij) |> cv
-    ρp = [copy(ρp_tensor.skeleton) for _ in 1:number_of_elements(pn_eq)]
+    ρp_tensor = Sparse3Tensor.convert_to_SSM(ρp_tens)
+    ρp_tensor2 = nothing #Sparse3Tensor.convert_to_SSM(ρp_tens, :kij) |> cv
+    ρp = [ρp_tensor.skeleton |> cv for _ in 1:number_of_elements(pn_eq)]
     # ρp_skeleton, ρp_projector = SM.build_projector(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
     # ρp = [SMT((assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[1], V[1]))) for e in 1:number_of_elements(pn_eq)] 
     # ρp = [SMT(ρp_skeleton) for _ in 1:number_of_elements(pn_eq)] 
     # ρp_proj = SMT(ρp_projector)
 
     ρm_tens = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
-    ρm_tensor = Sparse3Tensor.convert_to_SSM(ρm_tens) |> cv
-    ρm_tensor2 = Sparse3Tensor.convert_to_SSM(ρm_tens, :kij) |> cv
-    ρm = [copy(ρm_tensor.skeleton) for _ in 1:number_of_elements(pn_eq)]
+    ρm_tensor = Sparse3Tensor.convert_to_SSM(ρm_tens)
+    ρm_tensor2 = nothing #Sparse3Tensor.convert_to_SSM(ρm_tens, :kij) |> cv
+    ρm = [ρm_tensor.skeleton |> cv for _ in 1:number_of_elements(pn_eq)]
     # ρm_skeleton, ρm_projector = SM.build_projector(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
     # ρm = [Diagonal(VT(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
     # ρm = [Diagonal(VT(diag(ρm_skeleton))) for _ in 1:number_of_elements(pn_eq)]
@@ -41,10 +41,12 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
 
     ## fill the ρ*s
     # ρ_space = SM.material(space_model)
-    ρs = [SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_model) for e in 1:number_of_elements(pn_eq)] |> cv
+    ρs = [SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_model) for e in 1:number_of_elements(pn_eq)]
     for i in 1:number_of_elements(pn_eq)
-        Sparse3Tensor._project!(ρp[i], ρp_tensor, ρs[i])
-        Sparse3Tensor._project!(ρm[i], ρm_tensor, ρs[i])
+        Sparse3Tensor.project!(ρp_tensor, ρs[i])
+        nonzeros(ρp[i]) .= nonzeros(ρp_tensor.skeleton) |> cv
+        Sparse3Tensor.project!(ρm_tensor, ρs[i])
+        nonzeros(ρm[i]) .= nonzeros(ρm_tensor.skeleton) |> cv
     end
     # .project_matrices(ρp, ρp_proj, ρs)
     # SM.project_matrices(ρm, ρm_proj, ρs)

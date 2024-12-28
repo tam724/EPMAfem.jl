@@ -257,22 +257,37 @@ end
 function tangent(it::AdjointIterator)
     cached = saveall(it)
 
-    ρp_tangent = copy(it.system.ρp_tens.skeleton)
-    ρm_tangent = copy(it.system.ρm_tens.skeleton)
+    discrete_system = it.system
+
+    cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
+
+    ρp_tangent = cv(discrete_system.ρp_tens.skeleton)
+    ρm_tangent = cv(discrete_system.ρm_tens.skeleton)
     return ArrayOfTangentDiscretePNVector(ρp_tangent, ρm_tangent, cached)
 end
 
-function Base.getindex(arr::ArrayOfTangentDiscretePNVector, i_e, i_x)
+function Base.getindex(arr::ArrayOfTangentDiscretePNVector, i_e, i_x, Δ=true)
     discrete_system = arr.cached_solution.it.system
     T = base_type(architecture(discrete_system.model))
     VT = vec_type(architecture(discrete_system.model))
 
-    onehot = VT(undef, num_free_dofs(SpaceModels.material(space(discrete_system.model))))
-    onehot .= zero(T)
-    CUDA.@allowscalar onehot[i_x] = one(T)
-    
-    Sparse3Tensor._project!(arr.ρp_tangent, discrete_system.ρp_tens, onehot)
-    Sparse3Tensor._project!(arr.ρm_tangent, discrete_system.ρm_tens, onehot)
+    cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
+
+    onehot = zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model))))
+    onehot[i_x] = Δ
+    Sparse3Tensor.project!(discrete_system.ρp_tens, onehot)
+    Sparse3Tensor.project!(discrete_system.ρm_tens, onehot)
+    # ρp_nz = nonzeros(arr.ρp_tangent)
+    @show nonzeros(discrete_system.ρp_tens.skeleton) |> unique
+    # ρm_nz = nonzeros(arr.ρm_tangent)
+
+    # ρp_nz .= cv(nonzeros(discrete_system.ρp_tens.skeleton))
+    # ρm_nz .= cv(nonzeros(discrete_system.ρm_tens.skeleton))
+
+    copyto!(nonzeros(arr.ρp_tangent), nonzeros(discrete_system.ρp_tens.skeleton))
+    @show nonzeros(arr.ρp_tangent) |> collect |> unique
+
+    copyto!(nonzeros(arr.ρm_tangent), nonzeros(discrete_system.ρm_tens.skeleton))
     return TangentDiscretePNVector(arr, i_x, i_e)
     # return DiscretePNVector(arr.ρp_tangent[i], arr.ρm_tangent[i], arr.cached_solution)
 end
@@ -281,12 +296,18 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
     discrete_system = arr.cached_solution.it.system
 
     T = base_type(architecture(discrete_system.model))
-    cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
+    cv_Int(x) = convert_to_architecture(Int64, architecture(discrete_system.model), x)
 
     Δϵ = T(step(energy(discrete_system.model)))
 
-    ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model)))) for _ in 1:length(discrete_system.ρp)] |> cv
+    isp, jsp = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρp_tens))
+    ism, jsm = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρm_tens))
+
+    ΛpΦp = [allocate_vec(architecture(discrete_system.model), length(isp)) for _ in 1:length(discrete_system.ρp)]
+    ΛmΦm = [allocate_vec(architecture(discrete_system.model), length(ism)) for _ in 1:length(discrete_system.ρp)]
+
     skip_initial = true
+    write_initial = false
     for (ϵ, i_ϵ) in it
         if skip_initial
             skip_initial = false
@@ -315,11 +336,13 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
             Λp .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2p
             Λp .+= (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2p
 
-            for i_m in 1:size(Λ_im2p, 2)
+            # for i_m in 1:size(Λ_im2p, 2)
                 # CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.kp[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
                 # Λp = s_i / Δϵ * (@view(Λ_ip2p[:, i_m]) .- @view(Λ_im2p[:, i_m])) .+ (τ_i - σp_i.diag[i_m]) * T(0.5) * (@view(Λ_ip2p[:, i_m]) .+ @view(Λ_im2p[:, i_m]))
-                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens2, @view(Λp[:, i_m]), @view(Φp[:, i_m]), Δϵ, one(T))
-            end
+            # mul!(ΛpΦp[i_e], Λp, transpose(Φp), Δϵ, write_initial)
+            # @show typeof.((ΛpΦp[i_e], isp, jsp, Λp, Φp, Δϵ, write_initial))
+            Sparse3Tensor.special_matmul!(ΛpΦp[i_e], isp, jsp, Λp, Φp, Δϵ, write_initial)
+            # end
 
             σm_i = similar(discrete_system.km[i_e][1])
             fill!(σm_i, zero(eltype(σm_i)))
@@ -333,12 +356,19 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
             mul!(Λm, Λ_im2m, σm_i, -T(0.5), true)
             Λm .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2m
             Λm .+= (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2m
-            for i_m in 1:size(Λ_im2m, 2)
+            # for i_m in 1:size(Λ_im2m, 2)
                 # CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.km[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
                 # Λm = s_i / Δϵ * (@view(Λ_ip2m[:, i_m]) .- @view(Λ_im2m[:, i_m])) .+ (τ_i - σm_i.diag[i_m]) * T(0.5) * (@view(Λ_ip2m[:, i_m]) .+ @view(Λ_im2m[:, i_m]))
-                Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens2, @view(Λm[:, i_m]), @view(Φm[:, i_m]), Δϵ, one(T))
-            end
+            # end
+            # mul!(ΛmΦm[i_e], Λm, transpose(Φm), Δϵ, write_initial)
+            Sparse3Tensor.special_matmul!(ΛmΦm[i_e], ism, jsm, Λm, Φm, Δϵ, write_initial)
         end
+        write_initial = true
+    end
+    ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model)))) for _ in 1:length(discrete_system.ρp)]
+    for i_e in 1:length(discrete_system.ρp)
+        Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens, ΛpΦp[i_e], true, true)
+        Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens, ΛmΦm[i_e], true, true)
     end
     return ρs_adjoint
 end
