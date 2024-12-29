@@ -303,6 +303,16 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
     isp, jsp = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρp_tens))
     ism, jsm = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρm_tens))
 
+    n = number_of_basis_functions(discrete_system.model)
+
+    Λtemp = allocate_vec(architecture(discrete_system.model), max(n.x.p*n.Ω.p, n.x.m*n.Ω.m))
+    Λtempp = reshape(@view(Λtemp[1:n.x.p*n.Ω.p]), (n.x.p, n.Ω.p))
+    Λtempm = reshape(@view(Λtemp[1:n.x.m*n.Ω.m]), (n.x.m, n.Ω.m))
+
+    σtemp = allocate_vec(architecture(discrete_system.model), max(n.Ω.p, n.Ω.m))
+    σtempp = Diagonal(@view(σtemp[1:n.Ω.p]))
+    σtempm = Diagonal(@view(σtemp[1:n.Ω.m]))
+
     ΛpΦp = [allocate_vec(architecture(discrete_system.model), length(isp)) for _ in 1:length(discrete_system.ρp)]
     ΛmΦm = [allocate_vec(architecture(discrete_system.model), length(ism)) for _ in 1:length(discrete_system.ρp)]
 
@@ -324,51 +334,37 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
         for i_e in 1:1:length(discrete_system.ρp)
             s_i = discrete_system.s[i_e, i_ϵ]
             τ_i = discrete_system.τ[i_e, i_ϵ]
-            σp_i = similar(discrete_system.kp[i_e][1])
-            fill!(σp_i, zero(eltype(σp_i)))
-            for i in 1:size(discrete_system.σ, 2)
-                σp_i.diag .+= discrete_system.σ[i_e, i, i_ϵ] .* discrete_system.kp[i_e][i].diag
-            end
-            # Λp = s_i / Δϵ * (Λ_ip2p .- Λ_im2p) .+ T(0.5) * (Λ_ip2p .+ Λ_im2p) * (τ_i - σp_i)
-            Λp = similar(Λ_ip2p)
-            mul!(Λp, Λ_ip2p, σp_i, -T(0.5), false)
-            mul!(Λp, Λ_im2p, σp_i, -T(0.5), true)
-            Λp .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2p
-            Λp .+= (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2p
 
-            # for i_m in 1:size(Λ_im2p, 2)
-                # CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.kp[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
-                # Λp = s_i / Δϵ * (@view(Λ_ip2p[:, i_m]) .- @view(Λ_im2p[:, i_m])) .+ (τ_i - σp_i.diag[i_m]) * T(0.5) * (@view(Λ_ip2p[:, i_m]) .+ @view(Λ_im2p[:, i_m]))
-            # mul!(ΛpΦp[i_e], Λp, transpose(Φp), Δϵ, write_initial)
-            # @show typeof.((ΛpΦp[i_e], isp, jsp, Λp, Φp, Δϵ, write_initial))
-            Sparse3Tensor.special_matmul!(ΛpΦp[i_e], isp, jsp, Λp, Φp, Δϵ, write_initial)
-            # end
-
-            σm_i = similar(discrete_system.km[i_e][1])
-            fill!(σm_i, zero(eltype(σm_i)))
+            # σp_i = similar(discrete_system.kp[i_e][1])
+            rmul!(σtempp.diag, false)
             for i in 1:size(discrete_system.σ, 2)
-                σm_i.diag .+= discrete_system.σ[i_e, i, i_ϵ] .* discrete_system.km[i_e][i].diag
+                σtempp.diag .+= discrete_system.σ[i_e, i, i_ϵ] .* discrete_system.kp[i_e][i].diag
             end
-            # Λm = s_i / Δϵ * (Λ_ip2m .- Λ_im2m) .+ T(0.5) * (Λ_ip2m .+ Λ_im2m) * (τ_i - σm_i)
-            Λm = similar(Λ_ip2m)
-            Λm .= 0.0
-            mul!(Λm, Λ_ip2m, σm_i, -T(0.5), false)
-            mul!(Λm, Λ_im2m, σm_i, -T(0.5), true)
-            Λm .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2m
-            Λm .+= (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2m
-            # for i_m in 1:size(Λ_im2m, 2)
-                # CUDA.@allowscalar begin σ_i = sum(discrete_system.σ[i_e, i, i_ϵ] * discrete_system.km[i_e][i].diag[i_m] for i in 1:size(discrete_system.σ, 2)) end
-                # Λm = s_i / Δϵ * (@view(Λ_ip2m[:, i_m]) .- @view(Λ_im2m[:, i_m])) .+ (τ_i - σm_i.diag[i_m]) * T(0.5) * (@view(Λ_ip2m[:, i_m]) .+ @view(Λ_im2m[:, i_m]))
-            # end
-            # mul!(ΛmΦm[i_e], Λm, transpose(Φm), Δϵ, write_initial)
-            Sparse3Tensor.special_matmul!(ΛmΦm[i_e], ism, jsm, Λm, Φm, Δϵ, write_initial)
+
+            mul!(Λtempp, Λ_ip2p, σtempp, -T(0.5), false)
+            mul!(Λtempp, Λ_im2p, σtempp, -T(0.5), true)
+            Λtempp .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2p .+ (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2p
+
+            Sparse3Tensor.special_matmul!(ΛpΦp[i_e], isp, jsp, Λtempp, Φp, Δϵ, write_initial)
+
+            # σm_i = similar(discrete_system.km[i_e][1])
+            rmul!(σtempm.diag, false)
+            for i in 1:size(discrete_system.σ, 2)
+                σtempm.diag .+= discrete_system.σ[i_e, i, i_ϵ] .* discrete_system.km[i_e][i].diag
+            end
+
+            mul!(Λtempm, Λ_ip2m, σtempm, -T(0.5), false)
+            mul!(Λtempm, Λ_im2m, σtempm, -T(0.5), true)
+            Λtempm .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2m .+ (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2m
+
+            Sparse3Tensor.special_matmul!(ΛmΦm[i_e], ism, jsm, Λtempm, Φm, Δϵ, write_initial)
         end
         write_initial = true
     end
     ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model)))) for _ in 1:length(discrete_system.ρp)]
     for i_e in 1:length(discrete_system.ρp)
-        Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens, ΛpΦp[i_e], true, true)
-        Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens, ΛmΦm[i_e], true, true)
+        Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens, ΛpΦp[i_e] |> collect, true, true)
+        Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens, ΛmΦm[i_e] |> collect, true, true)
     end
     return ρs_adjoint
 end
