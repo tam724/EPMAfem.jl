@@ -16,7 +16,11 @@ function number_of_scatterings(::PNEquations)
 end
 
 function stopping_power(::PNEquations, e, ϵ)
-    return 1.0
+    if e == 1
+        return exp(-ϵ*0.5)
+    elseif e == 2
+        return exp(-ϵ*0.8)
+    end 
 end
 
 function absorption_coefficient(::PNEquations, e, ϵ)
@@ -72,6 +76,7 @@ function beam_energy_distribution(eq::PNExcitation, i, ϵ)
 end
 
 @concrete struct PNExtraction
+    extraction_energies
 end
 
 number_of_extractions(eq::PNExtraction) = 2
@@ -89,5 +94,9 @@ function extraction_direction_distribution(eq::PNExtraction, i, Ω)
 end
 
 function extraction_energy_distribution(eq::PNExtraction, i, ϵ)
-    return 1.0
+    if ϵ < eq.extraction_energies[i]
+        return 0.0
+    else
+        return sqrt(ϵ - eq.extraction_energies[i])
+    end
 end
