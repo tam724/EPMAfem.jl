@@ -7,6 +7,19 @@ using CUDA
 using ConcreteStructs
 using KernelAbstractions
 
+# some overloads to enable SparseArrays and Diagonal
+function SparseArrays.nonzeros(D::Diagonal)
+    return D.diag
+end
+
+function nzrows(::Diagonal, j)
+    return (j, )
+end
+
+function nzrows(A::SparseMatrixCSC, j)
+    return (A.rowval[k] for k in nzrange(A, j))
+end
+
 struct Sparse3TensorCOO{Tv, Ti<:Integer}
     i::Vector{Ti}
     j::Vector{Ti}
@@ -109,11 +122,21 @@ function sparse3tensor(A::AbstractArray{Tv, 3}, Ti=Int64) where Tv
     return Sparse3TensorCOO{Tv, Ti}(I, J, K, V, size(A))
 end
 
-function tensordot(A::Array{T, 3}, u::Vector{T}, v::Vector{T}, w::Vector{T}) where T
+@inline function _checksizes(A, u::AbstractVector, v::AbstractVector, w)
     @assert length(u) == size(A, 1) "Length of u must be equal to the first dimension of the tensor"
     @assert length(v) == size(A, 2) "Length of v must be equal to the second dimension of the tensor"
     @assert length(w) == size(A, 3) "Length of w must be equal to the third dimension of the tensor"
-    
+end
+
+@inline function _checksizes(A, u::AbstractMatrix, v::AbstractMatrix, w)
+    @assert size(u, 1) == size(A, 1) "Size 1 of u must be equal to the first dimension of the tensor"
+    @assert size(v, 1) == size(A, 2) "Size 1 of v must be equal to the second dimension of the tensor"
+    @assert size(u, 2) == size(v, 2) "Size 2 of u must be equal to size 2 of v"
+    @assert length(w) == size(A, 3) "Length of w must be equal to the third dimension of the tensor"
+end
+
+function tensordot(A::Array{T, 3}, u::Vector{T}, v::Vector{T}, w::Vector{T}) where T
+    _checksizes(A, u, v, w)
     ret = zero(T)
     for i in 1:size(A, 1), j in 1:size(A, 2), k in 1:size(A, 3)
         ret += A[i, j, k] * u[i] * v[j] * w[k]
@@ -121,14 +144,31 @@ function tensordot(A::Array{T, 3}, u::Vector{T}, v::Vector{T}, w::Vector{T}) whe
     return ret
 end
 
+function tensordot(A::Array{T, 3}, u::Matrix{T}, v::Matrix{T}, w::Vector{T}) where T
+    _checksizes(A, u, v, w)
+    ret = zero(T)
+    for i in 1:size(A, 1), j in 1:size(A, 2), k in 1:size(A, 3), l in 1:size(u, 2)
+        ret += A[i, j, k] * u[i, l] * v[j, l] * w[k]
+    end
+    return ret
+end
+
 function tensordot(A::Sparse3TensorCOO{T}, u::Vector{T}, v::Vector{T}, w::Vector{T}) where T
-    @assert length(u) == A.size[1] "Length of u must be equal to the first dimension of the tensor"
-    @assert length(v) == A.size[2] "Length of v must be equal to the second dimension of the tensor"
-    @assert length(w) == A.size[3] "Length of w must be equal to the third dimension of the tensor"
-    
+    _checksizes(A, u, v, w)
     ret = zero(T)
     for (i, j, k, val) in zip(A.i, A.j, A.k, A.vals)
         ret += val * u[i] * v[j] * w[k]
+    end
+    return ret
+end
+
+function tensordot(A::Sparse3TensorCOO{T}, u::Matrix{T}, v::Matrix{T}, w::Vector{T}) where T
+    _checksizes(A, u, v, w)
+    ret = zero(T)
+    for (i, j, k, val) in zip(A.i, A.j, A.k, A.vals)
+        for l in 1:size(u, 2)
+            ret += val * u[i, l] * v[j, l] * w[k]
+        end
     end
     return ret
 end
@@ -140,9 +180,8 @@ end
 	size::NTuple{3, <:Integer}
 end
 
-function SparseArrays.nonzeros(D::Diagonal)
-    return D.diag
-end
+Base.size(A::Sparse3TensorSSM) = A.size
+Base.size(A::Sparse3TensorSSM, i) = A.size[i]
 
 function find_nzval_index(::Diagonal, i, j)::Int64
     if i == j
@@ -196,12 +235,6 @@ function assemble_skeleton(I::AbstractVector{Ti}, J::AbstractVector{Ti}, n_vals,
         end
     end
 
-    # # detect diagonality
-    # if S[1] == S[2] && all(Is .== Js)
-    #     return Diagonal(zeros(Tv, S[1]))
-    # else 
-    #     return sparse(Is, Js, zeros(Tv, length(Is)), S[1], S[2])
-    # end
     return sparse_or_diagonal(Is, Js, zeros(Tv, length(Is)), S[1], S[2])
 end
 
@@ -229,8 +262,6 @@ function compute_projectors(I::AbstractVector{Ti}, J::AbstractVector{Ti}, K::Abs
         push!(p_Js[c], K[i])
         push!(p_Vs[c], V[i])
     end
-    # detect diagonality
-
     return [sparse_or_diagonal(p_Is[i], p_Js[i], p_Vs[i], length(nonzeros(skeleton)), S[3]) for i in 1:coloring.num_colors]
 end
 
@@ -255,12 +286,24 @@ function convert_to_SSM(A::Sparse3TensorCOO{Tv, Ti}, ordering=:ijk) where {Tv, T
 end
 
 function tensordot(A::Sparse3TensorSSM, u::AbstractVector{T}, v::AbstractVector{T}, w::AbstractVector{T}) where T
+    _checksizes(A, u, v, w)
     β = false
 	for pr_ in A.projector
 		mul!(nonzeros(A.skeleton), pr_, w, true, β)
         β = true
 	end
     return dot(u, A.skeleton, v)
+end
+
+# generalized tensordot for Matrices u and v
+function tensordot(A::Sparse3TensorSSM, u::AbstractMatrix{T}, v::AbstractMatrix{T}, w::AbstractVector{T}) where T
+    _checksizes(A, u, v, w)
+    β = false
+	for pr_ in A.projector
+		mul!(nonzeros(A.skeleton), pr_, w, true, β)
+        β = true
+	end
+    return dot(u, A.skeleton*v)
 end
 
 function _project!(B::AbstractMatrix, A::Sparse3TensorSSM, w::AbstractVector{T}) where T
@@ -274,47 +317,22 @@ end
 
 project!(A::Sparse3TensorSSM, w::AbstractVector{T}) where T = _project!(A.skeleton, A, w)
 
-function nzrows(::Diagonal, j)
-    return (j, )
-end
-
-function nzrows(A::SparseMatrixCSC, j)
-    return (A.rowval[k] for k in nzrange(A, j))
-end
-
 function contract!(Δ_w, A::Sparse3TensorSSM, u, v, α, β)
     Δ_skeleton = similar(nonzeros(A.skeleton))
     i_nz = 0
-    temp = (u * transpose(v)) |> collect
+    temp = u * transpose(v)
     for j in 1:size(A.skeleton, 2)
         for i in nzrows(A.skeleton, j)
-            # i = A.skeleton.rowval[rowptr]
             i_nz += 1
             # Δ_skeleton[i_nz] = dot(@view(u[i, :]), @view(v[j, :]))
             Δ_skeleton[i_nz] = temp[i, j]
-            # @show i_nz
         end
     end
+    rmul!(Δ_w, β)
     for pr_ in A.projector
-        mul!(Δ_w, transpose(pr_), Δ_skeleton, α, β)
+        mul!(Δ_w, transpose(pr_), Δ_skeleton, α, true)
     end
     return Δ_w
-end
-
-function special_matmul!(out, is, js, u, v, α, β)
-    @kernel function special_matmul_kernel!(out, is, js, u, v, α, β)
-        k = @index(Global, Linear)
-        i = is[k]
-        j = js[k]
-        tmp = zero(Base.eltype(out))
-        for l in 1:size(u, 2)
-            tmp += u[i, l] * v[j, l]
-        end
-        out[k] = α * tmp + β * out[k]
-    end
-    backend = KernelAbstractions.get_backend(out)
-    kernel! = special_matmul_kernel!(backend)
-    kernel!(out, is, js, u, v, α, β, ndrange=length(is))
 end
 
 function get_ijs(A::Sparse3TensorSSM)
@@ -331,33 +349,27 @@ function get_ijs(A::Sparse3TensorSSM)
     return is, js
 end
 
-function contract!(Δ_w, A::Sparse3TensorSSM, uv, α, β)
-    # Δ_skeleton = similar(nonzeros(A.skeleton))
-    # i_nz = 0
-    temp = uv |> collect
-    # for j in 1:size(A.skeleton, 2)
-    #     for i in nzrows(A.skeleton, j)
-    #         # i = A.skeleton.rowval[rowptr]
-    #         i_nz += 1
-    #         # Δ_skeleton[i_nz] = dot(@view(u[i, :]), @view(v[j, :]))
-    #         Δ_skeleton[i_nz] = temp[i, j]
-    #         # @show i_nz
-    #     end
-    # end
+function special_matmul!(uv_nz, is, js, u, v, α, β)
+    @kernel function special_matmul_kernel!(out, is, js, u, v, α, β)
+        k = @index(Global, Linear)
+        i = is[k]
+        j = js[k]
+        tmp = zero(Base.eltype(out))
+        for l in 1:size(u, 2)
+            tmp += u[i, l] * v[j, l]
+        end
+        uv_nz[k] = α * tmp + β * out[k]
+    end
+    backend = KernelAbstractions.get_backend(uv_nz)
+    kernel! = special_matmul_kernel!(backend)
+    kernel!(uv_nz, is, js, u, v, α, β, ndrange=length(is))
+end
+
+function contract!(Δ_w, A::Sparse3TensorSSM, uv_nz, α, β)
+    rmul!(Δ_w, β)
     for pr_ in A.projector
-        mul!(Δ_w, transpose(pr_), temp, α, β)
+        mul!(Δ_w, transpose(pr_), uv_nz, α, true)
     end
     return Δ_w
 end
-
-function contract!(y::AbstractVector{T}, A::Sparse3TensorSSM, v::AbstractVector{T}, w::AbstractVector{T}, α_, β_) where T
-    β = false
-    for pr_ in A.projector
-        mul!(nonzeros(A.skeleton), pr_, w, true, β)
-        β = true
-    end
-    mul!(y, A.skeleton, v, α_, β_)
-    return y
-end
-
 end

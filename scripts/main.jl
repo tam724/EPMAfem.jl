@@ -8,19 +8,20 @@ using Plots
 #import EPMAfem.SpaceModels as SM
 using LinearAlgebra
 using Gridap
+#using StaticArrays
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (100, 200)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
 
 equations = EPMAfem.PNEquations()
 excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.05:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
-extraction = EPMAfem.PNExtraction()
+extraction = EPMAfem.PNExtraction([0.1, 0.2])
 
 # SM.dimensionality(space_model)
 # SH.dimensionality(direction_model)
 
 model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
-model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
+#model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
 # model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.05:1.0, direction_model, EPMAfem.cuda())
 
 # discrete_problem_cpu = EPMAfem.discretize_problem(equations, model_cpu)
@@ -79,32 +80,39 @@ solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, sqrt(eps
 # solution = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 14, 1], solver)
 
 g = discrete_rhs
-A_gi = EPMAfem.iterator(discrete_problem, g[1, 14, 1], solver_schur)
+A_gi1 = EPMAfem.iterator(discrete_problem, g[1, 20, 1], solver_schur)
+A_gi2 = EPMAfem.iterator(discrete_problem, g[1, 13, 1], solver_schur)
 h = discrete_ext
 
-hh = h(A_gi)
+hh1 = h(A_gi1)
+hh2 = h(A_gi2)
 
-for (ϵ, i) in A_gi
+@gif for (ϵ, i) in Astar_hi2
     @show i
-    sol = EPMAfem.current_solution(A_gi.solver)
+    sol = EPMAfem.current_solution(Astar_hi1.solver)
     sol_p = EPMAfem.pview(sol, model)
     cpu_vec = collect(@view(sol_p[:, 1]))
     # @show sol_p |> size
-    p = heatmap(reshape(cpu_vec, (21, 41)))
-    display(p)
-    sleep(0.01)
+    heatmap(reshape(cpu_vec, (101, 201)))
+    #display(p)
+    #sleep(0.01)
 end
 
 cv(x) = EPMAfem.convert_to_architecture(EPMAfem.architecture(model), x)
 ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
 EPMAfem.update_problem!(discrete_problem, ρs)
 
+Astar_hi1 = EPMAfem.iterator(discrete_problem, h[1], solver_schur)
+Astar_hi2 = EPMAfem.iterator(discrete_problem, h[2], solver_schur)
+gg1 = g(Astar_hi1)
+gg2 = g(Astar_hi2)
 
-Astar_hi = EPMAfem.iterator(discrete_problem, h[1], solver_schur)
-gg = g(Astar_hi)
+plot(gg1[1, :, 1])
+plot!(gg2[1, :, 1])
 
-hh[1]
-gg[1, 14, 1]
+scatter!([20, 20], [hh1[1], hh1[2]])
+scatter!([13, 13], [hh2[1], hh2[2]])
+
 
 cache = EPMAfem.saveall(solution)
 
@@ -194,17 +202,20 @@ new_rhs_full = tangent_rhs_full[1, 400];
 der_sol_schur = EPMAfem.iterator(discrete_problem, new_rhs_schur, solver_schur);
 der_sol_full = EPMAfem.iterator(discrete_problem, new_rhs_full, solver_full);
 
-meas_tang_schur = discrete_rhs(der_sol_schur)
+EPMAfem.CUDA.@profile meas_tang_schur = discrete_rhs(der_sol_schur)
 
 weights = zeros(size(discrete_rhs))
 weights[1, 15, 1] = 1.0
 adjoint_rhs_schur = EPMAfem.weight_array_of_r1(weights, discrete_rhs)
 adjoint_adjoint_solution_schur = EPMAfem.iterator(discrete_problem, adjoint_rhs_schur, solver_schur) 
 EPMAfem.CUDA.@profile ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
+
 @profview ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
 
 Ag = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 15, 1], solver_schur)
 EPMAfem.CUDA.@profile discrete_ext(Ag)
+
+heatmap(reshape(ρs_adjoint[1], (20, 40)))
 
 tensor = discrete_problem.ρp_tens2
 using CUDA
@@ -223,8 +234,8 @@ v = CUDA.rand(861)
     heatmap(reshape(cpu_vec, (21, 41)))
 end
 
-Vector(ρs_adjoint[1])[400]
-meas_tang_schur[1, 15, 1]
+ρs_adjoint[1][400]
+meas_tang_schur[1, 15, 1] 
 
 m = FEFunction(EPMAfem.SpaceModels.material(EPMAfem.space(model)), ρs_adjoint[1])
 
