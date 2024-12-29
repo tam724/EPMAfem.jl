@@ -6,7 +6,7 @@ abstract type AbstractPNEquations end
 
 """
     PNEquations
-    ``\\partial_ϵ(s\\psi) + s\\partial_\\epsilon \\psi ``
+    ``∂ₑ(su) + Ω⋅∇u + τu ...``
 """
 struct PNEquations{EEQ} <: AbstractPNEquations
     eq::EEQ
@@ -51,6 +51,7 @@ end
 
 number_of_elements(eq::PNEquations) = number_of_elements(eq.eq)
 number_of_scatterings(eq::PNEquations) = number_of_scatterings(eq.eq)
+
 number_of_beam_energies(eq::PNEquations) = number_of_beam_energies(eq.eq)
 number_of_beam_positions(eq::PNEquations) = number_of_beam_positions(eq.eq)
 number_of_beam_directions(eq::PNEquations) = number_of_beam_directions(eq.eq)
@@ -103,6 +104,4 @@ function _specific_attenuation_coefficient(eq::PNEquations, e, j)
     units_specific_attenuation_coefficient = unit_mass(eq) / unit_length(eq)^3
     return specific_attenuation_coefficient(eq.eq, e, j) / units_specific_attenuation_coefficient
 end
-
-
 

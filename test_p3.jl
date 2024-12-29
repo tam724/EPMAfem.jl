@@ -11,7 +11,6 @@ using Lux
 using Optim, Lux, Random, Optimisers
 using GridapGmsh
 
-
 include("spherical_harmonics.jl")
 using .SphericalHarmonicsMatrices
 include("epma-fem.jl")

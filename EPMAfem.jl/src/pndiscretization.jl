@@ -1,0 +1,131 @@
+
+function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
+    T = base_type(architecture(discrete_model))
+    cv(x) = convert_to_architecture(architecture(discrete_model), x)
+
+    ϵs = energy(discrete_model)
+
+    n_elem = number_of_elements(pn_eq)
+    n_scat = number_of_scatterings(pn_eq)
+
+    ## assemble (compute) all the energy matrices
+    s = Matrix{T}([stopping_power(pn_eq, e, ϵ) for e in 1:n_elem, ϵ ∈ ϵs])
+    τ = Matrix{T}([absorption_coefficient(pn_eq, e, ϵ) for e in 1:n_elem, ϵ ∈ ϵs])
+    σ = Array{T}([scattering_coefficient(pn_eq, e, i, ϵ) for e in 1:n_elem, i in 1:n_scat, ϵ ∈ ϵs])
+
+    ## instantiate Gridap
+    space_model = space(discrete_model)
+    direction_model = direction(discrete_model)
+
+    SM = EPMAfem.SpaceModels
+    SH = EPMAfem.SphericalHarmonicsModels
+
+    ## assemble all the space matrices
+    ρp_tens = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
+    ρp_tensor = Sparse3Tensor.convert_to_SSM(ρp_tens)
+    ρp_tensor2 = nothing #Sparse3Tensor.convert_to_SSM(ρp_tens, :kij) |> cv
+    ρp = [ρp_tensor.skeleton |> cv for _ in 1:number_of_elements(pn_eq)]
+    # ρp_skeleton, ρp_projector = SM.build_projector(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
+    # ρp = [SMT((assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[1], V[1]))) for e in 1:number_of_elements(pn_eq)] 
+    # ρp = [SMT(ρp_skeleton) for _ in 1:number_of_elements(pn_eq)] 
+    # ρp_proj = SMT(ρp_projector)
+
+    ρm_tens = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
+    ρm_tensor = Sparse3Tensor.convert_to_SSM(ρm_tens)
+    ρm_tensor2 = nothing #Sparse3Tensor.convert_to_SSM(ρm_tens, :kij) |> cv
+    ρm = [ρm_tensor.skeleton |> cv for _ in 1:number_of_elements(pn_eq)]
+    # ρm_skeleton, ρm_projector = SM.build_projector(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
+    # ρm = [Diagonal(VT(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
+    # ρm = [Diagonal(VT(diag(ρm_skeleton))) for _ in 1:number_of_elements(pn_eq)]
+    # ρm_proj = Diagonal(VT(diag(ρm_projector)))
+
+    ## fill the ρ*s
+    # ρ_space = SM.material(space_model)
+    ρs = [SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_model) for e in 1:number_of_elements(pn_eq)]
+    for i in 1:number_of_elements(pn_eq)
+        Sparse3Tensor.project!(ρp_tensor, ρs[i])
+        nonzeros(ρp[i]) .= nonzeros(ρp_tensor.skeleton) |> cv
+        Sparse3Tensor.project!(ρm_tensor, ρs[i])
+        nonzeros(ρm[i]) .= nonzeros(ρm_tensor.skeleton) |> cv
+    end
+    # .project_matrices(ρp, ρp_proj, ρs)
+    # SM.project_matrices(ρm, ρm_proj, ρs)
+
+    ∂p = [dropzeros(SM.assemble_bilinear(∫, space_model, SM.even(space_model), SM.even(space_model))) for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(discrete_model))] |> cv
+    ∇pm = [SM.assemble_bilinear(∫, space_model, SM.odd(space_model), SM.even(space_model)) for ∫ ∈ SM.∫R_u_∂v(dimensionality(discrete_model))] |> cv
+
+    ## assemble all the direction matrices
+    # Kpp, Kmm = assemble_scattering_matrices(max_degree(discrete_model), _electron_scattering_kernel(pn_eq, 1, 1), nd(discrete_model))
+    kp = [[to_diag(SH.assemble_bilinear(SH.∫S²_kuv(μ->electron_scattering_kernel(pn_eq, e, i, μ)), direction_model, SH.even(direction_model), SH.even(direction_model), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> cv
+    km = [[to_diag(SH.assemble_bilinear(SH.∫S²_kuv(μ->electron_scattering_kernel(pn_eq, e, i, μ)), direction_model, SH.odd(direction_model), SH.odd(direction_model), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> cv
+
+    Ip = to_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_model, SH.even(direction_model), SH.even(direction_model), SH.exact_quadrature())) |> cv
+    Im = to_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_model, SH.odd(direction_model), SH.odd(direction_model), SH.exact_quadrature())) |> cv
+
+    absΩp = [SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.even(direction_model), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(discrete_model))] |> cv
+    Ωpm = [SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.odd(direction_model), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(discrete_model))] |> cv
+
+    DiscretePNSystem(discrete_model, s, τ, σ, ρp, ρp_tensor, ρp_tensor2, ρm, ρm_tensor, ρm_tensor2, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
+end
+
+function update_problem!(discrete_system, ρs)
+    for (ρp, ρ) in zip(discrete_system.ρp, ρs)
+        Sparse3Tensor._project!(ρp, discrete_system.ρp_tens, ρ)
+    end
+    for (ρm, ρ) in zip(discrete_system.ρm, ρs)
+        Sparse3Tensor._project!(ρm, discrete_system.ρm_tens, ρ)
+    end
+end
+
+function discretize_rhs(pn_ex::PNExcitation, discrete_model::PNGridapModel)
+    T = base_type(architecture(discrete_model))
+    cv(x) = convert_to_architecture(architecture(discrete_model), x)
+
+    SM = EPMAfem.SpaceModels
+    SH = EPMAfem.SphericalHarmonicsModels
+
+    space_model = space(discrete_model)
+    direction_model = direction(discrete_model)
+    ## assemble excitation 
+    gϵs = [Vector{T}([beam_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy(discrete_model)]) for i in 1:number_of_beam_energies(pn_ex)]
+    gxps = [SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> beam_space_distribution(pn_ex, i, Dimensions.extend_3D(x))), space_model, SM.even(space_model)) for i in 1:number_of_beam_positions(pn_ex)] |> cv
+    nz = Dimensions.cartesian_unit_vector(Dimensions.Z(), dimensionality(discrete_model))
+    nz3D = Dimensions.extend_3D(nz)
+    gΩps = [SH.assemble_linear(SH.∫S²_nΩgv(nz3D, Ω -> beam_direction_distribution(pn_ex, i, Ω)), direction_model, SH.even(direction_model)) for i in 1:number_of_beam_directions(pn_ex)] |> cv
+    return ArrayOfRank1DiscretePNVector{false}(discrete_model, gϵs, gxps, gΩps)
+end
+
+function discretize_stange_rhs(pn_ex::PNExcitation, discrete_model::PNGridapModel)
+    T = base_type(architecture(discrete_model))
+    cv(x) = convert_to_architecture(architecture(discrete_model), x)
+
+    SM = EPMAfem.SpaceModels
+    SH = EPMAfem.SphericalHarmonicsModels
+
+    space_model = space(discrete_model)
+    direction_model = direction(discrete_model)
+    ## assemble excitation 
+    gϵs = Vector{T}([beam_energy_distribution(pn_ex, 1, ϵ) for ϵ ∈ energy(discrete_model)])
+    gxps = (SM.assemble_linear(SM.∫R_μv(x -> -exp(-100.0*((x[1]+0.5)^2+(x[2])^2))), space_model, SM.even(space_model)))
+    gΩps = (SH.assemble_linear(SH.∫S²_hv(Ω -> 1.0), direction_model, SH.even(direction_model)))
+    return Rank1DiscretePNVector{false}(discrete_model, gϵs, gxps, gΩps)
+end
+
+function discretize_extraction(pn_ex::PNExtraction, discrete_model::PNGridapModel)
+    T = base_type(architecture(discrete_model))
+    cv(x) = convert_to_architecture(architecture(discrete_model), x)
+
+    ## instantiate Gridap
+    SM = EPMAfem.SpaceModels
+    SH = EPMAfem.SphericalHarmonicsModels
+
+    space_model = space(discrete_model)
+    direction_model = direction(discrete_model)
+
+    ## ... and extraction
+    μϵs = [Vector{T}([extraction_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy(discrete_model)]) for i in 1:number_of_extractions(pn_ex)]
+    μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_model, SM.even(space_model)) for i in 1:number_of_extractions(pn_ex)] |> cv
+    μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_model, SH.even(direction_model)) for i in 1:number_of_extractions(pn_ex)] |> cv
+
+    return VecOfRank1DiscretePNVector{true}(discrete_model, μϵs, μxps, μΩps)
+end
