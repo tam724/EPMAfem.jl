@@ -35,6 +35,7 @@ Base.size(A::BlockedMatrix) = length.(A.axes)
 Base.size(A::BlockedMatrix, i) = length(A.axes[i])
 Base.eltype(::BlockedMatrix{T}) where T = T
 Base.:≈(A::AbstractMatrix, B::BlockedMatrix) = A ≈ collect(B)
+Base.:≈(A::BlockedMatrix, B::BlockedMatrix) = collect(A) ≈ collect(B)
 Base.:≈(B::BlockedMatrix, A::AbstractMatrix) = collect(B) ≈ A
 num_blocks(A::BlockedMatrix) = length(A.blocks)
 
@@ -59,6 +60,15 @@ function Base.collect(A::BlockedMatrix)
         A_full[inds[1], inds[2]] .= block
     end
     return A_full
+end
+
+function Base.collect(AT::Transpose{T, <:BlockedMatrix{T}}) where T
+    AT_full = zeros(size(AT))
+    A = AT.parent
+    for (inds, block) in zip(A.indices, A.blocks)
+        AT_full[inds[2], inds[1]] .= transpose(block)
+    end
+    return AT_full
 end
 
 function LinearAlgebra.mul!(C::AbstractMatrix, B::AbstractMatrix, A::BlockedMatrix, α::Number, β::Number)
