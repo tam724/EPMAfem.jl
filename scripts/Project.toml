@@ -1,11 +1,11 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
 EPMAfem = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
-GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 HCubature = "19dc6840-f33b-545b-b366-655c7e3ffd49"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
