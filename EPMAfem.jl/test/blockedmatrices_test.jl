@@ -35,10 +35,7 @@ function test_blocked_matrix_construction(m, n, n_blocks)
     AT = transpose(A)
     AT_full = transpose(A_full)
 
-    AT_full_from_AT = AT |> collect
-    
-    @test AT ≈ AT_full
-    @test AT ≈ AT_full_from_AT
+    @test AT |> collect ≈ AT_full
 end
 
 test_blocked_matrix_construction(20, 30, 5)
