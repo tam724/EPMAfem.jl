@@ -30,6 +30,7 @@ include("pnarchitecture.jl")
 include("pnmodel.jl")
 include("pnproblem.jl")
 include("pnvector.jl")
+include("pnderivativevector.jl")
 
 include("pndiscretization.jl")
 include("systems/pnsystems.jl")
