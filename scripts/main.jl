@@ -33,6 +33,8 @@ model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model)
 
 #model = model_cuda
 discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
+discrete_system = EPMAfem.schurimplicitmidpointsystem(discrete_problem, sqrt(eps(Float64)))
+
 discrete_problem2 = EPMAfem.discretize_problem(equations, model_cuda)
 
 for (ρp, ρp2) in zip(discrete_problem.ρp, discrete_problem2.ρp)
@@ -72,14 +74,14 @@ discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
 #test_rhs = EPMAfem.discretize_stange_rhs(excitation, model)
 discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())
 
-solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, EPMAfem.cuda(), sqrt(eps(Float64)))
+# solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, EPMAfem.cuda(), sqrt(eps(Float64)))
 
 #solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model)
 # solution = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 14, 1], solver)
 
 g = discrete_rhs
-A_gi1 = EPMAfem.iterator(discrete_problem, g[1, 20, 1], solver_schur)
-A_gi2 = EPMAfem.iterator(discrete_problem, g[1, 13, 1], solver_schur)
+A_gi1 = EPMAfem.iterator(discrete_system, g[1, 20, 1])
+A_gi2 = EPMAfem.iterator(discrete_system, g[1, 13, 1])
 h = discrete_ext
 
 hh1 = h(A_gi1)
@@ -90,7 +92,7 @@ hh2 = h(A_gi2)
 
 @gif for (ϵ, i) in A_gi1
     @show i
-    sol = EPMAfem.current_solution(A_gi1.solver)
+    sol = EPMAfem.current_solution(A_gi1.system)
     sol_p = EPMAfem.pview(sol, model)
     cpu_vec = collect(@view(sol_p[:, 1]))
     # @show sol_p |> size
@@ -103,17 +105,16 @@ cv(x) = EPMAfem.convert_to_architecture(EPMAfem.architecture(model), x)
 ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space_model(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
 EPMAfem.update_problem!(discrete_problem, ρs)
 
-Astar_hi1 = EPMAfem.iterator(discrete_problem, h[1], solver_schur)
-Astar_hi2 = EPMAfem.iterator(discrete_problem, h[2], solver_schur)
+Astar_hi1 = EPMAfem.iterator(discrete_system, h[1])
+Astar_hi2 = EPMAfem.iterator(discrete_system, h[2])
 gg1 = g(Astar_hi1)
 gg2 = g(Astar_hi2)
 
 plot(gg1[1, :, 1])
-plot!(gg2[2, :, 2])
+plot!(gg2[1, :, 1])
 
 scatter!([20, 20], [hh1[1], hh1[2]])
 scatter!([13, 13], [hh2[1], hh2[2]])
-
 
 cache = EPMAfem.saveall(solution)
 
@@ -152,7 +153,8 @@ rev_solution = EPMAfem.reverse_iterator(discrete_problem, discrete_rhs[1, 14, 1]
 end fps = 5
 
 
-solution_schur = EPMAfem.iterator(discrete_problem, discrete_ext[1], solver_schur)
+solution_schur = EPMAfem.iterator(discrete_system, discrete_ext[1])
+
 solution_full = EPMAfem.iterator(discrete_problem, discrete_ext[1], solver_full)
 meas_schur = discrete_rhs(solution_schur)
 meas_full = discrete_rhs(solution_full)
@@ -200,7 +202,7 @@ tangent_rhs_full = EPMAfem.tangent(solution_full)
 new_rhs_schur = tangent_rhs_schur[1, 400, 1e6];
 new_rhs_full = tangent_rhs_full[1, 400];
 
-der_sol_schur = EPMAfem.iterator(discrete_problem, new_rhs_schur, solver_schur);
+der_sol_schur = EPMAfem.iterator(discrete_system, new_rhs_schur);
 der_sol_full = EPMAfem.iterator(discrete_problem, new_rhs_full, solver_full);
 
 meas_tang_schur = discrete_rhs(der_sol_schur)
@@ -208,7 +210,7 @@ meas_tang_schur = discrete_rhs(der_sol_schur)
 weights = zeros(size(discrete_rhs))
 weights[1, 15, 1] = 1.0
 adjoint_rhs_schur = EPMAfem.weight_array_of_r1(weights, discrete_rhs)
-adjoint_adjoint_solution_schur = EPMAfem.iterator(discrete_problem, adjoint_rhs_schur, solver_schur) 
+adjoint_adjoint_solution_schur = EPMAfem.iterator(discrete_system, adjoint_rhs_schur)
 ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
 
 @profview ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)

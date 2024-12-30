@@ -28,12 +28,11 @@ include("utils.jl")
 include("pnequations.jl")
 include("pnarchitecture.jl")
 include("pnmodel.jl")
-include("pnsystem.jl")
-
+include("pnproblem.jl")
 include("pnvector.jl")
 
 include("pndiscretization.jl")
-include("solver/solver.jl")
+include("systems/pnsystems.jl")
 
 
 end # module EPMAfem

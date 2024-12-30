@@ -9,7 +9,7 @@ end
 end
 
 function (b::VecOfDerivativePNVector)(it::NonAdjointIterator)
-    Δϵ = step(b.model.energy_model)
+    Δϵ = step(energy_model(b.model))
     integral = 0.0
     for (ϵ, i_ϵ) in it
         ψp = pview(current_solution(it.solver), it.system.model)

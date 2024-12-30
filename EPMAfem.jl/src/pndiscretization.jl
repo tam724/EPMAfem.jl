@@ -65,7 +65,7 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel, a
     Ωpm_full = [SH.assemble_bilinear(∫, direction_mdl, SH.even(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(discrete_model))]
     Ωpm = [BlockedMatrices.blocked_from_mat(Ωpm_full[i], SH.get_indices_∫S²Ωuv(direction_mdl, dim)) for (i, dim) in enumerate(dimensions(discrete_model))] |> arch
     # Ωpm = Ωpm_full |> arch
-    DiscretePNSystem(discrete_model, arch, s, τ, σ, ρp, ρp_tensor, ρm, ρm_tensor, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
+    DiscretePNProblem(discrete_model, arch, s, τ, σ, ρp, ρp_tensor, ρm, ρm_tensor, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
 end
 
 function update_problem!(discrete_system, ρs)
