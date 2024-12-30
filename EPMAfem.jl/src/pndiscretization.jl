@@ -23,7 +23,6 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
     ## assemble all the space matrices
     ρp_tens = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
     ρp_tensor = Sparse3Tensor.convert_to_SSM(ρp_tens)
-    ρp_tensor2 = nothing #Sparse3Tensor.convert_to_SSM(ρp_tens, :kij) |> cv
     ρp = [ρp_tensor.skeleton |> cv for _ in 1:number_of_elements(pn_eq)]
     # ρp_skeleton, ρp_projector = SM.build_projector(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
     # ρp = [SMT((assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[1], V[1]))) for e in 1:number_of_elements(pn_eq)] 
@@ -32,7 +31,6 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
 
     ρm_tens = SM.assemble_trilinear(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
     ρm_tensor = Sparse3Tensor.convert_to_SSM(ρm_tens)
-    ρm_tensor2 = nothing #Sparse3Tensor.convert_to_SSM(ρm_tens, :kij) |> cv
     ρm = [ρm_tensor.skeleton |> cv for _ in 1:number_of_elements(pn_eq)]
     # ρm_skeleton, ρm_projector = SM.build_projector(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
     # ρm = [Diagonal(VT(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
@@ -68,7 +66,7 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
     Ωpm_full = [SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.odd(direction_model), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(discrete_model))]
     Ωpm = [BlockedMatrices.blocked_from_mat(Ωpm_full[i], SH.get_indices_∫S²Ωuv(direction_model, dim)) for (i, dim) in enumerate(dimensions(discrete_model))] |> cv
     # Ωpm = Ωpm_full |> cv
-    DiscretePNSystem(discrete_model, s, τ, σ, ρp, ρp_tensor, ρp_tensor2, ρm, ρm_tensor, ρm_tensor2, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
+    DiscretePNSystem(discrete_model, s, τ, σ, ρp, ρp_tensor, ρm, ρm_tensor, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
 end
 
 function update_problem!(discrete_system, ρs)

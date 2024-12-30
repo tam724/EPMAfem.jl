@@ -9,10 +9,8 @@
     # space (might be moved to gpu)
     ρp
     ρp_tens
-    ρp_tens2
     ρm
     ρm_tens
-    ρm_tens2
 
     ∂p
     ∇pm
