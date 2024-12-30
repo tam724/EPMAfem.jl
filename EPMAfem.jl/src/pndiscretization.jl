@@ -91,7 +91,7 @@ function discretize_rhs(pn_ex::PNExcitation, discrete_model::PNGridapModel, arch
     nz = Dimensions.cartesian_unit_vector(Dimensions.Z(), dimensionality(discrete_model))
     nz3D = Dimensions.extend_3D(nz)
     gΩps = [SH.assemble_linear(SH.∫S²_nΩgv(nz3D, Ω -> beam_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.even(direction_mdl)) for i in 1:number_of_beam_directions(pn_ex)] |> arch
-    return ArrayOfRank1DiscretePNVector{false}(discrete_model, arch, gϵs, gxps, gΩps)
+    return [Rank1DiscretePNVector{false}(discrete_model, arch, gϵs[i], gxps[j], gΩps[k]) for i in 1:number_of_beam_energies(pn_ex), j in 1:number_of_beam_positions(pn_ex), k in 1:number_of_beam_directions(pn_ex)]
 end
 
 # function discretize_stange_rhs(pn_ex::PNExcitation, discrete_model::PNGridapModel, arch::PNArchitecture)
@@ -124,5 +124,23 @@ function discretize_extraction(pn_ex::PNExtraction, discrete_model::PNGridapMode
     μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.even(space_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
     μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.even(direction_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
 
-    return VecOfRank1DiscretePNVector{true}(discrete_model, arch, μϵs, μxps, μΩps)
+    return [Rank1DiscretePNVector{true}(discrete_model, arch, μϵs[i], μxps[i], μΩps[i]) for i in 1:number_of_extractions(pn_ex)]
 end
+
+# function discretize_extraction_old(pn_ex::PNExtraction, discrete_model::PNGridapModel, arch::PNArchitecture)
+#     T = base_type(arch)
+
+#     ## instantiate Gridap
+#     SM = EPMAfem.SpaceModels
+#     SH = EPMAfem.SphericalHarmonicsModels
+
+#     space_mdl = space_model(discrete_model)
+#     direction_mdl = direction_model(discrete_model)
+
+#     ## ... and extraction
+#     μϵs = [Vector{T}([extraction_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(discrete_model)]) for i in 1:number_of_extractions(pn_ex)]
+#     μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.even(space_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
+#     μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.even(direction_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
+
+#     return VecOfRank1DiscretePNVector{true}(discrete_model, arch, μϵs, μxps, μΩps)
+# end
