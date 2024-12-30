@@ -137,7 +137,7 @@ function step_adjoint!(solver::PNFullImplicitMidpointSolver{T}, problem::Discret
 end
 
 function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=nothing)
-    n = number_of_basis_functions(discrete_model)
+    (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(discrete_model)
     T = base_type(architecture(discrete_model))
     VT = vec_type(architecture(discrete_model))
 
@@ -145,12 +145,12 @@ function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGri
         tol = sqrt(eps(T))
     end
 
-    n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m
+    n_tot = nxp*nΩp + nxm*nΩm
     return PNFullImplicitMidpointSolver(
         Vector{T}(undef, number_of_elements(pn_eq)),
         [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)], 
-        VT(undef, max(n.x.p, n.x.m)*max(n.Ω.p, n.Ω.m)),
-        VT(undef, max(n.Ω.p, n.Ω.m)),
+        VT(undef, max(nxp, nxm)*max(nΩp, nΩm)),
+        VT(undef, max(nΩp, nΩm)),
         VT(undef, n_tot),
         Krylov.MinresSolver(n_tot, n_tot, VT),
         T(tol),
@@ -225,7 +225,7 @@ struct PNSchurImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplic
 end
 
 function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=nothing)
-    n = number_of_basis_functions(discrete_model)
+    (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(discrete_model)
     T = base_type(architecture(discrete_model))
     VT = vec_type(architecture(discrete_model))
 
@@ -233,15 +233,15 @@ function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGr
         tol = sqrt(eps(T))
     end
 
-    np = n.x.p*n.Ω.p
-    n_tot = n.x.p*n.Ω.p + n.x.m*n.Ω.m
+    np = nxp*nΩp
+    n_tot = nxp*nΩp + nxm*nΩm
     return PNSchurImplicitMidpointSolver(
         Vector{T}(undef, number_of_elements(pn_eq)),
         [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)],
-        VT(undef, max(n.x.p, n.x.m)*max(n.Ω.p, n.Ω.m)),
-        VT(undef, max(n.Ω.p, n.Ω.m)),
-        VT(undef, n.x.m*n.Ω.m),
-        VT(undef, n.x.m*n.Ω.m),
+        VT(undef, max(nxp, nxm)*max(nΩp, nΩm)),
+        VT(undef, max(nΩp, nΩm)),
+        VT(undef, nxm*nΩm),
+        VT(undef, nxm*nΩm),
         VT(undef, np),
         VT(undef, n_tot),
         VT(undef, n_tot),
@@ -292,7 +292,7 @@ end
 function _update_D(solver::PNSchurImplicitMidpointSolver{T}, problem::DiscretePNSystem, a, b, c) where T
     # assemble D
 
-    (_, (_, nLm), (_, nRm)) = problem.model.n_basis
+    (_, (_, nLm), (_, nRm)) = n_basis(problem.model)
     # tmp_m = @view(pn_solv.tmp[1:nLm*nRm])
     tmp2_m = @view(solver.tmp2[1:nRm])
 
@@ -310,7 +310,7 @@ end
 
 function _compute_schur_rhs(solver::PNSchurImplicitMidpointSolver, problem::DiscretePNSystem, a, b, c)
 
-    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    (_, (nLp, nLm), (nRp, nRm)) = n_basis(problem.model)
     
     np = nLp*nRp
     nm = nLm*nRm
@@ -333,7 +333,7 @@ end
 
 function _compute_full_solution_schur(solver::PNSchurImplicitMidpointSolver, problem::DiscretePNSystem, a, b, c)
 
-    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    (_, (nLp, nLm), (nRp, nRm)) = n_basis(problem.model)
 
     np = nLp*nRp
     nm = nLm*nRm
@@ -373,7 +373,7 @@ struct PNDLRFullImplicitMidpointSolver{T, V<:AbstractVector{T}, TPP, Tsolv} <: P
 end
 
 function initialize!(solver::PNDLRFullImplicitMidpointSolver{T}, problem) where T
-    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    (_, (nLp, nLm), (nRp, nRm)) = n_basis(problem.model)
     rp, rm = solver.ranks
 
     # this is still a bit strange
@@ -394,7 +394,7 @@ end
 
 # maybe this should not depend on the problem (the solver could have the view_U,S,Vt functions available with the current rank)
 function current_solution(solver::PNDLRFullImplicitMidpointSolver, problem)
-    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    (_, (nLp, nLm), (nRp, nRm)) = n_basis(problem.model)
     rp, rm = solver.ranks
     U = view_U(solver.sol[1], (nLp, nLm), (rp, rm))
     S = view_S(solver.sol[2], (rp, rm))
@@ -440,7 +440,7 @@ cuview(A::Array, slice) = uview(A, slice)
 cuview(A::CuArray, slice) = view(A, slice)
 
 function step_nonadjoint!(solver::PNDLRFullImplicitMidpointSolver{T, V}, problem::DiscretePNSystem, rhs::AbstractDiscretePNVector{false}, i, Δϵ) where {T, V}
-    (_, (nLp, nLm), (nRp, nRm)) = problem.model.n_basis
+    (_, (nLp, nLm), (nRp, nRm)) = n_basis(problem.model)
     rp, rm = solver.ranks
 
     proj_problem = solver.proj_problem
@@ -585,7 +585,7 @@ end
 # end
 
 function pn_dlrfullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, max_rank)
-    (_, (nLp, nLm), (nRp, nRm)) = discrete_model.n_basis
+    (_, (nLp, nLm), (nRp, nRm)) = n_basis(discrete_model)
     VT = vec_type(discrete_model)
     T = base_type(discrete_model)
 

@@ -303,15 +303,15 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
     isp, jsp = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρp_tens))
     ism, jsm = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρm_tens))
 
-    n = number_of_basis_functions(discrete_system.model)
+    (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(discrete_system.model)
 
-    Λtemp = allocate_vec(architecture(discrete_system.model), max(n.x.p*n.Ω.p, n.x.m*n.Ω.m))
-    Λtempp = reshape(@view(Λtemp[1:n.x.p*n.Ω.p]), (n.x.p, n.Ω.p))
-    Λtempm = reshape(@view(Λtemp[1:n.x.m*n.Ω.m]), (n.x.m, n.Ω.m))
+    Λtemp = allocate_vec(architecture(discrete_system.model), max(nxp*nΩp, nxm*nΩm))
+    Λtempp = reshape(@view(Λtemp[1:nxp*nΩp]), (nxp, nΩp))
+    Λtempm = reshape(@view(Λtemp[1:nxm*nΩm]), (nxm, nΩm))
 
-    σtemp = allocate_vec(architecture(discrete_system.model), max(n.Ω.p, n.Ω.m))
-    σtempp = Diagonal(@view(σtemp[1:n.Ω.p]))
-    σtempm = Diagonal(@view(σtemp[1:n.Ω.m]))
+    σtemp = allocate_vec(architecture(discrete_system.model), max(nΩp, nΩm))
+    σtempp = Diagonal(@view(σtemp[1:nΩp]))
+    σtempm = Diagonal(@view(σtemp[1:nΩm]))
 
     ΛpΦp = [allocate_vec(architecture(discrete_system.model), length(isp)) for _ in 1:length(discrete_system.ρp)]
     ΛmΦm = [allocate_vec(architecture(discrete_system.model), length(ism)) for _ in 1:length(discrete_system.ρp)]
@@ -382,8 +382,7 @@ function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
 
     fill!(b, zero(eltype(b)))
 
-    n_basis = number_of_basis_functions(discrete_system.model)
-    nxp, nxm, nΩp, nΩm = n_basis.x.p, n_basis.x.m, n_basis.Ω.p, n_basis.Ω.m
+    (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(discrete_system.model)
     np = nxp*nΩp
     nm = nxm*nΩm
 

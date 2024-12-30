@@ -39,34 +39,32 @@ convert_to_architecture(arch::PNArchitecture{T}, x::Diagonal) where T = Diagonal
 allocate_vec(arch::PNArchitecture{T}, n::Int) where T = vec_type(arch)(undef, n)
 allocate_mat(arch::PNArchitecture{T}, m::Int, n::Int) where T = mat_type(arch)(undef, m, n)
 
-abstract type AbstractPNGridapModel{PNA<:PNArchitecture} end
-
-@concrete struct PNGridapModel{PNA<:PNArchitecture} <: AbstractPNGridapModel{PNA}
+@concrete struct PNGridapModel{PNA<:PNArchitecture}
     architecture::PNA
     space_mdl
     energy_mdl
     direction_mdl
-    n_basis::Tuple{Int64, Tuple{Int64, Int64}, Tuple{Int64, Int64}}
+    number_of_basis_functions::@NamedTuple{nϵ::Int64, nx::@NamedTuple{p::Int64, m::Int64}, nΩ::@NamedTuple{p::Int64, m::Int64}}
 end
 
 architecture(discrete_model::PNGridapModel) = discrete_model.architecture
 
 function PNGridapModel(space_model, energy_model, direction_model, architecture::PNArchitecture{T}=PNCPU{Float64}()) where T
     @assert SpaceModels.dimensionality(space_model) == SphericalHarmonicsModels.dimensionality(direction_model)
+    n_basis_energy = length(energy_model)
     n_basis_space = SpaceModels.n_basis(space_model)
     n_basis_direction = SphericalHarmonicsModels.n_basis(direction_model)
-    n_basis_energy = length(energy_model)
 
-    n_basis = (n_basis_energy,
-        (n_basis_space.p, n_basis_space.m),
-        (n_basis_direction.p, n_basis_direction.m))
+    number_of_basis_functions = (nϵ = n_basis_energy,
+        nx = n_basis_space,
+        nΩ = n_basis_direction)
 
     return PNGridapModel(
         architecture,
         space_model,
         energy_model,
         direction_model,
-        n_basis
+        number_of_basis_functions
     )
 end
 
@@ -107,20 +105,17 @@ dimensions(model::PNGridapModel) = Dimensions.dimensions(dimensionality(model))
 #     return U, V, (model=space_model, R=R, dx=Measure(R, 2), ∂R=∂R, dΓ= Measure(∂R, 2), n=get_normal_vector(∂R))
 # end
 
-function number_of_basis_functions(model::PNGridapModel)
-    (nϵ, (nxp, nxm), (nΩp, nΩm)) = model.n_basis
-    x = (p=nxp, m=nxm)
-    Ω = (p=nΩp, m=nΩm)
-    return (x=x, Ω=Ω)
+function n_basis(model::PNGridapModel)
+    return model.number_of_basis_functions
 end
 
 @inline function pview(v::AbstractVector, model::PNGridapModel)
-    (_, (nxp, _), (nΩp, _)) = model.n_basis
+    (_, (nxp, _), (nΩp, _)) = n_basis(model)
     return reshape(@view(v[1:nxp*nΩp]), (nxp, nΩp))
 end
 
 @inline function mview(v::AbstractVector, model::PNGridapModel)
-    (_, (nxp, nxm), (nΩp, nΩm)) = model.n_basis
+    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     return reshape(@view(v[nxp*nΩp+1:nxp*nΩp + nxm*nΩm]), (nxm, nΩm))
 end
 
