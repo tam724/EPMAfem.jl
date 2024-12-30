@@ -43,9 +43,9 @@ abstract type AbstractPNGridapModel{PNA<:PNArchitecture} end
 
 @concrete struct PNGridapModel{PNA<:PNArchitecture} <: AbstractPNGridapModel{PNA}
     architecture::PNA
-    space_model
-    energy_model
-    direction_model
+    space_mdl
+    energy_mdl
+    direction_mdl
     n_basis::Tuple{Int64, Tuple{Int64, Int64}, Tuple{Int64, Int64}}
 end
 
@@ -76,23 +76,23 @@ end
 #     return MKLSparse.SparseMatrixCSR{T, Ti}(AT.m, AT.n, Vector{Ti}(AT.colptr), Vector{Ti}(AT.rowval), Vector{T}(AT.nzval))
 # end
 
-function space(model::PNGridapModel)
-    return model.space_model
+function space_model(model::PNGridapModel)
+    return model.space_mdl
 end
 
-function energy(model::PNGridapModel)
-    return model.energy_model
+function energy_model(model::PNGridapModel)
+    return model.energy_mdl
 end
 
-function direction(model::PNGridapModel)
-    return model.direction_model
+function direction_model(model::PNGridapModel)
+    return model.direction_mdl
 end
 
-dimensionality(model::PNGridapModel) = SpaceModels.dimensionality(space(model))
+dimensionality(model::PNGridapModel) = SpaceModels.dimensionality(space_model(model))
 dimensions(model::PNGridapModel) = Dimensions.dimensions(dimensionality(model))
 
 # max_degree(model::PNGridapModel) = model.direction_model
-# space_directions(model::PNGridapModel) = space_directions(space(model))
+# space_directions(model::PNGridapModel) = space_directions(space_model(model))
 
 # function function_spaces(space_model::DiscreteModel)
 #     V = MultiFieldFESpace([TestFESpace(space_model, ReferenceFE(lagrangian, Float64, 1), conformity=:H1), TestFESpace(space_model, ReferenceFE(lagrangian, Float64, 0), conformity=:L2)])

@@ -43,20 +43,20 @@ end
 function Base.iterate(it::NonAdjointIterator)
     if it.reverse
         initialize_from_state!(it.solver, it.state)
-        ϵs = energy(it.system.model)
+        ϵs = energy_model(it.system.model)
         ϵ = ϵs[1]
         return (ϵ, 1), 1
     end
 
     initialize!(it.solver, it.system)
-    ϵs = energy(it.system.model)
+    ϵs = energy_model(it.system.model)
     ϵ = ϵs[end]
     return (ϵ, length(ϵs)), length(ϵs)
 end
 
 function Base.iterate(it::NonAdjointIterator, i)
     if it.reverse
-        ϵs = energy(it.system.model)
+        ϵs = energy_model(it.system.model)
         if i >= length(ϵs)
             return nothing
         else
@@ -72,7 +72,7 @@ function Base.iterate(it::NonAdjointIterator, i)
     if i <= 1
         return nothing
     else
-        ϵs = energy(it.system.model)
+        ϵs = energy_model(it.system.model)
         # here we update the solver state from i+1 to i! NOTE: NonAdjoint means from higher to lower energies/times
         ϵi, ϵip1 = ϵs[i-1], ϵs[i]
         Δϵ = ϵip1-ϵi
@@ -93,13 +93,13 @@ end
 
 function Base.iterate(it::AdjointIterator)
     initialize!(it.solver, it.system)
-    ϵs = energy(it.system.model)
+    ϵs = energy_model(it.system.model)
     ϵ = ϵs[1]
     return (ϵ, 1), 1
 end
 
 function Base.iterate(it::AdjointIterator, i)
-    ϵs = energy(it.system.model)
+    ϵs = energy_model(it.system.model)
     if i >= length(ϵs)
         return nothing
     else

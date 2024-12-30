@@ -58,7 +58,7 @@ function Base.getindex(vec::VecOfRank1DiscretePNVector{co}, i) where co
 end 
 
 function (b::Rank1DiscretePNVector{true})(it::NonAdjointIterator)
-    Δϵ = step(b.model.energy_model)
+    Δϵ = step(energy_model(b.model))
     VT = vec_type(architecture(b.model))
     T = base_type(architecture(b.model))
 
@@ -73,7 +73,7 @@ function (b::Rank1DiscretePNVector{true})(it::NonAdjointIterator)
 end
 
 function (b::ArrayOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
-    Δϵ = step(b.model.energy_model)
+    Δϵ = step(energy_model(b.model))
     VT = vec_type(architecture(b.model))
     T = base_type(architecture(b.model))
 
@@ -95,7 +95,7 @@ function (b::ArrayOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
 end
 
 function (b::VecOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
-    Δϵ = step(b.model.energy_model)
+    Δϵ = step(energy_model(b.model))
     VT = vec_type(architecture(b.model))
     T = base_type(architecture(b.model))
 
@@ -114,7 +114,7 @@ function (b::VecOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
 end
 
 function (b::Rank1DiscretePNVector{false})(it::AdjointIterator)
-    Δϵ = step(b.model.energy_model)
+    Δϵ = step(energy_model(b.model))
     VT = vec_type(architecture(b.model))
     T = base_type(architecture(b.model))
 
@@ -132,7 +132,7 @@ function (b::Rank1DiscretePNVector{false})(it::AdjointIterator)
 end
 
 function (b::ArrayOfRank1DiscretePNVector{false})(it::AdjointIterator)
-    Δϵ = step(b.model.energy_model)
+    Δϵ = step(energy_model(b.model))
     VT = vec_type(architecture(b.model))
     T = base_type(architecture(b.model))
 
@@ -156,7 +156,7 @@ function (b::ArrayOfRank1DiscretePNVector{false})(it::AdjointIterator)
 end
 
 function (b::VecOfRank1DiscretePNVector{false})(it::AdjointIterator)
-    Δϵ = step(b.model.energy_model)
+    Δϵ = step(energy_model(b.model))
     VT = vec_type(architecture(b.model))
     T = base_type(architecture(b.model))
 
@@ -273,7 +273,7 @@ function Base.getindex(arr::ArrayOfTangentDiscretePNVector, i_e, i_x, Δ=true)
 
     cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
 
-    onehot = zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model))))
+    onehot = zeros(num_free_dofs(SpaceModels.material(space_model(discrete_system.model))))
     onehot[i_x] = Δ
     Sparse3Tensor.project!(discrete_system.ρp_tens, onehot)
     Sparse3Tensor.project!(discrete_system.ρm_tens, onehot)
@@ -298,7 +298,7 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
     T = base_type(architecture(discrete_system.model))
     cv_Int(x) = convert_to_architecture(Int64, architecture(discrete_system.model), x)
 
-    Δϵ = T(step(energy(discrete_system.model)))
+    Δϵ = T(step(energy_model(discrete_system.model)))
 
     isp, jsp = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρp_tens))
     ism, jsm = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρm_tens))
@@ -361,7 +361,7 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
         end
         write_initial = true
     end
-    ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space(discrete_system.model)))) for _ in 1:length(discrete_system.ρp)]
+    ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space_model(discrete_system.model)))) for _ in 1:length(discrete_system.ρp)]
     for i_e in 1:length(discrete_system.ρp)
         Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρp_tens, ΛpΦp[i_e] |> collect, true, true)
         Sparse3Tensor.contract!(ρs_adjoint[i_e], discrete_system.ρm_tens, ΛmΦm[i_e] |> collect, true, true)
@@ -378,7 +378,7 @@ end
 function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
     discrete_system = rhs.parent.cached_solution.it.system
     VT = vec_type(architecture(discrete_system.model))
-    Δϵ = step(discrete_system.model.energy_model)
+    Δϵ = step(energy_model(discrete_system.model))
 
     fill!(b, zero(eltype(b)))
 

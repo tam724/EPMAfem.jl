@@ -82,8 +82,6 @@ A_gi1 = EPMAfem.iterator(discrete_problem, g[1, 20, 1], solver_schur)
 A_gi2 = EPMAfem.iterator(discrete_problem, g[1, 13, 1], solver_schur)
 h = discrete_ext
 
-
-
 hh1 = h(A_gi1)
 
 CUDA.@profile hh1 = h(A_gi1)
@@ -102,7 +100,7 @@ hh2 = h(A_gi2)
 end
 
 cv(x) = EPMAfem.convert_to_architecture(EPMAfem.architecture(model), x)
-ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
+ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space_model(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
 EPMAfem.update_problem!(discrete_problem, ρs)
 
 Astar_hi1 = EPMAfem.iterator(discrete_problem, h[1], solver_schur)
@@ -166,7 +164,7 @@ plot!(meas_full[2, :, 1])
 
 cv(x) = EPMAfem.convert_to_architecture(EPMAfem.architecture(model), x)
 
-ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
+ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space_model(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
 
 ρs_err = deepcopy(ρs)
 EPMAfem.CUDA.@allowscalar begin ρs_err[1][400] += 5e-1 end
@@ -192,7 +190,7 @@ plot!(meas_grad_schur[2, :, 1])
 plot!(meas_grad_full[2, :, 1])
 
 #savesol = EPMAfem.saveall(solution)
-ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
+ρs = [EPMAfem.SpaceModels.L2_projection(x -> EPMAfem.mass_concentrations(equations, e, x), EPMAfem.space_model(model)) for e in 1:EPMAfem.number_of_elements(equations)] |> cv
 
 EPMAfem.update_problem!(discrete_problem, ρs)
 
@@ -240,9 +238,9 @@ end
 ρs_adjoint[1][400]
 meas_tang_schur[1, 15, 1] 
 
-m = FEFunction(EPMAfem.SpaceModels.material(EPMAfem.space(model)), ρs_adjoint[1])
+m = FEFunction(EPMAfem.SpaceModels.material(EPMAfem.space_model(model)), ρs_adjoint[1])
 
-trian = EPMAfem.SpaceModels.get_args(EPMAfem.space(model))[2]
+trian = EPMAfem.SpaceModels.get_args(EPMAfem.space_model(model))[2]
 Gridap.writevtk(trian, "output", cellfields=Dict("m" => m))
 
 heatmap(-1:0.01:0, -1:0.01:1, (x, y) -> m(Point(x, y)))

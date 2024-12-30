@@ -10,7 +10,7 @@ end
 
 function Base.iterate(it::HighToLowIterator)
     initialize!(it.solver, it.problem)
-    ϵs = energy(it.problem.model)
+    ϵs = energy_model(it.problem.model)
     ϵ = ϵs[end]
     return (ϵ, length(ϵs)), length(ϵs)
 end
@@ -19,7 +19,7 @@ function Base.iterate(it::HighToLowIterator, i)
     if i <= 1
         return nothing
     else
-        ϵs = energy(it.problem.model)
+        ϵs = energy_model(it.problem.model)
         # here we update the solver state from i+1 to i! NOTE: HighToLow means from higher to lower energies/times
         ϵi, ϵip1 = ϵs[i-1], ϵs[i]
         Δϵ = ϵip1-ϵi
@@ -40,13 +40,13 @@ end
 
 function Base.iterate(it::LowToHighIterator)
     initialize!(it.solver, it.problem)
-    ϵs = energy(it.problem.model)
+    ϵs = energy_model(it.problem.model)
     ϵ = ϵs[1]
     return (ϵ, 1), 1
 end
 
 function Base.iterate(it::LowToHighIterator, i)
-    ϵs = energy(it.problem.model)
+    ϵs = energy_model(it.problem.model)
     if i >= length(ϵs)
         return nothing
     else
