@@ -30,8 +30,10 @@ function Base.iterate(it::NonAdjointIterator)
 end
 
 function Base.iterate(it::NonAdjointIterator, i)
+    ϵs = energy_model(it.system.problem.model)
+    Δϵ = step(ϵs)
+
     if it.reverse
-        ϵs = energy_model(it.system.problem.model)
         if i >= length(ϵs)
             return nothing
         else
@@ -47,10 +49,8 @@ function Base.iterate(it::NonAdjointIterator, i)
     if i <= 1
         return nothing
     else
-        ϵs = energy_model(it.system.problem.model)
         # here we update the solver state from i+1 to i! NOTE: NonAdjoint means from higher to lower energies/times
         ϵi, ϵip1 = ϵs[i-1], ϵs[i]
-        Δϵ = ϵip1-ϵi
         step_nonadjoint!(it.system, it.rhs, i, Δϵ)
         return (ϵi, i-1), i-1
     end
@@ -68,18 +68,20 @@ end
 function Base.iterate(it::AdjointIterator)
     initialize!(it.system)
     ϵs = energy_model(it.system.problem.model)
-    ϵ = ϵs[1]
+    Δϵ = step(ϵs)
+    ϵ = ϵs[1] - Δϵ/2
     return (ϵ, 1), 1
 end
 
 function Base.iterate(it::AdjointIterator, i)
     ϵs = energy_model(it.system.problem.model)
+    Δϵ = step(ϵs)
     if i >= length(ϵs)
         return nothing
     else
         # here we update the solver state from i to i+1! NOTE: Adjoint means from lower to higher energies/times
-        ϵi, ϵip1 = ϵs[i], ϵs[i+1]
-        Δϵ = ϵip1-ϵi
+        ϵi, ϵip1 = ϵs[i]-Δϵ/2, ϵs[i+1]-Δϵ/2
+        # Δϵ = ϵip1-ϵi
         step_adjoint!(it.system, it.rhs, i, Δϵ)
         return (ϵip1, i+1), i+1
     end

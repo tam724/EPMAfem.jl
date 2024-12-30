@@ -146,7 +146,7 @@ function fullimplicitmidpointsystem(pnproblem::AbstractDiscretePNProblem, tol=no
     T = base_type(arch)
 
     if isnothing(tol)
-        tol = sqrt(eps(T))
+        tol = sqrt(eps(Float64))
     end
 
     n_tot = nxp*nΩp + nxm*nΩm
@@ -238,7 +238,7 @@ function schurimplicitmidpointsystem(pnproblem::AbstractDiscretePNProblem, tol=n
     T = base_type(arch)
 
     if isnothing(tol)
-        tol = sqrt(eps(T))
+        tol = sqrt(eps(Float64))
     end
 
     np = nxp*nΩp

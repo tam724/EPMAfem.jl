@@ -1,3 +1,6 @@
+# holds basic grid 
+abstract type AbstractPNModel end
+
 # holds the basis matrices for the PNProblem
 abstract type AbstractDiscretePNProblem end
 

@@ -1,4 +1,4 @@
-@concrete struct PNGridapModel
+@concrete struct PNGridapModel <: AbstractPNModel
     space_mdl
     energy_mdl
     direction_mdl
@@ -64,12 +64,12 @@ function n_basis(model::PNGridapModel)
     return model.number_of_basis_functions
 end
 
-@inline function pview(v::AbstractVector, model::PNGridapModel)
+@inline function pview(v::AbstractVector, model::AbstractPNModel)
     (_, (nxp, _), (nΩp, _)) = n_basis(model)
     return reshape(@view(v[1:nxp*nΩp]), (nxp, nΩp))
 end
 
-@inline function mview(v::AbstractVector, model::PNGridapModel)
+@inline function mview(v::AbstractVector, model::AbstractPNModel)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     return reshape(@view(v[nxp*nΩp+1:nxp*nΩp + nxm*nΩm]), (nxm, nΩm))
 end
