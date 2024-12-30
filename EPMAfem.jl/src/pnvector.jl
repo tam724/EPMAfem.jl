@@ -1,5 +1,6 @@
 @concrete struct Rank1DiscretePNVector{co} <: AbstractDiscretePNVector{co}
     model
+    arch
     bϵ
 
     # might be moved to gpu
@@ -9,6 +10,7 @@ end
 
 @concrete struct DiscretePNVector{co} <: AbstractDiscretePNVector{co}
     model
+    arch
 
     weights
     bϵ
@@ -20,6 +22,7 @@ end
 
 @concrete struct ArrayOfRank1DiscretePNVector{co} <: AbstractDiscretePNVector{co}
     model
+    arch
     bϵs
 
     # might be moved to gpu
@@ -32,14 +35,15 @@ function Base.size(arr_r1::ArrayOfRank1DiscretePNVector)
 end
 
 function Base.getindex(arr_r1::ArrayOfRank1DiscretePNVector{co}, i, j, k) where co
-    return Rank1DiscretePNVector{co}(arr_r1.model, arr_r1.bϵs[i], arr_r1.bxps[j], arr_r1.bΩps[k])
+    return Rank1DiscretePNVector{co}(arr_r1.model, arr_r1.arch, arr_r1.bϵs[i], arr_r1.bxps[j], arr_r1.bΩps[k])
 end
 
 function weight_array_of_r1(weights, arr_r1::ArrayOfRank1DiscretePNVector{co}) where co
-    return DiscretePNVector{co}(arr_r1.model, weights, arr_r1.bϵs, arr_r1.bxps, arr_r1.bΩps)
+    return DiscretePNVector{co}(arr_r1.model, arr_r1.arch, weights, arr_r1.bϵs, arr_r1.bxps, arr_r1.bΩps)
 end
 @concrete struct VecOfRank1DiscretePNVector{co} <: AbstractDiscretePNVector{co}
     model
+    arch
 
     bϵs
 
@@ -54,15 +58,14 @@ function Base.size(vec::VecOfRank1DiscretePNVector)
 end
 
 function Base.getindex(vec::VecOfRank1DiscretePNVector{co}, i) where co
-    return Rank1DiscretePNVector{co}(vec.model, vec.bϵs[i], vec.bxps[i], vec.bΩps[i])
+    return Rank1DiscretePNVector{co}(vec.model, vec.arch, vec.bϵs[i], vec.bxps[i], vec.bΩps[i])
 end 
 
 function (b::Rank1DiscretePNVector{true})(it::NonAdjointIterator)
     Δϵ = step(energy_model(b.model))
-    VT = vec_type(architecture(b.model))
-    T = base_type(architecture(b.model))
 
-    buf = VT(undef, length(b.bxp))
+    T = base_type(b.arch)
+    buf = allocate_vec(b.arch, length(b.bxp))
     integral = zero(T)
 
     for (ϵ, i_ϵ) in it
@@ -74,10 +77,9 @@ end
 
 function (b::ArrayOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
     Δϵ = step(energy_model(b.model))
-    VT = vec_type(architecture(b.model))
-    T = base_type(architecture(b.model))
 
-    buf = VT(undef, length(b.bxps |> first))
+    T = base_type(b.arch)
+    buf = allocate_vec(b.arch, length(b.bxps |> first))
     integral = zeros(T, size(b))
 
     for (ϵ, i_ϵ) in it
@@ -96,10 +98,9 @@ end
 
 function (b::VecOfRank1DiscretePNVector{true})(it::NonAdjointIterator)
     Δϵ = step(energy_model(b.model))
-    VT = vec_type(architecture(b.model))
-    T = base_type(architecture(b.model))
 
-    buf = VT(undef, length(b.bxps |> first))
+    T = base_type(b.arch)
+    buf = allocate_vec(b.arch, length(b.bxps |> first))
     integral = zeros(T, size(b))
 
     for (ϵ, i_ϵ) in it
@@ -115,10 +116,9 @@ end
 
 function (b::Rank1DiscretePNVector{false})(it::AdjointIterator)
     Δϵ = step(energy_model(b.model))
-    VT = vec_type(architecture(b.model))
-    T = base_type(architecture(b.model))
 
-    buf = VT(undef, length(b.bxp))
+    T = base_type(b.arch)
+    buf = allocate_vec(b.arch, length(b.bxp))
     integral = zero(T)
 
     for (ϵ, i_ϵ) in it
@@ -133,10 +133,9 @@ end
 
 function (b::ArrayOfRank1DiscretePNVector{false})(it::AdjointIterator)
     Δϵ = step(energy_model(b.model))
-    VT = vec_type(architecture(b.model))
-    T = base_type(architecture(b.model))
 
-    buf = VT(undef, length(b.bxps |> first))
+    T = base_type(b.arch)
+    buf = allocate_vec(b.arch, length(b.bxps |> first))
     integral = zeros(T, size(b))
 
     for (ϵ, i_ϵ) in it
@@ -157,10 +156,9 @@ end
 
 function (b::VecOfRank1DiscretePNVector{false})(it::AdjointIterator)
     Δϵ = step(energy_model(b.model))
-    VT = vec_type(architecture(b.model))
-    T = base_type(architecture(b.model))
 
-    buf = VT(undef, length(b.bxps |> first))
+    T = base_type(b.arch)
+    buf = allocate_vec(b.arch, length(b.bxps |> first))
     integral = zeros(T, size(b))
 
     for (ϵ, i_ϵ) in it
@@ -257,36 +255,24 @@ end
 function tangent(it::AdjointIterator)
     cached = saveall(it)
 
-    discrete_system = it.system
-
-    cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
-
-    ρp_tangent = cv(discrete_system.ρp_tens.skeleton)
-    ρm_tangent = cv(discrete_system.ρm_tens.skeleton)
+    ρp_tangent = it.system.ρp_tens.skeleton |> it.system.arch
+    ρm_tangent = it.system.ρm_tens.skeleton |> it.system.arch
     return ArrayOfTangentDiscretePNVector(ρp_tangent, ρm_tangent, cached)
 end
 
 function Base.getindex(arr::ArrayOfTangentDiscretePNVector, i_e, i_x, Δ=true)
     discrete_system = arr.cached_solution.it.system
-    T = base_type(architecture(discrete_system.model))
-    VT = vec_type(architecture(discrete_system.model))
+    # T = base_type(architecture(discrete_system.model))
+    # VT = vec_type(architecture(discrete_system.model))
 
-    cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
+    # cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
 
     onehot = zeros(num_free_dofs(SpaceModels.material(space_model(discrete_system.model))))
     onehot[i_x] = Δ
     Sparse3Tensor.project!(discrete_system.ρp_tens, onehot)
     Sparse3Tensor.project!(discrete_system.ρm_tens, onehot)
-    # ρp_nz = nonzeros(arr.ρp_tangent)
-    @show nonzeros(discrete_system.ρp_tens.skeleton) |> unique
-    # ρm_nz = nonzeros(arr.ρm_tangent)
-
-    # ρp_nz .= cv(nonzeros(discrete_system.ρp_tens.skeleton))
-    # ρm_nz .= cv(nonzeros(discrete_system.ρm_tens.skeleton))
 
     copyto!(nonzeros(arr.ρp_tangent), nonzeros(discrete_system.ρp_tens.skeleton))
-    @show nonzeros(arr.ρp_tangent) |> collect |> unique
-
     copyto!(nonzeros(arr.ρm_tangent), nonzeros(discrete_system.ρm_tens.skeleton))
     return TangentDiscretePNVector(arr, i_x, i_e)
     # return DiscretePNVector(arr.ρp_tangent[i], arr.ρm_tangent[i], arr.cached_solution)
@@ -294,27 +280,28 @@ end
 
 function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
     discrete_system = arr.cached_solution.it.system
+    arch = discrete_system.arch
 
-    T = base_type(architecture(discrete_system.model))
-    cv_Int(x) = convert_to_architecture(Int64, architecture(discrete_system.model), x)
+    T = base_type(arch)
+    # cv_Int(x) = convert_to_architecture(Int64, architecture(discrete_system.model), x)
 
     Δϵ = T(step(energy_model(discrete_system.model)))
 
-    isp, jsp = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρp_tens))
-    ism, jsm = cv_Int.(Sparse3Tensor.get_ijs(discrete_system.ρm_tens))
+    isp, jsp = arch.(Int64, Sparse3Tensor.get_ijs(discrete_system.ρp_tens))
+    ism, jsm = arch.(Int64, Sparse3Tensor.get_ijs(discrete_system.ρm_tens))
 
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(discrete_system.model)
 
-    Λtemp = allocate_vec(architecture(discrete_system.model), max(nxp*nΩp, nxm*nΩm))
+    Λtemp = allocate_vec(arch, max(nxp*nΩp, nxm*nΩm))
     Λtempp = reshape(@view(Λtemp[1:nxp*nΩp]), (nxp, nΩp))
     Λtempm = reshape(@view(Λtemp[1:nxm*nΩm]), (nxm, nΩm))
 
-    σtemp = allocate_vec(architecture(discrete_system.model), max(nΩp, nΩm))
+    σtemp = allocate_vec(arch, max(nΩp, nΩm))
     σtempp = Diagonal(@view(σtemp[1:nΩp]))
     σtempm = Diagonal(@view(σtemp[1:nΩm]))
 
-    ΛpΦp = [allocate_vec(architecture(discrete_system.model), length(isp)) for _ in 1:length(discrete_system.ρp)]
-    ΛmΦm = [allocate_vec(architecture(discrete_system.model), length(ism)) for _ in 1:length(discrete_system.ρp)]
+    ΛpΦp = [allocate_vec(arch, length(isp)) for _ in 1:length(discrete_system.ρp)]
+    ΛmΦm = [allocate_vec(arch, length(ism)) for _ in 1:length(discrete_system.ρp)]
 
     skip_initial = true
     write_initial = false
@@ -377,8 +364,10 @@ end
 
 function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
     discrete_system = rhs.parent.cached_solution.it.system
-    VT = vec_type(architecture(discrete_system.model))
-    Δϵ = step(energy_model(discrete_system.model))
+    arch = discrete_system.arch
+
+    T = base_type(arch)
+    Δϵ = T(step(energy_model(discrete_system.model)))
 
     fill!(b, zero(eltype(b)))
 
@@ -397,8 +386,8 @@ function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
     Λ_ip2 = rhs.parent.cached_solution[i+1]
 
     #TODO: move temporary allocations somwhere else
-    tmp = VT(undef, max(np, nm))
-    tmp2 = VT(undef, max(nΩp, nΩm))
+    tmp = allocate_vec(arch, max(np, nm))
+    tmp2 = allocate_vec(arch, max(nΩp, nΩm))
 
     a = [(si/Δϵ + τi*0.5)]
     c = [(-σi.*0.5)]

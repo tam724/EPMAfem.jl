@@ -1,55 +1,11 @@
-abstract type PNArchitecture{T} end
-struct PNCPU{T} <: PNArchitecture{T} end
-struct PNCUDA{T} <: PNArchitecture{T} end
-
-cpu(T=Float64) = PNCPU{T}()
-cuda(T=Float32) = PNCUDA{T}()
-
-index_type(::Type{Float64}) = Int64
-index_type(::Type{Float32}) = Int32
-index_type(::Type{Float16}) = Int32
-
-mat_type(::PNCPU{T}) where T = Matrix{T}
-smat_type(::PNCPU{T}) where T = SparseMatrixCSC{T, index_type(T)}
-vec_type(::PNCPU{T}) where T = Vector{T}
-vec_type(Tv, ::PNCPU{T}) where T = Vector{Tv}
-base_type(::PNCPU{T}) where T = T
-
-mat_type(::PNCUDA{T}) where T = CuMatrix{T}
-smat_type(::PNCUDA{T}) where T = CUSPARSE.CuSparseMatrixCSC{T, index_type(T)}
-vec_type(::PNCUDA{T}) where T = CuVector{T}
-vec_type(Tv, ::PNCUDA{T}) where T = CuVector{Tv}
-base_type(::PNCUDA{T}) where T = T
-
-convert_to_architecture(arch::PNArchitecture{T}, x::Matrix) where T = mat_type(arch)(x)
-convert_to_architecture(arch::PNArchitecture{T}, x::SparseMatrixCSC) where T = smat_type(arch)(x)
-convert_to_architecture(arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(arch)(x)
-convert_to_architecture(Tv, arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(Tv, arch)(x)
-convert_to_architecture(arch::PNArchitecture{T}, x::Union{Vector, NTuple}) where T = convert_to_architecture.(Ref(arch), x)
-convert_to_architecture(arch::PNArchitecture{T}, x::BlockedMatrices.BlockedMatrix) where T = BlockedMatrices.BlockedMatrix(convert_to_architecture(arch, x.blocks), x.indices, x.axes)
-function convert_to_architecture(arch::PNArchitecture{T}, x::Sparse3Tensor.Sparse3TensorSSM) where T
-    return Sparse3Tensor.Sparse3TensorSSM(
-        convert_to_architecture(arch, x.skeleton),
-        convert_to_architecture(arch, x.projector),
-        x.size
-    )
-end
-convert_to_architecture(arch::PNArchitecture{T}, x::Diagonal) where T = Diagonal(convert_to_architecture(arch, x.diag))
-
-allocate_vec(arch::PNArchitecture{T}, n::Int) where T = vec_type(arch)(undef, n)
-allocate_mat(arch::PNArchitecture{T}, m::Int, n::Int) where T = mat_type(arch)(undef, m, n)
-
-@concrete struct PNGridapModel{PNA<:PNArchitecture}
-    architecture::PNA
+@concrete struct PNGridapModel
     space_mdl
     energy_mdl
     direction_mdl
     number_of_basis_functions::@NamedTuple{nϵ::Int64, nx::@NamedTuple{p::Int64, m::Int64}, nΩ::@NamedTuple{p::Int64, m::Int64}}
 end
 
-architecture(discrete_model::PNGridapModel) = discrete_model.architecture
-
-function PNGridapModel(space_model, energy_model, direction_model, architecture::PNArchitecture{T}=PNCPU{Float64}()) where T
+function PNGridapModel(space_model, energy_model, direction_model)
     @assert SpaceModels.dimensionality(space_model) == SphericalHarmonicsModels.dimensionality(direction_model)
     n_basis_energy = length(energy_model)
     n_basis_space = SpaceModels.n_basis(space_model)
@@ -60,7 +16,6 @@ function PNGridapModel(space_model, energy_model, direction_model, architecture:
         nΩ = n_basis_direction)
 
     return PNGridapModel(
-        architecture,
         space_model,
         energy_model,
         direction_model,

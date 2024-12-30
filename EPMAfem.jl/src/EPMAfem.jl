@@ -26,6 +26,7 @@ using EPMAfem.SpaceModels
 include("abstracttypes.jl")
 include("utils.jl")
 include("pnequations.jl")
+include("pnarchitecture.jl")
 include("pnmodel.jl")
 include("pnsystem.jl")
 

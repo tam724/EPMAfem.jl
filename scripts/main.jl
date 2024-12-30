@@ -21,7 +21,7 @@ extraction = EPMAfem.PNExtraction([0.1, 0.2])
 # SM.dimensionality(space_model)
 # SH.dimensionality(direction_model)
 
-model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
+model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model)
 # model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
 # model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.05:1.0, direction_model, EPMAfem.cuda())
 
@@ -32,7 +32,7 @@ model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfe
 
 
 #model = model_cuda
-discrete_problem = EPMAfem.discretize_problem(equations, model)
+discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
 discrete_problem2 = EPMAfem.discretize_problem(equations, model_cuda)
 
 for (ρp, ρp2) in zip(discrete_problem.ρp, discrete_problem2.ρp)
@@ -68,11 +68,11 @@ end
 
 # test = EPMAfem.SpaceModels.assemble_bilinear(SM.∫R_uv, space_model, EPMAfem.SpaceModels.even(space_model), EPMAfem.SpaceModels.even(space_model))
 
-discrete_rhs = EPMAfem.discretize_rhs(excitation, model)
+discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
 #test_rhs = EPMAfem.discretize_stange_rhs(excitation, model)
-discrete_ext = EPMAfem.discretize_extraction(extraction, model)
+discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())
 
-solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, sqrt(eps(Float64)))
+solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, EPMAfem.cuda(), sqrt(eps(Float64)))
 
 #solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model)
 # solution = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 14, 1], solver)
@@ -197,26 +197,26 @@ EPMAfem.update_problem!(discrete_problem, ρs)
 tangent_rhs_schur = EPMAfem.tangent(solution_schur)
 tangent_rhs_full = EPMAfem.tangent(solution_full)
 
-new_rhs_schur = tangent_rhs_schur[1, 400];
+new_rhs_schur = tangent_rhs_schur[1, 400, 1e6];
 new_rhs_full = tangent_rhs_full[1, 400];
 
 der_sol_schur = EPMAfem.iterator(discrete_problem, new_rhs_schur, solver_schur);
 der_sol_full = EPMAfem.iterator(discrete_problem, new_rhs_full, solver_full);
 
-EPMAfem.CUDA.@profile meas_tang_schur = discrete_rhs(der_sol_schur)
+meas_tang_schur = discrete_rhs(der_sol_schur)
 
 weights = zeros(size(discrete_rhs))
 weights[1, 15, 1] = 1.0
 adjoint_rhs_schur = EPMAfem.weight_array_of_r1(weights, discrete_rhs)
 adjoint_adjoint_solution_schur = EPMAfem.iterator(discrete_problem, adjoint_rhs_schur, solver_schur) 
-EPMAfem.CUDA.@profile ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
+ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
 
 @profview ρs_adjoint = tangent_rhs_schur(adjoint_adjoint_solution_schur)
 
 Ag = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 15, 1], solver_schur)
 EPMAfem.CUDA.@profile discrete_ext(Ag)
 
-heatmap(reshape(ρs_adjoint[1], (20, 40)))
+heatmap(reshape(ρs_adjoint[1], (100, 200)))
 
 tensor = discrete_problem.ρp_tens2
 using CUDA

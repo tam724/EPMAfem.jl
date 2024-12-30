@@ -136,10 +136,9 @@ function step_adjoint!(solver::PNFullImplicitMidpointSolver{T}, problem::Discret
     # @show solver.lin_solver.stats
 end
 
-function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=nothing)
+function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, arch::PNArchitecture, tol=nothing)
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(discrete_model)
-    T = base_type(architecture(discrete_model))
-    VT = vec_type(architecture(discrete_model))
+    T = base_type(arch)
 
     if isnothing(tol)
         tol = sqrt(eps(T))
@@ -149,10 +148,10 @@ function pn_fullimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGri
     return PNFullImplicitMidpointSolver(
         Vector{T}(undef, number_of_elements(pn_eq)),
         [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)], 
-        VT(undef, max(nxp, nxm)*max(nΩp, nΩm)),
-        VT(undef, max(nΩp, nΩm)),
-        VT(undef, n_tot),
-        Krylov.MinresSolver(n_tot, n_tot, VT),
+        allocate_vec(arch, max(nxp, nxm)*max(nΩp, nΩm)),
+        allocate_vec(arch, max(nΩp, nΩm)),
+        allocate_vec(arch, n_tot),
+        Krylov.MinresSolver(n_tot, n_tot, vec_type(arch)),
         T(tol),
         T(0),
     )
@@ -224,10 +223,10 @@ struct PNSchurImplicitMidpointSolver{T, V<:AbstractVector{T}, Tsolv} <: PNImplic
     atol::T
 end
 
-function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, tol=nothing)
+function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGridapModel, arch::PNArchitecture, tol=nothing)
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(discrete_model)
-    T = base_type(architecture(discrete_model))
-    VT = vec_type(architecture(discrete_model))
+    T = base_type(arch)
+    VT = 
 
     if isnothing(tol)
         tol = sqrt(eps(T))
@@ -238,14 +237,14 @@ function pn_schurimplicitmidpointsolver(pn_eq::PNEquations, discrete_model::PNGr
     return PNSchurImplicitMidpointSolver(
         Vector{T}(undef, number_of_elements(pn_eq)),
         [Vector{T}(undef, number_of_scatterings(pn_eq)) for _ in 1:number_of_elements(pn_eq)],
-        VT(undef, max(nxp, nxm)*max(nΩp, nΩm)),
-        VT(undef, max(nΩp, nΩm)),
-        VT(undef, nxm*nΩm),
-        VT(undef, nxm*nΩm),
-        VT(undef, np),
-        VT(undef, n_tot),
-        VT(undef, n_tot),
-        Krylov.MinresSolver(np, np, VT),
+        allocate_vec(arch, max(nxp, nxm)*max(nΩp, nΩm)),
+        allocate_vec(arch, max(nΩp, nΩm)),
+        allocate_vec(arch, nxm*nΩm),
+        allocate_vec(arch, nxm*nΩm),
+        allocate_vec(arch, np),
+        allocate_vec(arch, n_tot),
+        allocate_vec(arch, n_tot),
+        Krylov.MinresSolver(np, np, vec_type(arch)),
         T(tol),
         T(0)
     )

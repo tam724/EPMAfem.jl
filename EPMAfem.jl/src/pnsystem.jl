@@ -1,5 +1,6 @@
 @concrete struct DiscretePNSystem <: AbstractDiscretePNSystem
     model
+    arch
 
     # energy (these will always live on the cpu)
     s
