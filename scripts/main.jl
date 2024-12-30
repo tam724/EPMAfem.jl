@@ -75,6 +75,8 @@ discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
 discrete_ext_old = EPMAfem.discretize_extraction_old(extraction, model, EPMAfem.cuda())
 discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())
 
+discrete_rhs * discrete_system * discrete_ext
+
 # solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, EPMAfem.cuda(), sqrt(eps(Float64)))
 
 #solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model)

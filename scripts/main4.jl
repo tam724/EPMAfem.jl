@@ -25,3 +25,10 @@ end
 
 b = rand(10)
 vec(b)
+
+
+function blow_up(A, B)
+    arr = zeros((size(A)..., size(B)...))
+    for i in eachindex(A)
+        arr[i, axes(B)...] = B
+    end

@@ -1,3 +1,21 @@
+Base.:*(::AbstractArray{<:AbstractDiscretePNVector{H}}, ::AbstractDiscretePNSystem, ::AbstractArray{<:AbstractDiscretePNVector{H}}) where H = @error "invalid vectors!"
+function Base.:*(h::AbstractArray{<:AbstractDiscretePNVector{H}}, A::AbstractDiscretePNSystem, g::AbstractArray{<:AbstractDiscretePNVector{G}}) where {H, G}
+    full_size = (size(h)..., size(g)...)
+    result = zeros(full_size)
+    if length(g) < length(h)
+        for i in eachindex(IndexCartesian(), g)
+            solution = iterator(A, g[i])
+            result[axes(h)..., i] = h(solution)
+        end
+    else
+        for i in eachindex(IndexCartesian(), h)
+            solution = iterator(A, h[i])
+            result[i, axes(g)...] = g(solution)
+        end
+    end
+    return result
+end
+
 @concrete struct Rank1DiscretePNVector{co} <: AbstractDiscretePNVector{co}
     model
     arch
@@ -127,15 +145,15 @@ end
 function assemble_rhs!(b, rhs::Rank1DiscretePNVector{true}, i, Δ, sym)
     fill!(b, zero(eltype(b)))
 
-    nLp = length(bxp)
-    nRp = length(bΩp)
+    nLp = length(rhs.bxp)
+    nRp = length(rhs.bΩp)
 
     bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
     # bp = pview(b, rhs.model)
 
     bϵ2 = rhs.bϵ[i]
-    bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
-    bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
+    bxp_mat = reshape(@view(rhs.bxp[:]), (length(rhs.bxp), 1))
+    bΩp_mat = reshape(@view(rhs.bΩp[:]), (1, length(rhs.bΩp)))
     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, true)
     # sym is not used since we only assemble the p part of b here
 end
@@ -143,15 +161,15 @@ end
 function assemble_rhs_midpoint!(b, rhs::Rank1DiscretePNVector{false}, i, Δ, sym)
     fill!(b, zero(eltype(b)))
 
-    nLp = length(bxp)
-    nRp = length(bΩp)
+    nLp = length(rhs.bxp)
+    nRp = length(rhs.bΩp)
 
     bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
     # bp = pview(b, rhs.model)
 
     bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
-    bxp_mat = reshape(@view(bxp[:]), (length(bxp), 1))
-    bΩp_mat = reshape(@view(bΩp[:]), (1, length(bΩp)))
+    bxp_mat = reshape(@view(rhs.bxp[:]), (length(rhs.bxp), 1))
+    bΩp_mat = reshape(@view(rhs.bΩp[:]), (1, length(rhs.bΩp)))
     mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, true)
     # sym is not used since we only assemble the p part of b here
 end
