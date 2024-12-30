@@ -29,6 +29,7 @@ include("pnequations.jl")
 include("pnarchitecture.jl")
 include("pnmodel.jl")
 include("pnproblem.jl")
+include("pniterators.jl")
 include("pnvector.jl")
 include("pnderivativevector.jl")
 
