@@ -220,7 +220,7 @@ end
 
 Base.eltype(M::SchurBlockMat) = Base.eltype(first(M.ρp))
 
-function mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, Ip, kp, Ωpm, absΩp, D, a, b, c, tmp, tmp2, tmp3)::SchurBlockMat, x::AbstractVector, α::Number, β::Number)
+function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, Ip, kp, Ωpm, absΩp, D, a, b, c, tmp, tmp2, tmp3)::SchurBlockMat, x::AbstractVector, α::Number, β::Number)
     nLp, nLm = size(first(∇pm))
     nRm, nRp = size(first(Ωpm))
 
