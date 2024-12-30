@@ -34,6 +34,8 @@ end
 Base.size(A::BlockedMatrix) = length.(A.axes)
 Base.size(A::BlockedMatrix, i) = length(A.axes[i])
 Base.eltype(::BlockedMatrix{T}) where T = T
+Base.:≈(A::AbstractMatrix, B::BlockedMatrix) = A ≈ collect(B)
+Base.:≈(B::BlockedMatrix, A::AbstractMatrix) = collect(B) ≈ A
 num_blocks(A::BlockedMatrix) = length(A.blocks)
 
 Base.show(io::IO, A::BlockedMatrix) = print(io, "$(size(A, 1))x$(size(A, 2)) BlockedMatrix{$(eltype(A))} with blocks: $(["$(length(A.indices[i][1]))x$(length(A.indices[i][2]))" * ((i!=num_blocks(A)) ? ", " : "") for i in 1:num_blocks(A)]...)")
