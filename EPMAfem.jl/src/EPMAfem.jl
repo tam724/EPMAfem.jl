@@ -11,6 +11,8 @@ using Krylov
 
 include("special_matrices/sparse3tensor.jl")
 import EPMAfem.Sparse3Tensor
+include("special_matrices/blockedmatrices.jl")
+import EPMAfem.BlockedMatrices
 
 include("space_dimensions.jl")
 import EPMAfem.Dimensions

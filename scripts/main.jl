@@ -11,6 +11,7 @@ using Gridap
 #using StaticArrays
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (100, 200)))
+# direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 3)
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
 
 equations = EPMAfem.PNEquations()
@@ -21,7 +22,7 @@ extraction = EPMAfem.PNExtraction([0.1, 0.2])
 # SH.dimensionality(direction_model)
 
 model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
-#model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
+# model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
 # model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.05:1.0, direction_model, EPMAfem.cuda())
 
 # discrete_problem_cpu = EPMAfem.discretize_problem(equations, model_cpu)
@@ -65,7 +66,6 @@ for (Ωpm, Ωpm2) in zip(discrete_problem.Ωpm, discrete_problem2.Ωpm)
     @assert collect(Ωpm) ≈ collect(Ωpm2)
 end
 
-
 # test = EPMAfem.SpaceModels.assemble_bilinear(SM.∫R_uv, space_model, EPMAfem.SpaceModels.even(space_model), EPMAfem.SpaceModels.even(space_model))
 
 discrete_rhs = EPMAfem.discretize_rhs(excitation, model)
@@ -74,9 +74,7 @@ discrete_ext = EPMAfem.discretize_extraction(extraction, model)
 
 solver_schur = EPMAfem.pn_schurimplicitmidpointsolver(equations, model, sqrt(eps(Float64)))
 
-
 #solver_full = EPMAfem.pn_fullimplicitmidpointsolver(equations, model)
-
 # solution = EPMAfem.iterator(discrete_problem, discrete_rhs[1, 14, 1], solver)
 
 g = discrete_rhs
@@ -84,12 +82,17 @@ A_gi1 = EPMAfem.iterator(discrete_problem, g[1, 20, 1], solver_schur)
 A_gi2 = EPMAfem.iterator(discrete_problem, g[1, 13, 1], solver_schur)
 h = discrete_ext
 
+
+
 hh1 = h(A_gi1)
+
+CUDA.@profile hh1 = h(A_gi1)
+
 hh2 = h(A_gi2)
 
-@gif for (ϵ, i) in Astar_hi2
+@gif for (ϵ, i) in A_gi1
     @show i
-    sol = EPMAfem.current_solution(Astar_hi1.solver)
+    sol = EPMAfem.current_solution(A_gi1.solver)
     sol_p = EPMAfem.pview(sol, model)
     cpu_vec = collect(@view(sol_p[:, 1]))
     # @show sol_p |> size
@@ -108,7 +111,7 @@ gg1 = g(Astar_hi1)
 gg2 = g(Astar_hi2)
 
 plot(gg1[1, :, 1])
-plot!(gg2[1, :, 1])
+plot!(gg2[2, :, 2])
 
 scatter!([20, 20], [hh1[1], hh1[2]])
 scatter!([13, 13], [hh2[1], hh2[2]])

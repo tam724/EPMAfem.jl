@@ -25,7 +25,8 @@ convert_to_architecture(arch::PNArchitecture{T}, x::Matrix) where T = mat_type(a
 convert_to_architecture(arch::PNArchitecture{T}, x::SparseMatrixCSC) where T = smat_type(arch)(x)
 convert_to_architecture(arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(arch)(x)
 convert_to_architecture(Tv, arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(Tv, arch)(x)
-convert_to_architecture(arch::PNArchitecture{T}, x::Vector) where T = [convert_to_architecture(arch, xi) for xi in x]
+convert_to_architecture(arch::PNArchitecture{T}, x::Union{Vector, NTuple}) where T = convert_to_architecture.(Ref(arch), x)
+convert_to_architecture(arch::PNArchitecture{T}, x::BlockedMatrices.BlockedMatrix) where T = BlockedMatrices.BlockedMatrix(convert_to_architecture(arch, x.blocks), x.indices, x.axes)
 function convert_to_architecture(arch::PNArchitecture{T}, x::Sparse3Tensor.Sparse3TensorSSM) where T
     return Sparse3Tensor.Sparse3TensorSSM(
         convert_to_architecture(arch, x.skeleton),

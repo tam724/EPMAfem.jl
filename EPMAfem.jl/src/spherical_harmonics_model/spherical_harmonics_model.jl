@@ -104,6 +104,57 @@ function odd(model::EEEOSphericalHarmonicsModel)
     return @view(model.sh_index[(:oee, :eoe, :eeo, :ooo)])
 end
 
+function get_indices_∫S²absΩuv(model::EEEOSphericalHarmonicsModel{1})
+    list = ((:eee, :eee), )
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1], getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
+function get_indices_∫S²absΩuv(model::EEEOSphericalHarmonicsModel{2})
+    list = ((:eee, :eee), (:ooe, :ooe))
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1], getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
+function get_indices_∫S²absΩuv(model::EEEOSphericalHarmonicsModel{3})
+    list = ((:eee, :eee), (:eoo, :eoo), (:oeo, :oeo), (:ooe, :ooe))
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1], getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
+function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{1}, ::Z)
+    n_even = n_basis(model).p
+    list = ((:oee, :eee), )
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
+function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{2}, ::Z)
+    n_even = n_basis(model).p
+    list = ((:oee, :eee), (:eoe, :ooe))
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
+function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{2}, ::X)
+    n_even = n_basis(model).p
+    list = ((:eoe, :eee), (:oee, :ooe))
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
+function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{3}, ::Z)
+    n_even = n_basis(model).p
+    list = ((:oee, :eee), (:ooo, :eoo), (:eeo, :oeo), (:eoe, :ooe))
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
+function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{3}, ::X)
+    n_even = n_basis(model).p
+    list = ((:eoe, :eee), (:eeo, :eoo), (:ooo, :oeo), (:oee, :ooe))
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
+function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{3}, ::Y)
+    n_even = n_basis(model).p
+    list = ((:eeo, :eee), (:eoe, :eoo), (:oee, :oeo), (:ooo, :ooe))
+    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+end
+
 function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND
     viable_moments = get_all_viable_harmonics_up_to(max_degree(model), ND)
     sort!(viable_moments, lt=isless_eeevenodd)

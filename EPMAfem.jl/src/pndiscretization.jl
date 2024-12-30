@@ -62,9 +62,12 @@ function discretize_problem(pn_eq::PNEquations, discrete_model::PNGridapModel)
     Ip = to_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_model, SH.even(direction_model), SH.even(direction_model), SH.exact_quadrature())) |> cv
     Im = to_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_model, SH.odd(direction_model), SH.odd(direction_model), SH.exact_quadrature())) |> cv
 
-    absΩp = [SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.even(direction_model), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(discrete_model))] |> cv
-    Ωpm = [SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.odd(direction_model), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(discrete_model))] |> cv
-
+    absΩp_full = [SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.even(direction_model), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(discrete_model))]
+    absΩp = [BlockedMatrices.blocked_from_mat(absΩp_full[i], SH.get_indices_∫S²absΩuv(direction_model)) for (i, dim) in enumerate(dimensions(discrete_model))] |> cv
+    # absΩp = absΩp_full |> cv
+    Ωpm_full = [SH.assemble_bilinear(∫, direction_model, SH.even(direction_model), SH.odd(direction_model), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(discrete_model))]
+    Ωpm = [BlockedMatrices.blocked_from_mat(Ωpm_full[i], SH.get_indices_∫S²Ωuv(direction_model, dim)) for (i, dim) in enumerate(dimensions(discrete_model))] |> cv
+    # Ωpm = Ωpm_full |> cv
     DiscretePNSystem(discrete_model, s, τ, σ, ρp, ρp_tensor, ρp_tensor2, ρm, ρm_tensor, ρm_tensor2, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
 end
 

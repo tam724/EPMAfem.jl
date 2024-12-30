@@ -1,4 +1,4 @@
-import LinearAlgebra: mul!
+# import LinearAlgebra: mul!
 
 
 ## Naming Convention: lowercase: vector values, uppercase: matrix valued
