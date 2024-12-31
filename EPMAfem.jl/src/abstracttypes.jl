@@ -1,4 +1,6 @@
-# holds basic grid 
+abstract type AbstractPNEquations end
+
+# basic grid definitions, number of basis functions, etc.. 
 abstract type AbstractPNModel end
 
 # holds the basis matrices for the PNProblem

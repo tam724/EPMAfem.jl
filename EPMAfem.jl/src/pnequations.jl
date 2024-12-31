@@ -1,4 +1,4 @@
-@concrete struct PNEquations
+@concrete struct PNEquations <: AbstractPNEquations
     scattering_norm_factor
 end
 

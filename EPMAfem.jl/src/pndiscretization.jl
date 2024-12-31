@@ -1,5 +1,5 @@
 
-function discretize_problem(pn_eq::PNEquations, mdl::PNGridapModel, arch::PNArchitecture)
+function discretize_problem(pn_eq::AbstractPNEquations, mdl::PNGridapModel, arch::PNArchitecture)
     T = base_type(arch)
 
     ϵs = energy_model(mdl)
