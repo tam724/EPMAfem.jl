@@ -78,7 +78,7 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
             s_i = problem.s[i_e, i_ϵ]
             τ_i = problem.τ[i_e, i_ϵ]
 
-            rmul!(σtempp.diag, false)
+            my_rmul!(σtempp.diag, false)
             for i in 1:size(problem.σ, 2)
                 σtempp.diag .+= problem.σ[i_e, i, i_ϵ] .* problem.kp[i_e][i].diag
             end
@@ -89,7 +89,7 @@ function (arr::ArrayOfTangentDiscretePNVector)(it::NonAdjointIterator)
 
             Sparse3Tensor.special_matmul!(ΛpΦp[i_e], isp, jsp, Λtempp, Φp, Δϵ, write_initial)
 
-            rmul!(σtempm.diag, false)
+            my_rmul!(σtempm.diag, false)
             for i in 1:size(problem.σ, 2)
                 σtempm.diag .+= problem.σ[i_e, i, i_ϵ] .* problem.km[i_e][i].diag
             end

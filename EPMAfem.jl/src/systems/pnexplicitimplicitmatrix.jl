@@ -1,5 +1,7 @@
 # import LinearAlgebra: mul!
 
+# somehow try to unify the use of rmul (thats how I mainly use it here)
+include("../redefine_rmul.jl")
 
 ## Naming Convention: lowercase: vector values, uppercase: matrix valued
 ##
@@ -15,14 +17,13 @@
 end
 
 
-
 """
     computes Y = sum_z ρ[z] * X * (a[z] * i + sum_i c[z][i] k[z][i]) * α + β * Y
 """
 function LinearAlgebra.mul!(y::AbstractVector, (; ρ, i, k, a, c, Tmp1, Tmp2)::ZMatrix{R, I, K, A, C, T1, T2}, x::AbstractVector, α::Number, β::Number) where {R, I<:Diagonal, K, A, C, T1, T2<:Diagonal}
     nL1, nL2 = size(first(ρ))
     nR1, nR2 = size(first(first(k)))
-    rmul!(y, β)
+    my_rmul!(y, β)
 
     for (ρz, kz, az, cz) in zip(ρ, k, a, c)
         mul!(Tmp1, ρz, reshape(x, (nL2, nR1)), true, false)
@@ -42,7 +43,7 @@ end
 function LinearAlgebra.mul!(y::AbstractVector, (; ρ, i, k, a, c, Tmp1, Tmp2)::ZMatrix{R, I, K, A, C, T1, T2}, x::AbstractVector, α::Number, β::Number) where {R, I, K, A, C, T1, T2}
     nL1, nL2 = size(first(ρ))
     nR1, nR2 = size(first(first(k)))
-    rmul!(y, β)
+    my_rmul!(y, β)
 
     for (ρz, kz, az, cz) in zip(ρ, k, a, c)
         mul!(Tmp1, ρz, reshape(x, (nL2, nR1)), true, false)
@@ -72,7 +73,7 @@ function LinearAlgebra.mul!(y::AbstractVector, (; l, r, b, Tmp1)::DMatrix{L, R, 
     nL1, nL2 = size(first(l))
     nR1, nR2 = size(first(r))
 
-    rmul!(y, β)
+    my_rmul!(y, β)
     for (ld, rd) in zip(l, r)
         mul!(Tmp1, ld, reshape(x, (nL2, nR1)), true, false)
         mul!(reshape(y, (nL1, nR2)), Tmp1, rd, b*α, true)
@@ -229,7 +230,7 @@ function LinearAlgebra.mul!(y::AbstractVector, (;ρp, ∇pm, ∂p, Ip, kp, Ωpm,
 
     (b1, b2, d) = b
 
-    rmul!(y, β)
+    my_rmul!(y, β)
 
     # this operator Cp = mp ∘ D-1 ∘ pm(Bp) is still quite sparse. maybe it is reasonable to construct it once before the krylov loop
     fill!(mat_view(tmp3, nLm, nRm), zero(eltype(tmp3)))

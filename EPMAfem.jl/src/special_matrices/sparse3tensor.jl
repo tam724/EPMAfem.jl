@@ -7,6 +7,8 @@ using CUDA
 using ConcreteStructs
 using KernelAbstractions
 
+include("../redefine_rmul.jl")
+
 # some overloads to enable SparseArrays and Diagonal
 function SparseArrays.nonzeros(D::Diagonal)
     return D.diag
@@ -328,7 +330,7 @@ function contract!(Δ_w, A::Sparse3TensorSSM, u, v, α, β)
             Δ_skeleton[i_nz] = temp[i, j]
         end
     end
-    rmul!(Δ_w, β)
+    my_rmul!(Δ_w, β)
     for pr_ in A.projector
         mul!(Δ_w, transpose(pr_), Δ_skeleton, α, true)
     end
@@ -366,7 +368,7 @@ function special_matmul!(uv_nz, is, js, u, v, α, β)
 end
 
 function contract!(Δ_w, A::Sparse3TensorSSM, uv_nz, α, β)
-    rmul!(Δ_w, β)
+    my_rmul!(Δ_w, β)
     for pr_ in A.projector
         mul!(Δ_w, transpose(pr_), uv_nz, α, true)
     end
