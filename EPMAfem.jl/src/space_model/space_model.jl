@@ -1,13 +1,19 @@
 abstract type AbstractSpaceModel{ND} end
 @concrete struct GridapSpaceModel{ND} <: AbstractSpaceModel{ND}
     discrete_model
+    even_fe_space
+    odd_fe_space
 end
 
 function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}) where ND
-    return GridapSpaceModel{ND}(discrete_model)
+    reffe1 = ReferenceFE(lagrangian, Float64, 1)
+    even_fe_space = TestFESpace(discrete_model, reffe1, conformity=:H1)
+    reffe0 = ReferenceFE(lagrangian, Float64, 0)
+    odd_fe_space = TestFESpace(discrete_model, reffe0, conformity=:L2)
+    return GridapSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space)
 end
 
-dimensionality(model::GridapSpaceModel{ND}) where ND = dimensionality_type(ND)
+dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality_type(ND)
 
 function get_args(model::GridapSpaceModel)
     dims = dimensionality(model)
@@ -20,13 +26,11 @@ function get_args(model::GridapSpaceModel)
 end
 
 function even(model::GridapSpaceModel)
-    reffe = ReferenceFE(lagrangian, Float64, 1)
-    return TestFESpace(model.discrete_model, reffe, conformity=:H1)
+    return model.even_fe_space
 end
 
 function odd(model::GridapSpaceModel)
-    reffe = ReferenceFE(lagrangian, Float64, 0)
-    return TestFESpace(model.discrete_model, reffe, conformity=:L2)
+    return model.odd_fe_space
 end
 
 function material(model::GridapSpaceModel)

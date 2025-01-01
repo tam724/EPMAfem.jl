@@ -22,7 +22,7 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::PNGridapModel, arch
     ## assemble all the space matrices
     ρp_tens = SM.assemble_trilinear(SM.∫R_uv, space_mdl, SM.even(space_mdl), SM.even(space_mdl))
     ρp_tensor = Sparse3Tensor.convert_to_SSM(ρp_tens)
-    ρp = [ρp_tensor.skeleton |> arch for _ in 1:n_elem]
+    ρp = [similar(ρp_tensor.skeleton) |> arch for _ in 1:n_elem]
     # ρp_skeleton, ρp_projector = SM.build_projector(SM.∫R_uv, space_model, SM.even(space_model), SM.even(space_model))
     # ρp = [SMT((assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[1], V[1]))) for e in 1:number_of_elements(pn_eq)] 
     # ρp = [SMT(ρp_skeleton) for _ in 1:number_of_elements(pn_eq)] 
@@ -30,7 +30,7 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::PNGridapModel, arch
 
     ρm_tens = SM.assemble_trilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.odd(space_mdl))
     ρm_tensor = Sparse3Tensor.convert_to_SSM(ρm_tens)
-    ρm = [ρm_tensor.skeleton |> arch for _ in 1:n_elem]
+    ρm = [similar(ρm_tensor.skeleton) |> arch for _ in 1:n_elem]
     # ρm_skeleton, ρm_projector = SM.build_projector(SM.∫R_uv, space_model, SM.odd(space_model), SM.odd(space_model))
     # ρm = [Diagonal(VT(diag(assemble_bilinear(∫ρuv, (_mass_concentrations(pn_eq, e), gap_model), U[2], V[2])))) for e in 1:number_of_elements(pn_eq)] 
     # ρm = [Diagonal(VT(diag(ρm_skeleton))) for _ in 1:number_of_elements(pn_eq)]
@@ -48,7 +48,7 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::PNGridapModel, arch
     # .project_matrices(ρp, ρp_proj, ρs)
     # SM.project_matrices(ρm, ρm_proj, ρs)
 
-    ∂p = [dropzeros(SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl))) for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(mdl))] |> arch
+    ∂p = [dropzeros!(SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl))) for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(mdl))] |> arch
     ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) for ∫ ∈ SM.∫R_u_∂v(dimensionality(mdl))] |> arch
 
     ## assemble all the direction matrices

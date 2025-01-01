@@ -206,22 +206,31 @@ function compute_coloring(I::AbstractVector{Ti}, J::AbstractVector{Ti}, n_vals) 
     g_dict = Dict{Tuple{Ti, Ti}, Vector{Ti}}()
     for i in 1:n_vals
         key = (I[i], J[i])
-        if haskey(g_dict, key)
-            push!(g_dict[key], i)
-        else
-            g_dict[key] = [i]
-        end
+        arr = get!(Vector{Ti}, g_dict, key)
+        push!(arr, i)
     end
 
-    g = SimpleGraph(n_vals)
+    # precompute the number of edges
+    n_edges = 0
+    for(_, ks) in g_dict
+        f(n) = n*(n-1)÷2
+        n_edges += f(length(ks))
+    end
 
+    edgelist = Vector{Graphs.SimpleGraphEdge{Ti}}(undef, n_edges)
+
+    i_edge = 0
     for (_, ks) in g_dict
         for k in 1:length(ks)
             for l in k+1:length(ks)
-                add_edge!(g, Edge(ks[k], ks[l]))
+                i_edge += 1
+                edgelist[i_edge] = Graphs.SimpleGraphEdge(ks[k], ks[l])
             end
         end
     end
+    g = SimpleGraph(edgelist)
+    # add remaining vertices to the graph
+    add_vertices!(g, n_vals - length(Graphs.vertices(g)))
 
     return Graphs.degree_greedy_color(g)
 end
