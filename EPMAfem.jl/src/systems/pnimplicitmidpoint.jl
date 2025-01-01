@@ -1,12 +1,25 @@
-function update_coefficients_rhs_nonadjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, i, Δϵ)
+function step_nonadjoint!(pnsystem::AbstractDiscretePNSystemIM, rhs::AbstractDiscretePNVector, i, Δϵ)
+    if pnsystem.adjoint @warn "Trying to step_nonadjoint with System marked as adjoint" end
+    if pnsystem.adjoint != _is_adjoint_vector(rhs) @warn "System {$(pnsystem.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}" end
+    _step_nonadjoint!(pnsystem, rhs, i, Δϵ)
+end
+
+function step_adjoint!(pnsystem::AbstractDiscretePNSystemIM, rhs::AbstractDiscretePNVector, i, Δϵ)
+    if !pnsystem.adjoint @warn "Trying to step_adjoint with System marked as nonadjoint" end
+    if pnsystem.adjoint != _is_adjoint_vector(rhs) @warn "System {$(pnsystem.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}" end
+    _step_adjoint!(pnsystem, rhs, i, Δϵ)
+end
+
+# update the coefficients for the nonadjoint step from idx to idx-1
+function update_coefficients_rhs_nonadjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, idx, Δϵ)
     # ip1 = i
     # i = i-1
     for e in 1:length(system.a)
-        si, sip1 = problem.s[e, i-1], problem.s[e, i]
-        τi, τip1 = problem.τ[e, i-1], problem.τ[e, i]
+        si, sip1 = problem.s[e, minus1(idx)], problem.s[e, idx]
+        τi, τip1 = problem.τ[e, minus1(idx)], problem.τ[e, idx]
         system.a[e] = -sip1 + 0.5 * Δϵ * τip1
         for sc in 1:length(system.c[e])
-            σi, σip1 = problem.σ[e, sc, i-1],  problem.σ[e, sc, i]
+            σi, σip1 = problem.σ[e, sc, minus1(idx)],  problem.σ[e, sc, minus1(idx)]
             system.c[e][sc] = -0.5 * Δϵ * σip1
         end
     end
@@ -16,15 +29,14 @@ function update_coefficients_rhs_nonadjoint!(system::AbstractDiscretePNSystemIM,
     return system.a, (b1, b2, d), system.c
 end
 
-function update_coefficients_rhs_adjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, i, Δϵ)
-    # ip12 = i+1
-    # im12 = i
+# update the coefficients for the adjoint step from idx to idx+1
+function update_coefficients_rhs_adjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, idx, Δϵ)
     for e in 1:length(system.a)
-        si = problem.s[e, i]
-        τi = problem.τ[e, i]
+        si = problem.s[e, plus½(idx)]
+        τi = problem.τ[e, plus½(idx)]
         system.a[e] = -si + 0.5 * Δϵ * τi
         for sc in 1:length(system.c[e])
-            σi = problem.σ[e, sc, i]
+            σi = problem.σ[e, sc, plus½(idx)]
             system.c[e][sc] = -0.5 * Δϵ * σi
         end
     end
@@ -34,15 +46,16 @@ function update_coefficients_rhs_adjoint!(system::AbstractDiscretePNSystemIM, pr
     return system.a, (b1, b2, d), system.c
 end
 
-function update_coefficients_mat_nonadjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, i, Δϵ)
+# update the coefficients for the nonadjoint step from idx to idx-1
+function update_coefficients_mat_nonadjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, idx, Δϵ)
     # ip1 = i
     # i = i-1
     for e in 1:length(system.a)
-        si, sip1 = problem.s[e, i-1], problem.s[e, i]
-        τi, τip1 = problem.τ[e, i-1], problem.τ[e, i]
+        si, sip1 = problem.s[e, minus1(idx)], problem.s[e, idx]
+        τi, τip1 = problem.τ[e, minus1(idx)], problem.τ[e, idx]
         system.a[e] = si + 0.5 * Δϵ * τi
         for sc in 1:length(system.c[e])
-            σi, σip1 = problem.σ[e, sc, i-1],  problem.σ[e, sc, i]
+            σi, σip1 = problem.σ[e, sc, minus1(idx)],  problem.σ[e, sc, idx]
             system.c[e][sc] = -0.5 * Δϵ * σi
         end
     end
@@ -52,15 +65,16 @@ function update_coefficients_mat_nonadjoint!(system::AbstractDiscretePNSystemIM,
     return system.a, (b1, b2, d), system.c
 end
 
-function update_coefficients_mat_adjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, i, Δϵ)
+# update the coefficients for the adjoint step from idx to idx+1
+function update_coefficients_mat_adjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, idx, Δϵ)
     # ip12 = i+1
     # im12 = i
     for e in 1:length(system.a)
-        si = problem.s[e, i]
-        τi = problem.τ[e, i]
+        si = problem.s[e, plus½(idx)]
+        τi = problem.τ[e, plus½(idx)]
         system.a[e] = si + 0.5 * Δϵ * τi
         for sc in 1:length(system.c[e])
-            σi = problem.σ[e, sc, i]
+            σi = problem.σ[e, sc, plus½(idx)]
             system.c[e][sc] = -0.5 * Δϵ * σi
         end
     end
@@ -70,22 +84,23 @@ function update_coefficients_mat_adjoint!(system::AbstractDiscretePNSystemIM, pr
     return system.a, (b1, b2, d), system.c
 end
 
-function update_rhs_nonadjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, rhs::AbstractDiscretePNVector{false}, i, Δϵ, sym)
+# update the rhs for the nonadjoint step from idx to idx-1
+function update_rhs_nonadjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, rhs::AbstractDiscretePNVector, idx, Δϵ, sym)
     # minus because we have to bring b to the right side of the equation 
-    # bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i-1])
-    assemble_rhs_midpoint!(system.rhs, rhs, i-1, -Δϵ, sym)
-    a, b, c = update_coefficients_rhs_nonadjoint!(system, problem, i, Δϵ)
+    assemble_rhs_midpoint!(system.rhs, rhs, idx, -Δϵ, sym)
+    a, b, c = update_coefficients_rhs_nonadjoint!(system, problem, idx, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, system.tmp, system.tmp2, sym)
     mul!(system.rhs, A, current_solution(system), -1.0, true)
     return
 end
 
-function update_rhs_adjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, rhs::AbstractDiscretePNVector{true}, i, Δϵ, sym)
+# update the rhs for the adjoint step from idx to idx+1
+function update_rhs_adjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, rhs::AbstractDiscretePNVector, idx, Δϵ, sym)
     # minus because we have to bring b to the right side of the equation 
     # bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
-    assemble_rhs!(system.rhs, rhs, i, -Δϵ, sym)
-    a, b, c = update_coefficients_rhs_adjoint!(system, problem, i, Δϵ)
+    assemble_rhs!(system.rhs, rhs, idx, -Δϵ, sym)
+    a, b, c = update_coefficients_rhs_adjoint!(system, problem, idx, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, system.tmp, system.tmp2, sym)
     mul!(system.rhs, A, current_solution(system), -1.0, true)
@@ -93,7 +108,8 @@ function update_rhs_adjoint!(system::AbstractDiscretePNSystemIM, problem::Discre
 end
 
 # full implicit midpoint solver
-@concrete struct DiscretePNSystem_IMF <: AbstractDiscretePNSystemIM
+Base.@kwdef @concrete struct DiscretePNSystem_IMF <: AbstractDiscretePNSystemIM
+    adjoint::Bool = false
     problem
     a
     c
@@ -105,14 +121,18 @@ end
     atol
 end
 
-function initialize!(pnsystem::DiscretePNSystem_IMF)
+function Base.adjoint(A::DiscretePNSystem_IMF)
+    return DiscretePNSystem_IMF(adjoint=!A.adjoint, problem=A.problem, a=A.a, c=A.c, tmp=A.tmp, tmp2=A.tmp2, rhs=A.rhs, lin_solver=A.lin_solver, rtol=A.rtol, atol=A.atol)
+end
+
+function initialize_or_fillzero!(pnsystem::DiscretePNSystem_IMF, ::Nothing)
     # use initial condition from rhs
     arch = architecture(pnsystem.problem)
     T = base_type(arch)
     fill!(pnsystem.lin_solver.x, zero(T))
 end
 
-function initialize_from_state!(pnsystem::DiscretePNSystem_IMF, state)
+function initialize_or_fillzero!(pnsystem::DiscretePNSystem_IMF, state)
     copy!(pnsystem.lin_solver.x, state)
 end
 
@@ -120,19 +140,21 @@ function current_solution(pnsystem::DiscretePNSystem_IMF)
     return pnsystem.lin_solver.x
 end
 
-function step_nonadjoint!(pnsystem::DiscretePNSystem_IMF, rhs::AbstractDiscretePNVector{false}, i, Δϵ)
+# update the system state from i to i-1
+function _step_nonadjoint!(pnsystem::DiscretePNSystem_IMF, rhs::AbstractDiscretePNVector, idx, Δϵ)
     problem = pnsystem.problem
-    update_rhs_nonadjoint!(pnsystem, problem, rhs, i, Δϵ, true)
-    a, b, c = update_coefficients_mat_nonadjoint!(pnsystem, problem, i, Δϵ)
+    update_rhs_nonadjoint!(pnsystem, problem, rhs, idx, Δϵ, true)
+    a, b, c = update_coefficients_mat_nonadjoint!(pnsystem, problem, idx, Δϵ)
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, pnsystem.tmp, pnsystem.tmp2, true)
     Krylov.solve!(pnsystem.lin_solver, A, pnsystem.rhs, rtol=pnsystem.rtol, atol=pnsystem.atol)
     # @show solver.lin_solver.stats
 end
 
-function step_adjoint!(pnsystem::DiscretePNSystem_IMF, rhs::AbstractDiscretePNVector{true}, i, Δϵ)
+# update the system state from i to i+1
+function _step_adjoint!(pnsystem::DiscretePNSystem_IMF, rhs::AbstractDiscretePNVector, idx, Δϵ)
     problem = pnsystem.problem
-    update_rhs_adjoint!(pnsystem, problem, rhs, i, Δϵ, true)
-    a, b, c = update_coefficients_mat_adjoint!(pnsystem, problem, i, Δϵ)
+    update_rhs_adjoint!(pnsystem, problem, rhs, idx, Δϵ, true)
+    a, b, c = update_coefficients_mat_adjoint!(pnsystem, problem, idx, Δϵ)
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, pnsystem.tmp, pnsystem.tmp2, true)
     Krylov.solve!(pnsystem.lin_solver, A, pnsystem.rhs, rtol=pnsystem.rtol, atol=pnsystem.atol)
     # @show solver.lin_solver.stats
@@ -151,15 +173,15 @@ function fullimplicitmidpointsystem(pnproblem::AbstractDiscretePNProblem, tol=no
 
     n_tot = nxp*nΩp + nxm*nΩm
     return DiscretePNSystem_IMF(
-        pnproblem,
-        Vector{T}(undef, ne),
-        [Vector{T}(undef, nσ) for _ in 1:ne], 
-        allocate_vec(arch, max(nxp, nxm)*max(nΩp, nΩm)),
-        allocate_vec(arch, max(nΩp, nΩm)),
-        allocate_vec(arch, n_tot),
-        Krylov.MinresSolver(n_tot, n_tot, vec_type(arch)),
-        T(tol),
-        T(0),
+        problem = pnproblem,
+        a = Vector{T}(undef, ne),
+        c = [Vector{T}(undef, nσ) for _ in 1:ne], 
+        tmp = allocate_vec(arch, max(nxp, nxm)*max(nΩp, nΩm)),
+        tmp2 = allocate_vec(arch, max(nΩp, nΩm)),
+        rhs = allocate_vec(arch, n_tot),
+        lin_solver = Krylov.MinresSolver(n_tot, n_tot, vec_type(arch)),
+        rtol = T(tol),
+        atol = T(0),
     )
 end
 
@@ -213,7 +235,8 @@ end
 #     )
 # end
 
-@concrete struct DiscretePNSystem_IMS <: AbstractDiscretePNSystemIM
+Base.@kwdef @concrete struct DiscretePNSystem_IMS <: AbstractDiscretePNSystemIM
+    adjoint::Bool=false
     problem
     a
     c
@@ -230,6 +253,10 @@ end
     atol
 end
 
+function Base.adjoint(A::DiscretePNSystem_IMS)
+    return DiscretePNSystem_IMS(adjoint=!A.adjoint, problem=A.problem, a=A.a, c=A.c, tmp=A.tmp, tmp2=A.tmp2, tmp3=A.tmp3, D=A.D, rhs_schur=A.rhs_schur, rhs=A.rhs, sol=A.sol, lin_solver=A.lin_solver, rtol=A.rtol, atol=A.atol)
+end
+
 function schurimplicitmidpointsystem(pnproblem::AbstractDiscretePNProblem, tol=nothing)
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(pnproblem)
     (nd, ne, nσ) = n_sums(pnproblem)
@@ -244,30 +271,29 @@ function schurimplicitmidpointsystem(pnproblem::AbstractDiscretePNProblem, tol=n
     np = nxp*nΩp
     n_tot = nxp*nΩp + nxm*nΩm
     return DiscretePNSystem_IMS(
-        pnproblem,
-        Vector{T}(undef, ne),
-        [Vector{T}(undef, nσ) for _ in 1:ne],
-        allocate_vec(arch, max(nxp, nxm)*max(nΩp, nΩm)),
-        allocate_vec(arch, max(nΩp, nΩm)),
-        allocate_vec(arch, nxm*nΩm),
-        allocate_vec(arch, nxm*nΩm),
-        allocate_vec(arch, np),
-        allocate_vec(arch, n_tot),
-        allocate_vec(arch, n_tot),
-        Krylov.MinresSolver(np, np, vec_type(arch)),
-        T(tol),
-        T(0)
+        problem = pnproblem,
+        a = Vector{T}(undef, ne),
+        c = [Vector{T}(undef, nσ) for _ in 1:ne],
+        tmp = allocate_vec(arch, max(nxp, nxm)*max(nΩp, nΩm)),
+        tmp2 = allocate_vec(arch, max(nΩp, nΩm)),
+        tmp3 = allocate_vec(arch, nxm*nΩm),
+        D = allocate_vec(arch, nxm*nΩm),
+        rhs_schur = allocate_vec(arch, np),
+        rhs = allocate_vec(arch, n_tot),
+        sol = allocate_vec(arch, n_tot),
+        lin_solver = Krylov.MinresSolver(np, np, vec_type(arch)),
+        rtol = T(tol),
+        atol = T(0)
     )
 end
 
-function initialize!(pnsystem::DiscretePNSystem_IMS)
-    # use initial condition from rhs
+function initialize_or_fillzero!(pnsystem::DiscretePNSystem_IMS, ::Nothing)
     arch = architecture(pnsystem.problem)
     T = base_type(arch)
     fill!(pnsystem.sol, zero(T))
 end
 
-function initialize_from_state!(pnsystem::DiscretePNSystem_IMS, state)
+function initialize_or_fillzero!(pnsystem::DiscretePNSystem_IMS, state)
     copy!(pnsystem.sol, state)
 end
 
@@ -275,7 +301,7 @@ function current_solution(pnsystem::DiscretePNSystem_IMS)
     return pnsystem.sol
 end
 
-function step_nonadjoint!(pnsystem::DiscretePNSystem_IMS, rhs::AbstractDiscretePNVector{false}, i, Δϵ)
+function _step_nonadjoint!(pnsystem::DiscretePNSystem_IMS, rhs::AbstractDiscretePNVector, i, Δϵ)
     problem = pnsystem.problem
     update_rhs_nonadjoint!(pnsystem, problem, rhs, i, Δϵ, false)
     a, b, c = update_coefficients_mat_nonadjoint!(pnsystem, problem, i, Δϵ)
@@ -288,7 +314,7 @@ function step_nonadjoint!(pnsystem::DiscretePNSystem_IMS, rhs::AbstractDiscreteP
     return
 end
 
-function step_adjoint!(pnsystem::DiscretePNSystem_IMS, rhs::AbstractDiscretePNVector{true}, i, Δϵ)
+function _step_adjoint!(pnsystem::DiscretePNSystem_IMS, rhs::AbstractDiscretePNVector, i, Δϵ)
     problem = pnsystem.problem
     update_rhs_adjoint!(pnsystem, problem, rhs, i, Δϵ, false)
     a, b, c = update_coefficients_mat_adjoint!(pnsystem, problem, i, Δϵ)

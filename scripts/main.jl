@@ -10,9 +10,9 @@ using LinearAlgebra
 using Gridap
 #using StaticArrays
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (100, 200)))
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (40, 80)))
 # direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 3)
-direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
+direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(7, 2)
 
 equations = EPMAfem.PNEquations()
 excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.05:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
@@ -32,10 +32,10 @@ model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model)
 
 
 #model = model_cuda
-discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
-discrete_system = EPMAfem.schurimplicitmidpointsystem(discrete_problem, sqrt(eps(Float64)))
+discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
+discrete_system = EPMAfem.schurimplicitmidpointsystem(discrete_problem)
 
-discrete_problem2 = EPMAfem.discretize_problem(equations, model_cuda)
+#discrete_problem2 = EPMAfem.discretize_problem(equations, model_cuda)
 
 for (ρp, ρp2) in zip(discrete_problem.ρp, discrete_problem2.ρp)
     @assert collect(ρp) ≈ collect(ρp2)
@@ -70,10 +70,31 @@ end
 
 # test = EPMAfem.SpaceModels.assemble_bilinear(SM.∫R_uv, space_model, EPMAfem.SpaceModels.even(space_model), EPMAfem.SpaceModels.even(space_model))
 
-discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
+discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cpu())
+discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cpu());
+
+ψ = discrete_system * discrete_rhs[1, 14, 1]
+
+discrete_ext*ψ
+
+ϕ = adjoint(discrete_system)*discrete_ext[1]
+
+res = discrete_rhs*ϕ
+res[1, 14, 1]
+
+
+for i in ψ
+    @show i
+end
+
+it = adjoint(discrete_system) * discrete_ext[1];
+
+for i in it
+    @show i
+end
+
 #test_rhs = EPMAfem.discretize_stange_rhs(excitation, model)
-discrete_ext_old = EPMAfem.discretize_extraction_old(extraction, model, EPMAfem.cuda())
-discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())
+# discrete_ext_old = EPMAfem.discretize_extraction_old(extraction, model, EPMAfem.cuda())
 
 discrete_rhs * discrete_system * discrete_ext
 

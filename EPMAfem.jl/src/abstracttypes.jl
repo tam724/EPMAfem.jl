@@ -12,8 +12,51 @@ abstract type AbstractDiscretePNSystem end
 # implicit midpoint systems
 abstract type AbstractDiscretePNSystemIM <: AbstractDiscretePNSystem end
 
-"""
-    abstract type for excitation/extraction. The co-flag indicates whether the vector is a covector or vector (to be somewhat safe while experimenting).
-"""
-abstract type AbstractDiscretePNVector{co} end
+abstract type AbstractDiscretePNVector end
+# there is no structural difference between a vector and its adjoint (this is to be save that we apply the right system to the right vector)
+is_adjoint(b::AbstractDiscretePNVector) = _is_adjoint_vector(b)
 
+# this is "almost" a AbstractDiscretePNVector. But we have to differentiate the two, because the adjoint-solution has the shifted energy grid. (typically iterators)
+abstract type AbstractDiscretePNSolution end
+is_adjoint(ψ::AbstractDiscretePNSolution) = _is_adjoint_solution(ψ)
+
+## some syntactic sugar
+function Base.:*(A::AbstractDiscretePNSystem, g::AbstractDiscretePNVector)
+    return DiscretePNIterator(A, g)
+end
+
+function Base.:*(h::AbstractDiscretePNVector, ψ::AbstractDiscretePNSolution)
+    if _is_adjoint_vector(h) == _is_adjoint_solution(ψ) @warn "Adjoint vector and solution are not compatible" end
+    if _is_adjoint_solution(ψ)
+        return solve_and_integrate_adjoint(h, ψ)
+    else
+        return solve_and_integrate_nonadjoint(h, ψ)
+    end
+end
+
+function Base.:*(h::AbstractArray{<:AbstractDiscretePNVector}, ψ::AbstractDiscretePNSolution)
+    if any(_h -> _is_adjoint_vector(_h) == _is_adjoint_solution(ψ), h) @warn "Adjoint vector and solution are not compatible" end
+    res = zeros(size(h))
+    if _is_adjoint_solution(ψ)
+        return solve_and_integrate_adjoint!(res, h, ψ)
+    else
+        return solve_and_integrate_nonadjoint!(res, h, ψ)
+    end
+end
+
+function Base.:*(h::AbstractArray{<:AbstractDiscretePNVector}, A::AbstractDiscretePNSystem, g::AbstractArray{<:AbstractDiscretePNVector})
+    full_size = (size(h)..., size(g)...)
+    result = zeros(full_size)
+    if length(g) < length(h)
+        for i in eachindex(IndexCartesian(), g)
+            solution = iterator(A, g[i])
+            result[axes(h)..., i] = h(solution)
+        end
+    else
+        for i in eachindex(IndexCartesian(), h)
+            solution = iterator(adjoint(A), h[i])
+            result[i, axes(g)...] = g(solution)
+        end
+    end
+    return result
+end

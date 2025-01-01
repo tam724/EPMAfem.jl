@@ -4,7 +4,7 @@ module OnlyEnergyTests
 using EPMAfem
 
 using EPMAfem: AbstractPNModel, PNArchitecture, energy_model, mass_concentrations, stopping_power, absorption_coefficient, scattering_coefficient, number_of_scatterings, number_of_elements, base_type
-using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, schurimplicitmidpointsystem, fullimplicitmidpointsystem, iterator, current_solution
+using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, schurimplicitmidpointsystem, fullimplicitmidpointsystem, current_solution
 
 using SpecialFunctions
 using Plots
@@ -34,16 +34,20 @@ function compute(N, eq, solver, use_adjoint, arch)
         discrete_ext = discretize_adjoint_rhs(eq, model, arch)
     end
 
-    A = iterator(discrete_system, discrete_ext)
+    if !use_adjoint
+        A = discrete_system * discrete_ext
+    else
+        A = adjoint(discrete_system) * discrete_ext
+    end
 
     sol = zeros(length(energy_model(model)))
     ϵs = zeros(length(energy_model(model)))
 
-    for (ϵ_i, i) in A
+    for idx in A
         full_sol = (current_solution(A.system) |> collect)
-        sol[i] = full_sol[1]
+        sol[idx.i] = full_sol[1]
         @assert isapprox(full_sol[2], 0.0; atol=1e-4)
-        ϵs[i] = ϵ_i
+        ϵs[idx.i] = EPMAfem.ϵ(idx)
     end
     return ϵs, sol
 end

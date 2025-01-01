@@ -45,3 +45,11 @@ function L2_projection(f, model)
     op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, V)
     return Gridap.solve(op).free_values
 end
+
+function projection(f, model, space)
+    (dims, R, dx, Γ, dΓ, n) = get_args(model)
+    V = space
+    U = TrialFESpace(V)
+    op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, V)
+    return Gridap.solve(op).free_values
+end

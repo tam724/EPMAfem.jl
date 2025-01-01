@@ -1,34 +1,27 @@
 using EPMAfem.ConcreteStructs
 using LinearAlgebra
 
-@concrete struct MyStruct
-    mydata
+using EPMAfem
+
+@concrete struct iterator
+    state
 end
 
-function discretize()
-    x = rand(10)
-    return [MyStruct(x) for i in 1:5]
+function Base.iterate(it)
+    idx = EPMAfem.first_index(0:0.1:1, false)
+    it.state[1] = idx.ϵs[idx]
+    return idx, idx
 end
 
-vec = discretize()
-
-function only_unique(arr::Array{<:MyStruct})
-    
-
-function (arr::Array{<:MyStruct})(b::Vector)
-    ret = zeros(size(arr))
-    for i in eachindex(arr)
-        ret[i] = dot(arr[i].mydata, b)
-    end
-    return ret
+function Base.iterate(it, idx)
+    idx = EPMAfem.minus1(idx)
+    if isnothing(idx) return nothing end
+    it.state[1] = idx.ϵs[idx]
+    return idx, idx
 end
 
-b = rand(10)
-vec(b)
+itr = iterator([NaN])
 
-
-function blow_up(A, B)
-    arr = zeros((size(A)..., size(B)...))
-    for i in eachindex(A)
-        arr[i, axes(B)...] = B
-    end
+for i in itr
+    @show i
+end

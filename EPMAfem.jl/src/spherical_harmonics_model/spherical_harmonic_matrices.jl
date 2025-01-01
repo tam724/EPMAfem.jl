@@ -41,6 +41,11 @@ abstract type SphericalQuadrature end
 struct lebedev_quadrature <: SphericalQuadrature
     order::Int64
 end
+
+function lebedev_quadrature_max()
+    return lebedev_quadrature(getavailableorders()[end])
+end
+
 function guess_lebedev_order_from_model(model, fac=3)
     N = max_degree(model)*fac #TODO: this should be checked somehow..
     available_orders = getavailableorders()

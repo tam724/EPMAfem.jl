@@ -109,7 +109,7 @@ function EPMAfem.discretize_rhs(eq::OnlyEnergyEquations, mdl::OnlyEnergyModel, a
     gϵ = Vector{T}([source(eq, ϵ) for ϵ ∈ ϵs])
     gxp = ones(1, 1) |> arch
     gΩp = ones(1, 1) |> arch
-    return Rank1DiscretePNVector{false}(mdl, arch, gϵ, gxp, gΩp)
+    return Rank1DiscretePNVector(false, mdl, arch, gϵ, gxp, gΩp)
 end
 
 function discretize_adjoint_rhs(eq::OnlyEnergyEquations, mdl::OnlyEnergyModel, arch::PNArchitecture)
@@ -121,7 +121,7 @@ function discretize_adjoint_rhs(eq::OnlyEnergyEquations, mdl::OnlyEnergyModel, a
     gϵ = Vector{T}([source(eq, ϵ) for ϵ ∈ ϵs])
     gxp = ones(1, 1) |> arch
     gΩp = ones(1, 1) |> arch
-    return Rank1DiscretePNVector{true}(mdl, arch, gϵ, gxp, gΩp)
+    return Rank1DiscretePNVector(true, mdl, arch, gϵ, gxp, gΩp)
 end
 
 ## some exact solutions (computed via mathematica)
