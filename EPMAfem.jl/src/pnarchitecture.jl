@@ -21,10 +21,13 @@ vec_type(::PNCUDA{T}) where T = CuVector{T}
 vec_type(Tv, ::PNCUDA{T}) where T = CuVector{Tv}
 base_type(::PNCUDA{T}) where T = T
 
-convert_to_architecture(arch::PNArchitecture{T}, x::Matrix) where T = mat_type(arch)(x)
-convert_to_architecture(arch::PNArchitecture{T}, x::SparseMatrixCSC) where T = smat_type(arch)(x)
-convert_to_architecture(arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(arch)(x)
-convert_to_architecture(Tv, arch::PNArchitecture{T}, x::Vector{<:Number}) where T = vec_type(Tv, arch)(x)
+# types that must be converted to the architecture
+convert_to_architecture(arch::PNArchitecture{T}, x::Matrix) where T = if x isa mat_type(arch) return x else return mat_type(arch)(x) end
+convert_to_architecture(arch::PNArchitecture{T}, x::SparseMatrixCSC) where T = if x isa smat_type(arch) return x else return smat_type(arch)(x) end
+convert_to_architecture(arch::PNArchitecture{T}, x::Vector{<:Number}) where T = if x isa vec_type(arch) return x else return vec_type(arch)(x) end
+convert_to_architecture(Tv, arch::PNArchitecture{T}, x::Vector{<:Number}) where T = if x isa vec_type(Tv, arch) return x else return vec_type(Tv, arch)(x) end
+
+# wrapper types (we convert the inner data)
 convert_to_architecture(arch::PNArchitecture{T}, x::Union{Vector, NTuple}) where T = convert_to_architecture.(Ref(arch), x)
 convert_to_architecture(arch::PNArchitecture{T}, x::BlockedMatrices.BlockedMatrix) where T = BlockedMatrices.BlockedMatrix(convert_to_architecture(arch, x.blocks), x.indices, x.axes)
 function convert_to_architecture(arch::PNArchitecture{T}, x::Sparse3Tensor.Sparse3TensorSSM) where T

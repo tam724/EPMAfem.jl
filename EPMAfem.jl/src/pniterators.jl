@@ -8,8 +8,8 @@
 end
 
 function DiscretePNIterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNVector)
-    if system.adjoint != rhs.use_with_adjoint
-        @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(rhs.use_with_adjoint)}"
+    if system.adjoint != _is_adjoint_vector(rhs)
+        @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}"
     end
     return DiscretePNIterator(system, rhs, false, nothing)
 end
