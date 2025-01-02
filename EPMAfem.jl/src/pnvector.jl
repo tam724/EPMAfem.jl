@@ -21,50 +21,58 @@ function weighted(weights, arr_r1::Array{<:Rank1DiscretePNVector})
     return WeightedArrayOfRank1PNVector(weights, arr_r1)
 end
 
-function solve_and_integrate_nonadjoint(b::Rank1DiscretePNVector, it::DiscretePNIterator)
+function solve_and_integrate_nonadjoint(b::Rank1DiscretePNVector, it::AbstractDiscretePNSolution)
     @assert _is_adjoint_vector(b) && !_is_adjoint_solution(it)
-    Δϵ = step(energy_model(b.model))
+    model = b.model
+    arch = b.arch
 
-    T = base_type(b.arch)
-    buf = allocate_vec(b.arch, length(b.bxp))
+    Δϵ = step(energy_model(model))
+
+    T = base_type(arch)
+    (_, (nxp, _), (_, _)) = n_basis(model)
+    buf = allocate_vec(arch, nxp)
     integral = zero(T)
 
     # trapezoidal rule, if ψp[end] == 0 and b.bϵ[1] == 0 (we require this for dual consistency)
-    for idx in it
-        ψp = pview(current_solution(it.system), it.system.problem.model)
+    for (idx, ψ) in it
+        ψp = pview(ψ, model)
         integral += Δϵ * b.bϵ[idx]*dot_buf(b.bxp, ψp, b.bΩp, buf)   
     end
     return integral
 end
 
-function solve_and_integrate_adjoint(b::Rank1DiscretePNVector, it::DiscretePNIterator)
+function solve_and_integrate_adjoint(b::Rank1DiscretePNVector, it::AbstractDiscretePNSolution)
     @assert !_is_adjoint_vector(b) && _is_adjoint_solution(it)
-    Δϵ = step(energy_model(b.model))
+    model = b.model
+    arch = b.arch
+    Δϵ = step(energy_model(model))
 
-    T = base_type(b.arch)
-    buf = allocate_vec(b.arch, length(b.bxp))
+    T = base_type(arch)
+    (_, (nxp, _), (_, _)) = n_basis(model)
+    buf = allocate_vec(arch, nxp)
     integral = zero(T)
 
-    for idx in it
-        ψp = pview(current_solution(it.system), it.system.problem.model)
-
-        if !is_first(idx) # (where ψp is initialized to 0 anyways..)
-            integral += Δϵ * T(0.5) * (b.bϵ[plus½(idx)] + b.bϵ[minus½(idx)])*dot_buf(b.bxp, ψp, b.bΩp, buf)
-        end
+    for (idx, ψ) in it
+        if !is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
+        ψp = pview(ψ, model)
+        integral += Δϵ * T(0.5) * (b.bϵ[plus½(idx)] + b.bϵ[minus½(idx)])*dot_buf(b.bxp, ψp, b.bΩp, buf)
     end
     return integral
 end
 
-function solve_and_integrate_nonadjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}, it::DiscretePNIterator)
-    problem = it.system.problem
-    Δϵ = step(energy_model(problem.model))
+function solve_and_integrate_nonadjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}, it::AbstractDiscretePNSolution)
+    @assert all(_is_adjoint_vector, b_arr) && !_is_adjoint_solution(it)
+    model = first(b_arr).model
+    arch = first(b_arr).arch
 
-    T = base_type(problem.arch)
-    (_, (nxp, _), (_, _)) = n_basis(problem)
-    buf = allocate_vec(problem.arch, nxp)
+    Δϵ = step(energy_model(model))
 
-    for idx in it
-        ψp = pview(current_solution(it.system), it.system.problem.model)
+    T = base_type(arch)
+    (_, (nxp, _), (_, _)) = n_basis(model)
+    buf = allocate_vec(arch, nxp)
+
+    for (idx, ψ) in it
+        ψp = pview(ψ, model)
 
         for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
             res[i] += Δϵ * b_arr[i].bϵ[idx]*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)   
@@ -73,22 +81,23 @@ function solve_and_integrate_nonadjoint!(res, b_arr::Array{<:Rank1DiscretePNVect
     return res
 end
 
-function solve_and_integrate_adjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}, it::DiscretePNIterator)
-    problem = it.system.problem
-    Δϵ = step(energy_model(problem.model))
+function solve_and_integrate_adjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}, it::AbstractDiscretePNSolution)
+    @assert all(!_is_adjoint_vector, b_arr) && _is_adjoint_solution(it)
+    model = first(b_arr).model
+    arch = first(b_arr).arch
 
-    T = base_type(problem.arch)
-    (_, (nxp, _), (_, _)) = n_basis(problem)
-    buf = allocate_vec(problem.arch, nxp)
+    Δϵ = step(energy_model(model))
 
+    T = base_type(arch)
+    (_, (nxp, _), (_, _)) = n_basis(model)
+    buf = allocate_vec(arch, nxp)
 
-    for idx in it
-        ψp = pview(current_solution(it.system), it.system.problem.model)
+    for (idx, ψ) in it
+        if !is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
+        ψp = pview(ψ, model)
         for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
-            if !is_first(idx) # (where ψp is initialized to 0 anyways..)
-                res[i] += Δϵ * T(0.5) * (b_arr[i].bϵ[plus½(idx)] + b_arr[i].bϵ[minus½(idx)])*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)
-            end  
-        end
+            res[i] += Δϵ * T(0.5) * (b_arr[i].bϵ[plus½(idx)] + b_arr[i].bϵ[minus½(idx)])*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)
+        end  
     end
     return res
 end
