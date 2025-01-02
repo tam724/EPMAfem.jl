@@ -53,7 +53,7 @@ function solve_and_integrate_adjoint(b::Rank1DiscretePNVector, it::AbstractDiscr
     integral = zero(T)
 
     for (idx, ψ) in it
-        if !is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
+        if is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
         ψp = pview(ψ, model)
         integral += Δϵ * T(0.5) * (b.bϵ[plus½(idx)] + b.bϵ[minus½(idx)])*dot_buf(b.bxp, ψp, b.bΩp, buf)
     end
@@ -73,7 +73,6 @@ function solve_and_integrate_nonadjoint!(res, b_arr::Array{<:Rank1DiscretePNVect
 
     for (idx, ψ) in it
         ψp = pview(ψ, model)
-
         for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
             res[i] += Δϵ * b_arr[i].bϵ[idx]*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)   
         end
@@ -93,7 +92,7 @@ function solve_and_integrate_adjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}
     buf = allocate_vec(arch, nxp)
 
     for (idx, ψ) in it
-        if !is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
+        if is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
         ψp = pview(ψ, model)
         for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
             res[i] += Δϵ * T(0.5) * (b_arr[i].bϵ[plus½(idx)] + b_arr[i].bϵ[minus½(idx)])*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)

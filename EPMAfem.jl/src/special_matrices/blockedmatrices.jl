@@ -38,6 +38,8 @@ Base.:≈(A::AbstractMatrix, B::BlockedMatrix) = A ≈ collect(B)
 Base.:≈(A::BlockedMatrix, B::BlockedMatrix) = collect(A) ≈ collect(B)
 Base.:≈(B::BlockedMatrix, A::AbstractMatrix) = collect(B) ≈ A
 num_blocks(A::BlockedMatrix) = length(A.blocks)
+LinearAlgebra.matprod_dest(A, B::Union{BlockedMatrix, Transpose{T, <:BlockedMatrix}}, TS) where T = similar(A, TS, (size(A, 1), size(B, 2)))
+LinearAlgebra.matprod_dest(A::Union{BlockedMatrix, Transpose{T, <:BlockedMatrix}}, B, TS) where T = similar(B, TS, (size(A, 1), size(B, 2)))
 
 Base.show(io::IO, A::BlockedMatrix) = print(io, "$(size(A, 1))x$(size(A, 2)) BlockedMatrix{$(eltype(A))} with blocks: $(["$(length(A.indices[i][1]))x$(length(A.indices[i][2]))" * ((i!=num_blocks(A)) ? ", " : "") for i in 1:num_blocks(A)]...)")
 Base.show(io::IO, m::MIME"text/plain", A::BlockedMatrix) = print(io, "$(size(A, 1))x$(size(A, 2)) BlockedMatrix{$(eltype(A))} with blocks: $(["$(length(A.indices[i][1]))x$(length(A.indices[i][2]))" * ((i!=num_blocks(A)) ? ", " : "") for i in 1:num_blocks(A)]...)")
