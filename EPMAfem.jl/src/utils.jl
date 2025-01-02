@@ -16,6 +16,6 @@ function to_diag(A::Diagonal)
 end
 
 function dot_buf(x::AbstractVector, A::AbstractMatrix, y::AbstractVector, buf::AbstractVector)
-    mul!(buf, A, y)
-    return dot(x, buf)
+    mul!(transpose(buf), transpose(x), A)
+    return dot(y, buf)
 end

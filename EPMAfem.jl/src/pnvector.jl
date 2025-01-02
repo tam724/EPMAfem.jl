@@ -29,14 +29,14 @@ function solve_and_integrate_nonadjoint(b::Rank1DiscretePNVector, it::AbstractDi
     Δϵ = step(energy_model(model))
 
     T = base_type(arch)
-    (_, (nxp, _), (_, _)) = n_basis(model)
-    buf = allocate_vec(arch, nxp)
+    (_, (nxp, _), (nΩp, _)) = n_basis(model)
+    buf = allocate_vec(arch, nΩp)
     integral = zero(T)
 
     # trapezoidal rule, if ψp[end] == 0 and b.bϵ[1] == 0 (we require this for dual consistency)
     for (idx, ψ) in it
         ψp = pview(ψ, model)
-        integral += Δϵ * b.bϵ[idx]*dot_buf(b.bxp, ψp, b.bΩp, buf)   
+        integral += Δϵ * b.bϵ[idx]*dot_buf(b.bxp, ψp, b.bΩp, buf)
     end
     return integral
 end
@@ -48,8 +48,8 @@ function solve_and_integrate_adjoint(b::Rank1DiscretePNVector, it::AbstractDiscr
     Δϵ = step(energy_model(model))
 
     T = base_type(arch)
-    (_, (nxp, _), (_, _)) = n_basis(model)
-    buf = allocate_vec(arch, nxp)
+    (_, (nxp, _), (nΩp, _)) = n_basis(model)
+    buf = allocate_vec(arch, nΩp)
     integral = zero(T)
 
     for (idx, ψ) in it
@@ -60,6 +60,23 @@ function solve_and_integrate_adjoint(b::Rank1DiscretePNVector, it::AbstractDiscr
     return integral
 end
 
+function ideal_index_order(b_arr::Array{<:Rank1DiscretePNVector})
+    d = Dict{Int64, Vector{Int64}}()
+    for i in eachindex(b_arr)
+        key_or_nothing = findfirst(((key, val), ) -> b_arr[key].bxp === b_arr[i].bxp, ((k, v) for (k, v) in d))
+        push!(get!(Vector{typeof(i)}, d, isnothing(key_or_nothing) ? i : key_or_nothing), i)
+    end
+    d2 = Dict{Int64, Dict{Int64, Vector{Int64}}}()
+    for (k, v) in d
+        d2[k] = Dict()
+        for i in eachindex(v)
+            key_or_nothing = findfirst(((key, val), ) -> b_arr[key].bΩp === b_arr[v[i]].bΩp, ((k, v) for (k, v) in d2[k]))
+            push!(get!(Vector{typeof(i)}, d2[k], isnothing(key_or_nothing) ? v[i] : key_or_nothing), v[i])
+        end
+    end
+    return d2
+end
+
 function solve_and_integrate_nonadjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}, it::AbstractDiscretePNSolution)
     @assert all(_is_adjoint_vector, b_arr) && !_is_adjoint_solution(it)
     model = first(b_arr).model
@@ -68,14 +85,27 @@ function solve_and_integrate_nonadjoint!(res, b_arr::Array{<:Rank1DiscretePNVect
     Δϵ = step(energy_model(model))
 
     T = base_type(arch)
-    (_, (nxp, _), (_, _)) = n_basis(model)
-    buf = allocate_vec(arch, nxp)
+    (_, (nxp, _), (nΩp, _)) = n_basis(model)
+    buf = allocate_vec(arch, nΩp)
+
+    idx_order = ideal_index_order(b_arr)
 
     for (idx, ψ) in it
         ψp = pview(ψ, model)
-        for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
-            res[i] += Δϵ * b_arr[i].bϵ[idx]*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)   
+
+        for (x_base, x_rem) in idx_order
+            mul!(transpose(buf), transpose(b_arr[x_base].bxp), ψp)
+            for (Ω_base, Ωx_rem) in x_rem
+                bufbuf = dot(b_arr[Ω_base].bΩp, buf)
+                for i in Ωx_rem
+                    res[i] += Δϵ * b_arr[i].bϵ[idx] * bufbuf
+                end
+            end
         end
+
+        # for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
+        #     res[i] += Δϵ * b_arr[i].bϵ[idx]*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)   
+        # end
     end
     return res
 end
@@ -88,15 +118,28 @@ function solve_and_integrate_adjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}
     Δϵ = step(energy_model(model))
 
     T = base_type(arch)
-    (_, (nxp, _), (_, _)) = n_basis(model)
-    buf = allocate_vec(arch, nxp)
+    (_, (nxp, _), (nΩp, _)) = n_basis(model)
+    buf = allocate_vec(arch, nΩp)
+
+    idx_order = ideal_index_order(b_arr)
 
     for (idx, ψ) in it
         if is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
         ψp = pview(ψ, model)
-        for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
-            res[i] += Δϵ * T(0.5) * (b_arr[i].bϵ[plus½(idx)] + b_arr[i].bϵ[minus½(idx)])*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)
-        end  
+
+        for (x_base, x_rem) in idx_order
+            mul!(buf', b_arr[x_base].bxp', ψp)
+            for (Ω_base, Ωx_rem) in x_rem
+                bufbuf = dot(b_arr[Ω_base].bΩp, buf)
+                for i in Ωx_rem
+                    res[i] += Δϵ * T(0.5) * (b_arr[i].bϵ[plus½(idx)] + b_arr[i].bϵ[minus½(idx)])*bufbuf
+                end
+            end
+        end
+
+        # for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
+        #     res[i] += Δϵ * T(0.5) * (b_arr[i].bϵ[plus½(idx)] + b_arr[i].bϵ[minus½(idx)])*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)
+        # end  
     end
     return res
 end

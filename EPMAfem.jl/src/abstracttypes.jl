@@ -13,7 +13,7 @@ abstract type AbstractDiscretePNSystem end
 abstract type AbstractDiscretePNSystemIM <: AbstractDiscretePNSystem end
 
 abstract type AbstractDiscretePNVector end
-# there is no structural difference between a vector and its adjoint (this is to be save that we apply the right system to the right vector)
+# there is no structural difference between a vector and its adjoint (but during construction we can specify if we want to use it with with the adjoint or nonadjoint system)
 is_adjoint(b::AbstractDiscretePNVector) = _is_adjoint_vector(b)
 
 # this is "almost" a AbstractDiscretePNVector. But we have to differentiate the two, because the adjoint-solution has the shifted energy grid. (typically iterators)
