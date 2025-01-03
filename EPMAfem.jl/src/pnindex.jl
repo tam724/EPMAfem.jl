@@ -88,6 +88,14 @@ function next(i::ϵidx)
     end
 end
 
+function previous(i::ϵidx)
+    if i.adjoint
+        return minus1(i)
+    else
+        return plus1(i)
+    end
+end
+
 first_index_nonadjoint(ϵs) = first_index(ϵs, false)
 first_index_adjoint(ϵs) = first_index(ϵs, true)
 last_index_nonadjoint(ϵs) = last_index(ϵs, false)

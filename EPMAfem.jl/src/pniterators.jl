@@ -18,71 +18,50 @@ function _is_adjoint_solution(ψ::DiscretePNIterator)
     return ψ.system.adjoint
 end
 
-function _iterate_nonadjoint(it::DiscretePNIterator)
-    if it.reverse
-        initialize_or_fillzero!(it.system, it.initial_state)
-        ϵs = energy_model(it.system.problem.model)
-        idx = last_index_nonadjoint(ϵs)
-        return idx, 1
-    end
-
-    initialize_or_fillzero!(it.system, it.initial_state)
-    ϵs = energy_model(it.system.problem.model)
-    idx = first_index_nonadjoint(ϵs)
-    return idx => current_solution(it.system), idx
-end
-
-function _iterate_nonadjoint(it::DiscretePNIterator, idx::ϵidx)
-    ϵs = energy_model(it.system.problem.model)
-    Δϵ = step(ϵs)
-
-    if it.reverse
-        if i >= length(ϵs)
-            return nothing
-        else
-            # here we update the solver state from i to i+1! 
-            i = i+1
-            ϵi, ϵip1 = ϵs[i-1], ϵs[i]
-            Δϵ = ϵip1-ϵi
-            step_nonadjoint!(it.system, it.rhs, i, -Δϵ)
-            return (ϵip1, i), i
-        end
-    end
-
-    idx_minus1 = minus1(idx)
-    if isnothing(idx_minus1) return nothing end
-    #### here we update the solver state from i+1 to i! NOTE: NonAdjoint means from higher to lower energies/times
-    #### ϵi, ϵip1 = ϵs[i-1], ϵs[i]
-    # update the system state from i to i-1
-    step_nonadjoint!(it.system, it.rhs, idx, Δϵ)
-    return idx_minus1 => current_solution(it.system), idx_minus1
-end
-
 Base.length(it::DiscretePNIterator) = length(energy_model(it.system.problem.model))
-Base.iterate(it::DiscretePNIterator) = if _is_adjoint_solution(it) _iterate_adjoint(it) else _iterate_nonadjoint(it) end
-Base.iterate(it::DiscretePNIterator, idx::ϵidx) = if _is_adjoint_solution(it) _iterate_adjoint(it, idx) else _iterate_nonadjoint(it, idx) end
 
-function _iterate_adjoint(it::DiscretePNIterator)
-    if it.reverse throw(ArgumentError("Reverse not supported for adjoint iterator")) end
+function Base.iterate(it::DiscretePNIterator)
     initialize_or_fillzero!(it.system, it.initial_state)
     ϵs = energy_model(it.system.problem.model)
-    idx = first_index_adjoint(ϵs)
+    if !it.reverse
+        idx = first_index(ϵs, _is_adjoint_solution(it))
+    else
+        @info "iterating in reverse"
+        idx = last_index(ϵs, _is_adjoint_solution(it))
+    end
     return idx => current_solution(it.system), idx
 end
 
-function _iterate_adjoint(it::DiscretePNIterator, idx::ϵidx)
-    if it.reverse throw(ArgumentError("Reverse not supported for adjoint iterator")) end
+function _iterate_reverse(it::DiscretePNIterator, idx::ϵidx)
+    ## THIS SHOULD BE TESTED IN ONLYENERGYMODEL! (should basically give the same result in normal and reverse)
     ϵs = energy_model(it.system.problem.model)
     Δϵ = step(ϵs)
-    idx_plus1 = plus1(idx)
-    if isnothing(idx_plus1) return nothing end
+    idx_prev = previous(idx)
+    if isnothing(idx_prev) return nothing end
+    if _is_adjoint_solution(it)
+        # update the system to idx.i - 1/2 from idx.i + 1/2
+        step_adjoint!(it.system, it.rhs, idx_prev, Δϵ)
+    else
+        # update the system to idx.i from idx.i - 1
+        step_nonadjoint!(it.system, it.rhs, idx_prev, Δϵ)
+    end
+    return idx_prev => current_solution(it.system), idx_prev
+end
 
-    # here we update the solver state from i to i+1! NOTE: Adjoint means from lower to higher energies/times
-    # ϵi, ϵip1 = ϵs[i]-Δϵ/2, ϵs[i+1]-Δϵ/2
-    # Δϵ = ϵip1-ϵi
-    # update the system state from i to i-1
-    step_adjoint!(it.system, it.rhs, idx, Δϵ)
-    return idx_plus1 => current_solution(it.system), idx_plus1
+function Base.iterate(it::DiscretePNIterator, idx::ϵidx)
+    ϵs = energy_model(it.system.problem.model)
+    Δϵ = step(ϵs)
+    if it.reverse return _iterate_reverse(it, idx) end
+    idx_next = next(idx)
+    if isnothing(idx_next) return nothing end
+    if _is_adjoint_solution(it)
+        # update the system from idx.i - 1/2 -> idx.i + 1/2
+        step_adjoint!(it.system, it.rhs, idx, Δϵ)
+    else
+        # update the system from idx.i -> idx.i - 1
+        step_nonadjoint!(it.system, it.rhs, idx, Δϵ)
+    end
+    return idx_next => current_solution(it.system), idx_next
 end
 
 @concrete struct CachedDiscreteSolution <: AbstractDiscretePNSolution
