@@ -43,8 +43,8 @@ function compute(N, eq, solver, use_adjoint, arch)
     sol = zeros(length(energy_model(model)))
     ϵs = zeros(length(energy_model(model)))
 
-    for idx in A
-        full_sol = (current_solution(A.system) |> collect)
+    for (idx, ψ) in A
+        full_sol = ψ |> collect
         sol[idx.i] = full_sol[1]
         @assert isapprox(full_sol[2], 0.0; atol=1e-4)
         ϵs[idx.i] = EPMAfem.ϵ(idx)
