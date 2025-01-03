@@ -1,11 +1,11 @@
 function step_nonadjoint!(pnsystem::AbstractDiscretePNSystemIM, rhs::AbstractDiscretePNVector, i, Δϵ)
-    if pnsystem.adjoint @warn "Trying to step_nonadjoint with System marked as adjoint" end
+    if pnsystem.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
     if pnsystem.adjoint != _is_adjoint_vector(rhs) @warn "System {$(pnsystem.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}" end
     _step_nonadjoint!(pnsystem, rhs, i, Δϵ)
 end
 
 function step_adjoint!(pnsystem::AbstractDiscretePNSystemIM, rhs::AbstractDiscretePNVector, i, Δϵ)
-    if !pnsystem.adjoint @warn "Trying to step_adjoint with System marked as nonadjoint" end
+    if !pnsystem.adjoint @warn "Trying to step_adjoint with system marked as nonadjoint" end
     if pnsystem.adjoint != _is_adjoint_vector(rhs) @warn "System {$(pnsystem.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}" end
     _step_adjoint!(pnsystem, rhs, i, Δϵ)
 end
@@ -87,7 +87,7 @@ end
 # update the rhs for the nonadjoint step from idx to idx-1
 function update_rhs_nonadjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, rhs::AbstractDiscretePNVector, idx, Δϵ, sym)
     # minus because we have to bring b to the right side of the equation 
-    assemble_rhs_midpoint!(system.rhs, rhs, idx, -Δϵ, sym)
+    assemble_at!(system.rhs, rhs, minus½(idx), -Δϵ, sym)
     a, b, c = update_coefficients_rhs_nonadjoint!(system, problem, idx, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, system.tmp, system.tmp2, sym)
@@ -98,8 +98,7 @@ end
 # update the rhs for the adjoint step from idx to idx+1
 function update_rhs_adjoint!(system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, rhs::AbstractDiscretePNVector, idx, Δϵ, sym)
     # minus because we have to bring b to the right side of the equation 
-    # bϵ2 = 0.5*(rhs.bϵ[i] + rhs.bϵ[i+1])
-    assemble_rhs!(system.rhs, rhs, idx, -Δϵ, sym)
+    assemble_at!(system.rhs, rhs, plus½(idx), -Δϵ, sym)
     a, b, c = update_coefficients_rhs_adjoint!(system, problem, idx, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, system.tmp, system.tmp2, sym)

@@ -21,42 +21,58 @@ abstract type AbstractDiscretePNSolution end
 is_adjoint(ψ::AbstractDiscretePNSolution) = _is_adjoint_solution(ψ)
 
 ## some syntactic sugar
-function Base.:*(A::AbstractDiscretePNSystem, g::AbstractDiscretePNVector)
-    return DiscretePNIterator(A, g)
+Base.:*(A::AbstractDiscretePNSystem, g::AbstractDiscretePNVector) = DiscretePNIterator(A, g)
+Base.:*(g::AbstractDiscretePNVector, A::AbstractDiscretePNSystem) = DiscretePNIterator(adjoint(A), g)
+Base.:*(A::AbstractDiscretePNSystem, g::AbstractArray{<:AbstractDiscretePNVector}) = [DiscretePNIterator(A, g_) for g_ in g]
+Base.:*(g::AbstractArray{<:AbstractDiscretePNVector}, A::AbstractDiscretePNSystem) = [DiscretePNIterator(adjoint(A), g_) for g_ in g]
+
+function solve_and_integrate(b::Union{AbstractDiscretePNVector, AbstractArray{<:AbstractDiscretePNVector}}, it::AbstractDiscretePNSolution)
+    cache = initialize_integration(b)
+    for (idx, ψ) in it
+        if is_first(idx) continue end # (where ψ is initialized to 0 anyways..)
+        integrate_at!(cache, idx, b, ψ)
+    end
+    return finalize_integration(cache, b)
 end
 
-function Base.:*(h::AbstractDiscretePNVector, ψ::AbstractDiscretePNSolution)
-    if _is_adjoint_vector(h) == _is_adjoint_solution(ψ) @warn "Adjoint vector and solution are not compatible" end
-    if _is_adjoint_solution(ψ)
-        return solve_and_integrate_adjoint(h, ψ)
-    else
-        return solve_and_integrate_nonadjoint(h, ψ)
-    end
+function Base.:*(h::Union{AbstractDiscretePNVector, AbstractArray{<:AbstractDiscretePNVector}}, ψ::AbstractDiscretePNSolution)
+    if _is_adjoint_vector(h) == _is_adjoint_solution(ψ) @warn "Vector and solution are not compatible" end
+    return solve_and_integrate(h, ψ)
 end
 
-function Base.:*(h::AbstractArray{<:AbstractDiscretePNVector}, ψ::AbstractDiscretePNSolution)
-    if any(_h -> _is_adjoint_vector(_h) == _is_adjoint_solution(ψ), h) @warn "Adjoint vector and solution are not compatible" end
-    res = zeros(size(h))
-    if _is_adjoint_solution(ψ)
-        return solve_and_integrate_adjoint!(res, h, ψ)
-    else
-        return solve_and_integrate_nonadjoint!(res, h, ψ)
+function Base.:*(h::Union{AbstractDiscretePNVector, AbstractArray{<:AbstractDiscretePNVector}}, ψ::AbstractArray{<:AbstractDiscretePNSolution})
+    full_size = (size(h)..., size(ψ)...)
+    result = zeros(full_size)
+    for i in eachindex(IndexCartesian(), ψ)
+        result[axes(h)..., i] .= h * ψ[i]
     end
+    return result
+end
+
+function Base.:*(ψ::AbstractDiscretePNSolution, g::Union{AbstractDiscretePNVector, AbstractArray{<:AbstractDiscretePNVector}})
+    if _is_adjoint_vector(g) == _is_adjoint_solution(ψ) @warn "Vector and solution are not compatible" end
+    return solve_and_integrate(g, ψ)
+end
+
+function Base.:*(ψ::AbstractArray{<:AbstractDiscretePNSolution}, g::Union{AbstractDiscretePNVector, AbstractArray{<:AbstractDiscretePNVector}})
+    full_size = (size(ψ)..., size(g)...)
+    result = zeros(full_size)
+    for i in eachindex(IndexCartesian(), ψ)
+        result[i, axes(g)...] .= ψ[i] * g
+    end
+    return result
 end
 
 function Base.:*(h::AbstractArray{<:AbstractDiscretePNVector}, A::AbstractDiscretePNSystem, g::AbstractArray{<:AbstractDiscretePNVector})
     full_size = (size(h)..., size(g)...)
     result = zeros(full_size)
     if length(g) < length(h)
-        for i in eachindex(IndexCartesian(), g)
-            solution = iterator(A, g[i])
-            result[axes(h)..., i] = h(solution)
-        end
+        return h * (A * g)
     else
-        for i in eachindex(IndexCartesian(), h)
-            solution = iterator(adjoint(A), h[i])
-            result[i, axes(g)...] = g(solution)
-        end
+        return (h * A) * g
     end
     return result
 end
+
+Base.:*(h::AbstractArray{<:AbstractDiscretePNVector}, A::AbstractDiscretePNSystem, g::AbstractDiscretePNVector) = h * (A * g)
+Base.:*(h::AbstractDiscretePNVector, A::AbstractDiscretePNSystem, g::AbstractArray{<:AbstractDiscretePNVector}) = (h * A) * g

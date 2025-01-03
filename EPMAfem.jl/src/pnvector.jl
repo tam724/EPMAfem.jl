@@ -9,55 +9,47 @@
 end
 
 _is_adjoint_vector(b::Rank1DiscretePNVector) = b.adjoint
+_is_adjoint_vector(b::AbstractArray{<:Rank1DiscretePNVector}) = all(bi -> _is_adjoint_vector(bi) == _is_adjoint_vector(first(b)), b) ? _is_adjoint_vector(first(b)) : throw(ArgumentError("Vectors have different adjoint properties"))
 
-@concrete struct WeightedArrayOfRank1PNVector <: AbstractDiscretePNVector
-    weights
-    arr_r1
+function initialize_integration(b::Rank1DiscretePNVector)
+    (_, (_, _), (nΩp, _)) = n_basis(b.model)
+    buf = allocate_vec(b.arch, nΩp)
+    cache = (integral = [0.0], buf = buf)
+    return cache
 end
 
-function weighted(weights, arr_r1::Array{<:Rank1DiscretePNVector})
-    @assert size(weights) == size(arr_r1)
-    if !all(r1 -> _is_adjoint_vector(first(arr_r1)) == _is_adjoint_vector(r1), arr_r1) @warn "creating a weighted array of vectors with different adjoint properties" end
-    return WeightedArrayOfRank1PNVector(weights, arr_r1)
+function finalize_integration(cache, b::Rank1DiscretePNVector)
+    return cache.integral[1]
 end
 
-function solve_and_integrate_nonadjoint(b::Rank1DiscretePNVector, it::AbstractDiscretePNSolution)
-    @assert _is_adjoint_vector(b) && !_is_adjoint_solution(it)
-    model = b.model
-    arch = b.arch
-
-    Δϵ = step(energy_model(model))
-
-    T = base_type(arch)
-    (_, (nxp, _), (nΩp, _)) = n_basis(model)
-    buf = allocate_vec(arch, nΩp)
-    integral = zero(T)
-
-    # trapezoidal rule, if ψp[end] == 0 and b.bϵ[1] == 0 (we require this for dual consistency)
-    for (idx, ψ) in it
-        ψp = pview(ψ, model)
-        integral += Δϵ * b.bϵ[idx]*dot_buf(b.bxp, ψp, b.bΩp, buf)
+function integrate_at!(cache, idx, b::Rank1DiscretePNVector, ψ)
+    ψp = pview(ψ, b.model)
+    Δϵ = step(energy_model(b.model))
+    T = base_type(b.arch)
+    if idx.adjoint
+        @assert !_is_adjoint_vector(b)
+        bϵ2 = T(0.5) * (b.bϵ[minus½(idx)] + b.bϵ[plus½(idx)])
+    else
+        @assert _is_adjoint_vector(b)
+        bϵ2 = b.bϵ[idx]
     end
-    return integral
+    mul!(transpose(cache.buf), transpose(b.bxp), ψp)
+    cache.integral[1] += Δϵ * bϵ2 * dot(cache.buf, b.bΩp)
 end
 
-function solve_and_integrate_adjoint(b::Rank1DiscretePNVector, it::AbstractDiscretePNSolution)
-    @assert !_is_adjoint_vector(b) && _is_adjoint_solution(it)
-    model = b.model
-    arch = b.arch
-    Δϵ = step(energy_model(model))
-
-    T = base_type(arch)
-    (_, (nxp, _), (nΩp, _)) = n_basis(model)
-    buf = allocate_vec(arch, nΩp)
-    integral = zero(T)
-
-    for (idx, ψ) in it
-        if is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
-        ψp = pview(ψ, model)
-        integral += Δϵ * T(0.5) * (b.bϵ[plus½(idx)] + b.bϵ[minus½(idx)])*dot_buf(b.bxp, ψp, b.bΩp, buf)
+# if β isa Number we add to b
+function assemble_at!(b, rhs::Rank1DiscretePNVector, idx, Δ, sym, β=false)
+    bp, bm = pmview(b, rhs.model)
+    T = base_type(rhs.arch)
+    if idx.adjoint #you are assembling the rhs at the half step
+        @assert !_is_adjoint_vector(rhs)
+        bϵ2 = T(0.5)*(rhs.bϵ[minus½(idx)] + rhs.bϵ[plus½(idx)])
+    else
+        @assert _is_adjoint_vector(rhs)
+        bϵ2 = rhs.bϵ[idx]
     end
-    return integral
+    mul!(bp, rhs.bxp, transpose(rhs.bΩp), bϵ2*Δ, β)
+    my_rmul!(bm, β) # * -1 if sym
 end
 
 function ideal_index_order(b_arr::Array{<:Rank1DiscretePNVector})
@@ -77,142 +69,78 @@ function ideal_index_order(b_arr::Array{<:Rank1DiscretePNVector})
     return d2
 end
 
-function solve_and_integrate_nonadjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}, it::AbstractDiscretePNSolution)
-    @assert all(_is_adjoint_vector, b_arr) && !_is_adjoint_solution(it)
-    model = first(b_arr).model
-    arch = first(b_arr).arch
+## for array values integrations
+function initialize_integration(b::Array{<:Rank1DiscretePNVector})
+    (_, (_, _), (nΩp, _)) = n_basis(first(b).model)
+    buf = allocate_vec(first(b).arch, nΩp)
+    cache = (integral = [0.0], buf = buf)
+    idx_order = ideal_index_order(b)
+    cache = (integral = zeros(size(b)), idx_order = idx_order, buf = buf)
+end
 
-    Δϵ = step(energy_model(model))
+function finalize_integration(cache, b::Array{<:Rank1DiscretePNVector})
+    return cache.integral
+end
 
-    T = base_type(arch)
-    (_, (nxp, _), (nΩp, _)) = n_basis(model)
-    buf = allocate_vec(arch, nΩp)
-
-    idx_order = ideal_index_order(b_arr)
-
-    for (idx, ψ) in it
-        ψp = pview(ψ, model)
-
-        for (x_base, x_rem) in idx_order
-            mul!(transpose(buf), transpose(b_arr[x_base].bxp), ψp)
-            for (Ω_base, Ωx_rem) in x_rem
-                bufbuf = dot(b_arr[Ω_base].bΩp, buf)
-                for i in Ωx_rem
-                    res[i] += Δϵ * b_arr[i].bϵ[idx] * bufbuf
+function integrate_at!(cache, idx, b::Array{<:Rank1DiscretePNVector}, ψ)
+    ψp = pview(ψ, first(b).model)
+    Δϵ = step(energy_model(first(b).model))
+    T = base_type(first(b).arch)
+    for (x_base, x_rem) in cache.idx_order
+        mul!(transpose(cache.buf), transpose(b[x_base].bxp), ψp)
+        for (Ω_base, Ωx_rem) in x_rem
+            bufbuf = dot(b[Ω_base].bΩp, cache.buf)
+            for i in Ωx_rem
+                if idx.adjoint
+                    @assert !_is_adjoint_vector(b[i])
+                    cache.integral[i] += Δϵ * T(0.5) * (b[i].bϵ[plus½(idx)] + b[i].bϵ[minus½(idx)])*bufbuf
+                else
+                    @assert _is_adjoint_vector(b[i])
+                    cache.integral[i] += Δϵ * b[i].bϵ[idx] * bufbuf
                 end
             end
         end
-
-        # for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
-        #     res[i] += Δϵ * b_arr[i].bϵ[idx]*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)   
-        # end
     end
-    return res
+end
+@concrete struct SumOfAbstractDiscretePNVector <: AbstractDiscretePNVector
+    weights
+    vecs
 end
 
-function solve_and_integrate_adjoint!(res, b_arr::Array{<:Rank1DiscretePNVector}, it::AbstractDiscretePNSolution)
-    @assert all(!_is_adjoint_vector, b_arr) && _is_adjoint_solution(it)
-    model = first(b_arr).model
-    arch = first(b_arr).arch
+_is_adjoint_vector(b::SumOfAbstractDiscretePNVector) = all(bi -> _is_adjoint_vector(bi) == _is_adjoint_vector(first(b.vecs)), b.vecs) ? _is_adjoint_vector(first(b.vecs)) : throw(ArgumentError("Vectors have different adjoint properties"))
 
-    Δϵ = step(energy_model(model))
+function weighted(weights, vecs::Array{<:AbstractDiscretePNVector})
+    @assert size(weights) == size(vecs)
+    if !all(r1 -> _is_adjoint_vector(first(vecs)) == _is_adjoint_vector(r1), vecs) @warn "creating a sum of vectors with different adjoint properties" end
+    return SumOfAbstractDiscretePNVector(weights, vecs)
+end
 
-    T = base_type(arch)
-    (_, (nxp, _), (nΩp, _)) = n_basis(model)
-    buf = allocate_vec(arch, nΩp)
-
-    idx_order = ideal_index_order(b_arr)
-
-    for (idx, ψ) in it
-        if is_first(idx) continue end # (where ψp is initialized to 0 anyways..)
-        ψp = pview(ψ, model)
-
-        for (x_base, x_rem) in idx_order
-            mul!(buf', b_arr[x_base].bxp', ψp)
-            for (Ω_base, Ωx_rem) in x_rem
-                bufbuf = dot(b_arr[Ω_base].bΩp, buf)
-                for i in Ωx_rem
-                    res[i] += Δϵ * T(0.5) * (b_arr[i].bϵ[plus½(idx)] + b_arr[i].bϵ[minus½(idx)])*bufbuf
-                end
-            end
-        end
-
-        # for i in eachindex(b_arr) # this could be made more efficient by reusing unique (=== !) bxp, bΩp etc.
-        #     res[i] += Δϵ * T(0.5) * (b_arr[i].bϵ[plus½(idx)] + b_arr[i].bϵ[minus½(idx)])*dot_buf(b_arr[i].bxp, ψp, b_arr[i].bΩp, buf)
-        # end  
+function assemble_at!(b, rhs::SumOfAbstractDiscretePNVector, idx, Δ, sym, β=false)
+    for i in eachindex(rhs.weights, rhs.vecs)
+        assemble_at!(b, rhs.vecs[i], idx, Δ*rhs.weights[i], sym, β)
+        β = true
     end
-    return res
 end
 
-function assemble_rhs!(b, rhs::WeightedArrayOfRank1PNVector, idx, Δ, sym)
-    @assert idx.adjoint == true
-    fill!(b, zero(eltype(b)))
+function initialize_integration(b::SumOfAbstractDiscretePNVector)
+    caches = [initialize_integration(v) for v in b.vecs]
+    return caches
+end
 
-    nLp = length(first(rhs.arr_r1).bxp)
-    nRp = length(first(rhs.arr_r1).bΩp)
-
-    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
-    for i in eachindex(rhs.weights, rhs.arr_r1)
-        bϵ2 = rhs.arr_r1[i].bϵ[plus½(idx)]
-        bxpi_mat = reshape(rhs.arr_r1[i].bxp, (length(rhs.arr_r1[i].bxp), 1))
-        bΩpi_mat = reshape(rhs.arr_r1[i].bΩp, (1, length(rhs.arr_r1[i].bΩp)))
-        mul!(bp, bxpi_mat, bΩpi_mat, rhs.weights[i]*bϵ2*Δ, true)
+function integrate_at!(caches, idx, b::SumOfAbstractDiscretePNVector, ψ)
+    for i in eachindex(b.vecs, caches)
+        integrate_at!(caches[i], idx, b.vecs[i], ψ)
     end
-
-    # sym is not used since we only assemble the p part of b here
 end
 
-# update the rhs for the nonadjoint step from i to i-1 (at the midpoint of the energy interval)
-function assemble_rhs_midpoint!(b, rhs::WeightedArrayOfRank1PNVector, idx, Δ, sym)
-    @assert idx.adjoint == false
-    fill!(b, zero(eltype(b)))
-
-    nLp = length(first(rhs.arr_r1).bxp)
-    nRp = length(first(rhs.arr_r1).bΩp)
-
-    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
-    for i in eachindex(rhs.weights, rhs.arr_r1)
-        bϵ2 = 0.5*(rhs.arr_r1[i].bϵ[idx] + rhs.arr_r1[i].bϵ[minus1(idx)])
-        # bϵ2 = rhs.arr_r1[i].bϵ[i_ϵ]
-        bxpi_mat = reshape(rhs.arr_r1[i].bxp, (length(rhs.arr_r1[i].bxp), 1))
-        bΩpi_mat = reshape(rhs.arr_r1[i].bΩp, (1, length(rhs.arr_r1[i].bΩp)))
-        mul!(bp, bxpi_mat, bΩpi_mat, rhs.weights[i]*bϵ2*Δ, true)
-    end
-    
-    # sym is not used since we only assemble the p part of b here
+function finalize_integration(caches, b::SumOfAbstractDiscretePNVector)
+    return sum(b.weights[i] * finalize_integration(caches[i], b.vecs[i]) for i in eachindex(b.weights, b.vecs))
 end
 
-function assemble_rhs!(b, rhs::Rank1DiscretePNVector, idx, Δ, sym)
-    @assert idx.adjoint == true
-    fill!(b, zero(eltype(b)))
-
-    nLp = length(rhs.bxp)
-    nRp = length(rhs.bΩp)
-
-    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
-    # bp = pview(b, rhs.model)
-
-    bϵ2 = rhs.bϵ[plus½(idx)]
-    bxp_mat = reshape(@view(rhs.bxp[:]), (length(rhs.bxp), 1))
-    bΩp_mat = reshape(@view(rhs.bΩp[:]), (1, length(rhs.bΩp)))
-    mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, true)
-    # sym is not used since we only assemble the p part of b here
-end
-
-# update the rhs for the nonadjoint step from i to i-1 (at the midpoint of the energy interval)
-function assemble_rhs_midpoint!(b, rhs::Rank1DiscretePNVector, idx, Δ, sym)
-    @assert idx.adjoint == false
-    fill!(b, zero(eltype(b)))
-
-    nLp = length(rhs.bxp)
-    nRp = length(rhs.bΩp)
-
-    bp = reshape(@view(b[1:nLp*nRp]), (nLp, nRp))
-    # bp = pview(b, rhs.model)
-
-    bϵ2 = 0.5*(rhs.bϵ[idx] + rhs.bϵ[minus1(idx)])
-    bxp_mat = reshape(@view(rhs.bxp[:]), (length(rhs.bxp), 1))
-    bΩp_mat = reshape(@view(rhs.bΩp[:]), (1, length(rhs.bΩp)))
-    mul!(bp, bxp_mat, bΩp_mat, bϵ2*Δ, true)
-    # sym is not used since we only assemble the p part of b here
-end
+# for fun
+Base.:*(a::Real, b::AbstractDiscretePNVector) = weighted([a], [b])
+Base.:*(b::AbstractDiscretePNVector, a::Real) = a * b
+Base.:+(a::AbstractDiscretePNVector, b::AbstractDiscretePNVector) = weighted([1.0, 1.0], [a, b])
+Base.:+(a::AbstractDiscretePNVector, b::SumOfAbstractDiscretePNVector) = weighted([1.0, b.weights...], [a, b.vecs...])
+Base.:+(a::SumOfAbstractDiscretePNVector, b::AbstractDiscretePNVector) = b + a
+Base.:+(a::SumOfAbstractDiscretePNVector, b::SumOfAbstractDiscretePNVector) = weighted([a.weights..., b.weights...], [a.vecs..., b.vecs...])
