@@ -65,7 +65,7 @@ function n_basis(model::PNGridapModel)
 end
 
 function pview(v::AbstractVector, model::AbstractPNModel)
-    (_, (nxp, _), (nΩp, _)) = n_basis(model)
+    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     @assert length(v) == nxp*nΩp + nxm*nΩm
     return reshape(@view(v[1:nxp*nΩp]), (nxp, nΩp))
 end

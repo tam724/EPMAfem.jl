@@ -33,7 +33,9 @@ function integrate_at!(cache, idx, b::Rank1DiscretePNVector, ψ)
         @assert _is_adjoint_vector(b)
         bϵ2 = b.bϵ[idx]
     end
-    mul!(transpose(cache.buf), transpose(b.bxp), ψp)
+    # CUDA does not like this :(
+    # mul!(transpose(cache.buf), transpose(b.bxp), ψp) AT = BT * C <=> A = CT * B
+    mul!(cache.buf, transpose(ψp), b.bxp)
     cache.integral[1] += Δϵ * bϵ2 * dot(cache.buf, b.bΩp)
 end
 
@@ -87,7 +89,9 @@ function integrate_at!(cache, idx, b::Array{<:Rank1DiscretePNVector}, ψ)
     Δϵ = step(energy_model(first(b).model))
     T = base_type(first(b).arch)
     for (x_base, x_rem) in cache.idx_order
-        mul!(transpose(cache.buf), transpose(b[x_base].bxp), ψp)
+        # CUDA does not like this :(
+        # mul!(transpose(cache.buf), transpose(b[x_base].bxp), ψp) AT = BT * C <=> A = CT * B
+        mul!(cache.buf, transpose(ψp), b[x_base].bxp)
         for (Ω_base, Ωx_rem) in x_rem
             bufbuf = dot(b[Ω_base].bΩp, cache.buf)
             for i in Ωx_rem

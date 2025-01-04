@@ -8,6 +8,7 @@ using LinearAlgebra
 using HCubature
 using Distributions
 using Krylov
+using UnsafeArrays
 
 include("special_matrices/sparse3tensor.jl")
 import EPMAfem.Sparse3Tensor
