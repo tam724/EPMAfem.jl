@@ -2,28 +2,28 @@
 @concrete struct DiscretePNIterator <: AbstractDiscretePNSolution
     system
     rhs
-    state
+    current_solution
 
     reverse
-    initial_state
+    initial_solution
 end
 
 function initialize_or_fillzero!(it::DiscretePNIterator, ::Nothing)
     arch = architecture(it.system.problem)
     T = base_type(arch)
-    fill!(it.state, zero(T))
+    fill!(it.current_solution, zero(T))
 end
 
-function initialize_or_fillzero!(it::DiscretePNIterator, initial_state)
-    copy!(it.state, initial_state)
+function initialize_or_fillzero!(it::DiscretePNIterator, initial_solution)
+    copy!(it.current_solution, initial_solution)
 end
 
 function DiscretePNIterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNVector)
     if system.adjoint != _is_adjoint_vector(rhs)
         @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}"
     end
-    state = allocate_solution_vector(system)
-    return DiscretePNIterator(system, rhs, state, false, nothing)
+    current_solution = allocate_solution_vector(system)
+    return DiscretePNIterator(system, rhs, current_solution, false, nothing)
 end
 
 function _is_adjoint_solution(ψ::DiscretePNIterator)
@@ -33,7 +33,7 @@ end
 Base.length(it::DiscretePNIterator) = length(energy_model(it.system.problem.model))
 
 function Base.iterate(it::DiscretePNIterator)
-    initialize_or_fillzero!(it, it.initial_state)
+    initialize_or_fillzero!(it, it.initial_solution)
     ϵs = energy_model(it.system.problem.model)
     if !it.reverse
         idx = first_index(ϵs, _is_adjoint_solution(it))
@@ -41,7 +41,7 @@ function Base.iterate(it::DiscretePNIterator)
         @info "iterating in reverse"
         idx = last_index(ϵs, _is_adjoint_solution(it))
     end
-    return idx => it.state, idx
+    return idx => it.current_solution, idx
 end
 
 function _iterate_reverse(it::DiscretePNIterator, idx::ϵidx)
@@ -52,12 +52,12 @@ function _iterate_reverse(it::DiscretePNIterator, idx::ϵidx)
     if isnothing(idx_prev) return nothing end
     if _is_adjoint_solution(it)
         # update the system to idx.i - 1/2 from idx.i + 1/2
-        step_adjoint!(it.state, it.system, it.rhs, idx_prev, Δϵ)
+        step_adjoint!(it.current_solution, it.system, it.rhs, idx_prev, Δϵ)
     else
         # update the system to idx.i from idx.i - 1
-        step_nonadjoint!(it.state, it.system, it.rhs, idx_prev, Δϵ)
+        step_nonadjoint!(it.current_solution, it.system, it.rhs, idx_prev, Δϵ)
     end
-    return idx_prev => it.state, idx_prev
+    return idx_prev => it.current_solution, idx_prev
 end
 
 function Base.iterate(it::DiscretePNIterator, idx::ϵidx)
@@ -68,44 +68,127 @@ function Base.iterate(it::DiscretePNIterator, idx::ϵidx)
     if isnothing(idx_next) return nothing end
     if _is_adjoint_solution(it)
         # update the system from idx.i - 1/2 -> idx.i + 1/2
-        step_adjoint!(it.state, it.system, it.rhs, idx, Δϵ)
+        step_adjoint!(it.current_solution, it.system, it.rhs, idx, Δϵ)
     else
         # update the system from idx.i -> idx.i - 1
-        step_nonadjoint!(it.state, it.system, it.rhs, idx, Δϵ)
+        step_nonadjoint!(it.current_solution, it.system, it.rhs, idx, Δϵ)
     end
-    return idx_next => it.state, idx_next
+    return idx_next => it.current_solution, idx_next
 end
 
-@concrete struct CachedDiscreteSolution <: AbstractDiscretePNSolution
+@concrete struct CachedDiscretePNSolution <: AbstractDiscretePNSolution
     it
     # reverse
     # adjoint
-    cache
+    solution_cache
 end
 
 function saveall(it)
-    CachedDiscreteSolution(it, Dict(idx => copy(sol) for (idx, sol) in it))
+    CachedDiscretePNSolution(it, Dict(idx => copy(sol) for (idx, sol) in it))
 end
 
-function _is_adjoint_solution(it::CachedDiscreteSolution)
+function _is_adjoint_solution(it::CachedDiscretePNSolution)
     return _is_adjoint_solution(it.it)
 end
 
-function Base.length(it::CachedDiscreteSolution)
-    return length(it.cache)
+function Base.length(it::CachedDiscretePNSolution)
+    return length(it.solution_cache)
 end
 
-function Base.iterate(it::CachedDiscreteSolution)
+function Base.iterate(it::CachedDiscretePNSolution)
     (idx, _), _ = iterate(it.it)
-    return idx => it.cache[idx], idx
+    return idx => it.solution_cache[idx], idx
 end
 
-function Base.iterate(it::CachedDiscreteSolution, idx::ϵidx)
+function Base.iterate(it::CachedDiscretePNSolution, idx::ϵidx)
     idx_next = next(idx)
     if isnothing(idx_next) return nothing end
-    return idx_next => it.cache[idx_next], idx_next
+    return idx_next => it.solution_cache[idx_next], idx_next
 end
 
-function Base.getindex(it::CachedDiscreteSolution, idx::ϵidx)
-    return it.cache[idx]
+function Base.getindex(it::CachedDiscretePNSolution, idx::ϵidx)
+    return it.solution_cache[idx]
+end
+
+@concrete struct DiscreteIntervalPNIterator{IT}
+    it::IT
+    cached_solution
+end
+
+_is_adjoint_solution(it::CachedDiscretePNSolution) = _is_adjoint_solution(it.it)
+Base.length(it::CachedDiscretePNSolution) = length(it.it)
+
+function taketwo(it::DiscretePNIterator)
+    DiscreteIntervalPNIterator(it, allocate_solution_vector(it.system))
+end
+
+function taketwo(it::CachedDiscretePNSolution)
+    DiscreteIntervalPNIterator(it, nothing)
+end
+
+function Base.iterate(it::DiscreteIntervalPNIterator{<:DiscretePNIterator})
+    ret1 = iterate(it.it)
+    if isnothing(ret1) return nothing end
+    (idx1, sol1), idx = ret1
+    copy!(it.cached_solution, sol1)
+
+    ret2 = iterate(it.it, idx)
+    if isnothing(ret2) return nothing end
+    (idx2, sol2), idx = ret2
+    if idx1 < idx2
+        return (idx1 => it.cached_solution, idx2 => sol2), idx
+    elseif idx2 < idx1
+        return (idx2 => sol2, idx1 => it.cached_solution), idx
+    else
+        throw(ArgumentError("idx1 == idx2"))
+    end
+end
+
+function Base.iterate(it::DiscreteIntervalPNIterator{<:DiscretePNIterator}, idx::ϵidx)
+    idx1 = idx
+    copy!(it.cached_solution, it.it.current_solution)
+
+    ret = iterate(it.it, idx)
+    if isnothing(ret) return nothing end
+    (idx2, sol2), idx = ret
+    
+    if idx1 < idx2
+        return (idx1 => it.cached_solution, idx2 => sol2), idx
+    elseif idx2 < idx1
+        return (idx2 => sol2, idx1 => it.cached_solution), idx
+    else
+        throw(ArgumentError("idx1 == idx2"))
+    end
+end
+
+# cached iterator (we do not use the internal state (=nothing), but instead just return from the cache)
+function Base.iterate(it::DiscreteIntervalPNIterator{<:CachedDiscretePNSolution})
+    ret1 = iterate(it.it)
+    if isnothing(ret1) return nothing end
+    (idx1, sol1), idx = ret1
+    ret2 = iterate(it.it, idx)
+    if isnothing(ret2) return nothing end
+    (idx2, sol2), idx = ret2
+    if idx1 < idx2
+        return (idx1 => sol1, idx2 => sol2), idx
+    elseif idx2 < idx1
+        return (idx2 => sol2, idx1 => sol1), idx
+    else
+        throw(ArgumentError("idx1 == idx2"))
+    end
+end
+
+function Base.iterate(it::DiscreteIntervalPNIterator{<:CachedDiscretePNSolution}, idx::ϵidx)
+    idx1 = idx
+    ret = iterate(it.it, idx)
+    if isnothing(ret) return nothing end
+    (idx2, sol2), idx = ret
+    
+    if idx1 < idx2
+        return (idx1 => it.it[idx1], idx2 => sol2), idx
+    elseif idx2 < idx1
+        return (idx2 => sol2, idx1 => it.it[idx1]), idx
+    else
+        throw(ArgumentError("idx1 == idx2"))
+    end
 end

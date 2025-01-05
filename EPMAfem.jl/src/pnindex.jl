@@ -9,91 +9,51 @@ Base.show(io::IO, i::ϵidx) = print(io, "ϵidx("*"$(index_string(i))"*", ϵ=$(ϵ
 Base.show(io::IO, m::MIME"text/plain", i::ϵidx) = print(io, "ϵidx("*"$(index_string(i))"*", ϵ=$(ϵ(i)))")
 Base.to_index(i::ϵidx) = if i.adjoint throw(ErrorException("cannot to_index with adjoint-index")) else return i.i end
 
-function ϵ(idx::ϵidx)
+ϵ(idx::ϵidx) = idx.adjoint ? idx.ϵs[idx.i] - step(idx.ϵs)/2 : idx.ϵs[idx.i]
+
+@inline plus1(idx::ϵidx) = (idx.i+1 > length(idx.ϵs)) ? nothing : ϵidx(idx.ϵs, idx.i+1, idx.adjoint)
+@inline minus1(idx::ϵidx) = (idx.i-1 < 1) ? nothing : ϵidx(idx.ϵs, idx.i-1, idx.adjoint)
+
+@inline function plus½(idx::ϵidx)
     if idx.adjoint
-        Δϵ2 = step(idx.ϵs)/2
-        return idx.ϵs[idx.i] - Δϵ2
+        return ϵidx(idx.ϵs, idx.i, false)
     else
-        return idx.ϵs[idx.i]
-    end
-end
-
-@inline function plus1(i::ϵidx)
-    if i.i+1 > length(i.ϵs)
-        return nothing
-    else
-        return ϵidx(i.ϵs, i.i+1, i.adjoint)
-    end
-end
-
-@inline function plus½(i::ϵidx)
-    if i.adjoint
-        return ϵidx(i.ϵs, i.i, false)
-    else
-        if i.i+1 > length(i.ϵs)
+        if idx.i+1 > length(idx.ϵs)
             return nothing
         end
-        return ϵidx(i.ϵs, i.i+1, true)
+        return ϵidx(idx.ϵs, idx.i+1, true)
     end
 end
 
-@inline function minus½(i::ϵidx)
-    if i.adjoint
-        if i.i-1 < 1
+@inline function minus½(idx::ϵidx)
+    if idx.adjoint
+        if idx.i-1 < 1
             return nothing
         end
-        return ϵidx(i.ϵs, i.i-1, false)
+        return ϵidx(idx.ϵs, idx.i-1, false)
     else
-        return ϵidx(i.ϵs, i.i, true)
+        return ϵidx(idx.ϵs, idx.i, true)
     end
 end
 
-@inline function minus1(i::ϵidx)
-    if i.i-1 < 1
-        return nothing
-    else
-        return ϵidx(i.ϵs, i.i-1, i.adjoint)
+first_index(ϵs, adjoint) = adjoint ? ϵidx(ϵs, 1, adjoint) : ϵidx(ϵs, length(ϵs), adjoint)
+last_index(ϵs, adjoint) = adjoint ? ϵidx(ϵs, length(ϵs), adjoint) : ϵidx(ϵs, 1, adjoint)
+is_first(idx::ϵidx) = idx.adjoint ? idx.i == 1 : idx.i == length(idx.ϵs)
+next(idx::ϵidx) = idx.adjoint ? plus1(idx) : minus1(idx)
+previous(idx::ϵidx) = idx.adjoint ? minus1(idx) : plus1(idx)
+
+function Base.isless(i::ϵidx, j::ϵidx)
+    if i.adjoint == j.adjoint
+        return i.i < j.i
+    elseif i.adjoint
+        return i.i <= j.i
+    elseif j.adjoint
+        return i.i < j.i
     end
 end
 
-function first_index(ϵs, adjoint)
-    if adjoint
-        return ϵidx(ϵs, 1, adjoint)
-    else
-        return ϵidx(ϵs, length(ϵs), adjoint)
-    end
-end
-
-function last_index(ϵs, adjoint)
-    if adjoint
-        return ϵidx(ϵs, length(ϵs), adjoint)
-    else
-        return ϵidx(ϵs, 1, adjoint)
-    end
-end
-
-function is_first(i::ϵidx)
-    if i.adjoint
-        return i.i == 1
-    else
-        return i.i == length(i.ϵs)
-    end
-end
-
-function next(i::ϵidx)
-    if i.adjoint
-        return plus1(i)
-    else
-        return minus1(i)
-    end
-end
-
-function previous(i::ϵidx)
-    if i.adjoint
-        return minus1(i)
-    else
-        return plus1(i)
-    end
+function Base.isequal(i::ϵidx, j::ϵidx)
+    return i.adjoint == j.adjoint && i.i == j.i && i.ϵs === j.ϵs
 end
 
 first_index_nonadjoint(ϵs) = first_index(ϵs, false)
