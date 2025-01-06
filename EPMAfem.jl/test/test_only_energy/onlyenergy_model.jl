@@ -187,7 +187,7 @@ function diffeq_solution(eq::OnlyEnergyEquations, use_adjoint)
             return du
         end
         problem = ODEProblem(fa, 0.0, (0.0, 1.0))
-        sol = DifferentialEquations.solve(problem, Tsit5(), saveat=range(0, 1, length=500), reltol=1e-10, abstol=1e-10, dtmax=0.01)
+        sol = OrdinaryDiffEq.solve(problem, Tsit5(), saveat=range(0, 1, length=500), reltol=1e-10, abstol=1e-10, dtmax=0.01)
         return ϵ -> sol(ϵ)
     else
         function fna(u, p, t)
@@ -197,7 +197,7 @@ function diffeq_solution(eq::OnlyEnergyEquations, use_adjoint)
             return du
         end
         problem = ODEProblem(fna, 0.0, (0.0, 1.0))
-        sol = DifferentialEquations.solve(problem, Tsit5(), saveat=range(0, 1, length=500), reltol=1e-10, abstol=1e-10, dtmax=0.01)
+        sol = OrdinaryDiffEq.solve(problem, Tsit5(), saveat=range(0, 1, length=500), reltol=1e-10, abstol=1e-10, dtmax=0.01)
         # variable transformation
         return ϵ -> sol(one(eltype(ϵ)) - ϵ)
     end

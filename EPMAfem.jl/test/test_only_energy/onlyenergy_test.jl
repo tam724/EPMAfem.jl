@@ -4,7 +4,7 @@ module OnlyEnergyTests
 using EPMAfem
 
 using EPMAfem: AbstractPNModel, PNArchitecture, energy_model, mass_concentrations, stopping_power, absorption_coefficient, scattering_coefficient, number_of_scatterings, number_of_elements, base_type
-using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, schurimplicitmidpointsystem, fullimplicitmidpointsystem, current_solution
+using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, schurimplicitmidpointsystem, fullimplicitmidpointsystem
 
 using SpecialFunctions
 using Plots
@@ -12,7 +12,7 @@ using LinearAlgebra
 using Interpolations
 using HCubature
 using Test
-using DifferentialEquations
+using OrdinaryDiffEq
 using ConcreteStructs
 using Distributions
 
