@@ -1,6 +1,7 @@
 using Revise
 
 using EPMAfem
+using EPMAfem.CUDA
 using Plots
 #using GLMakie
 
@@ -10,9 +11,9 @@ using LinearAlgebra
 using Gridap
 #using StaticArrays
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (40, 80)))
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (80, 160)))
 # direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 3)
-direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(7, 2)
+direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
 
 equations = EPMAfem.PNEquations()
 excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.05:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -1.0, 0.0) |> normalize])
@@ -30,56 +31,132 @@ model = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model)
 
 # abs.((discrete_problem_cpu.ρm[2] .- (discrete_problem_cuda.ρm[2] |> collect))) |> maximum
 
-
 #model = model_cuda
-discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
+discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
 discrete_system = EPMAfem.schurimplicitmidpointsystem(discrete_problem)
 
-#discrete_problem2 = EPMAfem.discretize_problem(equations, model_cuda)
+discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
+discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())
 
-for (ρp, ρp2) in zip(discrete_problem.ρp, discrete_problem2.ρp)
-    @assert collect(ρp) ≈ collect(ρp2)
-end
-for (ρm, ρm2) in zip(discrete_problem.ρm, discrete_problem2.ρm)
-    @assert collect(ρm.diag) ≈ collect(ρm2.diag)
-end
-for (∂p, ∂p2) in zip(discrete_problem.∂p, discrete_problem2.∂p)
-    @assert collect(∂p) ≈ collect(∂p2)
-end
-for (∇pm, ∇pm2) in zip(discrete_problem.∇pm, discrete_problem2.∇pm)
-    @assert collect(∇pm) ≈ collect(∇pm2)
-end
-@assert collect(discrete_problem.Ip.diag) ≈ collect(discrete_problem2.Ip.diag)
-@assert collect(discrete_problem.Im.diag) ≈ collect(discrete_problem2.Im.diag)
-for (kp, kp2) in zip(discrete_problem.kp, discrete_problem2.kp)
-    for (k, k2) in zip(kp, kp2)
-        @assert collect(k.diag) ≈ collect(k2.diag)
-    end
-end
-for (km, km2) in zip(discrete_problem.km, discrete_problem2.km)
-    for (k, k2) in zip(km, km2)
-        @assert collect(k.diag) ≈ collect(k2.diag)
-    end
-end
-for (absΩp, absΩp2) in zip(discrete_problem.absΩp, discrete_problem2.absΩp)
-    @assert collect(absΩp) ≈ collect(absΩp2)
-end
-for (Ωpm, Ωpm2) in zip(discrete_problem.Ωpm, discrete_problem2.Ωpm)
-    @assert collect(Ωpm) ≈ collect(Ωpm2)
+discrete_ext * discrete_system * discrete_rhs
+discrete_ext[1:2] * (discrete_system * discrete_rhs[1:2])
+(discrete_ext[1:2] * discrete_system) * discrete_rhs[1:2]
+discrete_ext[1] * discrete_system * discrete_rhs[1, 14, 1]
+discrete_ext[1] * (discrete_system * (discrete_rhs[1, 14, 1]))
+(discrete_ext[1] * discrete_system) * discrete_rhs[1, 14, 1]
+
+
+ψ = discrete_system * discrete_rhs[1]
+ψ_cached = EPMAfem.saveall(ψ)
+
+ψ = discrete_ext[1] * discrete_system
+ψ_cached = EPMAfem.saveall(ψ)
+a_dot = EPMAfem.tangent(discrete_problem, ψ_cached);
+EPMAfem._is_adjoint_vector(a_dot[1])
+ϕ = discrete_system * sum(discrete_rhs);
+
+der = a_dot[1, 1500:1501] * ϕ
+heatmap(reshape(der[2], (40, 80)))
+
+ψ_dot = a_dot[1, 10050] * discrete_system
+for (idx, ψ_i) in ψ_dot
 end
 
-# test = EPMAfem.SpaceModels.assemble_bilinear(SM.∫R_uv, space_model, EPMAfem.SpaceModels.even(space_model), EPMAfem.SpaceModels.even(space_model))
+@gif for (idx, ψ_i) in ψ_dot
+    @show idx
+    solp = EPMAfem.pview(ψ_i, model)
+    heatmap(reshape(@view(solp[:, 1]), (101, 201))|> collect)
+end
 
-discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cpu())
-discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cpu());
+probe = EPMAfem.PNProbe(model, EPMAfem.cuda(); Ω = VectorValue(-1.0, 0.0))
+
+res = probe(discrete_system * discrete_rhs[1, 15, 1])
+
+
+θ = range(0, 2π, 100)
+z = sin.(θ)
+x = cos.(θ)
+
+
+@gif for i in 1:101
+    func = EPMAfem.SphericalHarmonicsModels.interpolable((p=@view(res.p[:, i]), m=@view(res.m[:, i])), direction_model)
+    plot(z, x, func.(VectorValue.(z, x)))
+    title!("$i")
+    zlims!(-0.01, 0.7)
+end fps=3
+
+
+using BenchmarkTools
+
+for ((idx1, ψ1), (idx2, ψ2)) in EPMAfem.taketwo(ψ_cached)
+    @show maximum(abs.(ψ1 .- ψ2))
+    @show idx1, idx2
+end
+
+for (idx, sol) in discrete_system * discrete_rhs[1, 14, 1]
+    @show idx
+end
+
+@gif for (idx, sol) in cahced
+    solp = EPMAfem.pview(sol, model)
+    heatmap(reshape(solp[:, 1], (41, 81)))
+end
+
+discrete_ext * discrete_system * discrete_rhs
+
+
+
+discrete_problem(ψ_cached, ϕ_cached) + discrete_rhs[1, 14, 1]*ϕ_cached
 
 ψ = discrete_system * discrete_rhs[1, 14, 1]
 
-discrete_ext*ψ
+cahced = EPMAfem.saveall(ψ)
+
+(discrete_ext[1] * ψ)
+(discrete_ext[2] * ψ)
+
+EPMAfem.weighted([1.0, 1.0], discrete_ext) * ψ_cached
+
+discrete_rhs[1, 14, 1] * (adjoint(discrete_system) * EPMAfem.weighted([1.0, 1.0], discrete_ext))
+
+ϕ = adjoint(discrete_system) * discrete_ext[2]
+test = sum([1.0, 1.0, 3.0] .* discrete_ext[[1, 2, 1]])
+
+discrete_rhs * ϕ
+
+ψ_cached = EPMAfem.saveall(ψ)
 
 ϕ = adjoint(discrete_system)*discrete_ext[1]
+ϕ_cached = EPMAfem.saveall(ϕ)
 
-res = discrete_rhs*ϕ
+res = discrete_rhs[1, 14, 1]*ϕ
+
+discrete_rhs*ϕ_cached
+
+discrete_ext[1]*ψ
+
+
+discrete_ext[1]*ψ
+using BenchmarkTools
+@profview @benchmark discrete_ext[1]*ψ_cached
+
+discrete_ext[1]*ψ_2cached
+
+
+
+
+ϕ_cached = EPMAfem.saveall(ϕ)
+
+res = discrete_rhs*ϕ_cached
+
+discrete_rhs[1].bxp == discrete_rhs[2].bxp
+
+eachindex(discrete_rhs)
+
+
+compute_low_rank_indices(discrete_rhs)
+
+
 res[1, 14, 1]
 
 
