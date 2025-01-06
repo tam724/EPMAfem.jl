@@ -28,6 +28,7 @@ end
 architecture(pnproblem::DiscretePNProblem) = pnproblem.arch
 n_basis(pnproblem::DiscretePNProblem) = n_basis(pnproblem.model)
 n_sums(pnproblem::DiscretePNProblem) = (nd = length(pnproblem.∇pm), ne = size(pnproblem.s, 1), nσ = size(pnproblem.σ, 2))
+n_parameters(pnproblem::DiscretePNProblem) = (size(pnproblem.s, 1), num_free_dofs(SpaceModels.material(space_model(pnproblem.model))))
 
 # mainly used this for debugging.. 
 function (problem::DiscretePNProblem)(ψ::AbstractDiscretePNSolution, ϕ::AbstractDiscretePNSolution)

@@ -1,38 +1,39 @@
 
-@concrete struct DiscretePNIterator <: AbstractDiscretePNSolution
+@concrete struct IterableDiscretePNSolution <: AbstractDiscretePNSolution
     system
-    rhs
+    b_assembler
     current_solution
 
     reverse
     initial_solution
 end
 
-function initialize_or_fillzero!(it::DiscretePNIterator, ::Nothing)
+function initialize_or_fillzero!(it::IterableDiscretePNSolution, ::Nothing)
     arch = architecture(it.system.problem)
     T = base_type(arch)
     fill!(it.current_solution, zero(T))
 end
 
-function initialize_or_fillzero!(it::DiscretePNIterator, initial_solution)
+function initialize_or_fillzero!(it::IterableDiscretePNSolution, initial_solution)
     copy!(it.current_solution, initial_solution)
 end
 
-function DiscretePNIterator(system::AbstractDiscretePNSystem, rhs::AbstractDiscretePNVector)
-    if system.adjoint != _is_adjoint_vector(rhs)
-        @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}"
+function IterableDiscretePNSolution(system::AbstractDiscretePNSystem, b::AbstractDiscretePNVector)
+    if system.adjoint != _is_adjoint_vector(b)
+        @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(b))}"
     end
     current_solution = allocate_solution_vector(system)
-    return DiscretePNIterator(system, rhs, current_solution, false, nothing)
+    b_assembler = initialize_assembly(b)
+    return IterableDiscretePNSolution(system, b_assembler, current_solution, false, nothing)
 end
 
-function _is_adjoint_solution(ψ::DiscretePNIterator)
+function _is_adjoint_solution(ψ::IterableDiscretePNSolution)
     return ψ.system.adjoint
 end
 
-Base.length(it::DiscretePNIterator) = length(energy_model(it.system.problem.model))
+Base.length(it::IterableDiscretePNSolution) = length(energy_model(it.system.problem.model))
 
-function Base.iterate(it::DiscretePNIterator)
+function Base.iterate(it::IterableDiscretePNSolution)
     initialize_or_fillzero!(it, it.initial_solution)
     ϵs = energy_model(it.system.problem.model)
     if !it.reverse
@@ -44,34 +45,36 @@ function Base.iterate(it::DiscretePNIterator)
     return idx => it.current_solution, idx
 end
 
-function _iterate_reverse(it::DiscretePNIterator, idx::ϵidx)
+function _iterate_reverse(it::IterableDiscretePNSolution, idx::ϵidx)
     ## THIS SHOULD BE TESTED IN ONLYENERGYMODEL! (should basically give the same result in normal and reverse)
     ϵs = energy_model(it.system.problem.model)
-    Δϵ = step(ϵs)
+    T = base_type(architecture(it.system.problem))
+    Δϵ = T(step(ϵs))
     idx_prev = previous(idx)
     if isnothing(idx_prev) return nothing end
     if _is_adjoint_solution(it)
         # update the system to idx.i - 1/2 from idx.i + 1/2
-        step_adjoint!(it.current_solution, it.system, it.rhs, idx_prev, Δϵ)
+        step_adjoint!(it.current_solution, it.system, it.b_assembler, idx_prev, Δϵ)
     else
         # update the system to idx.i from idx.i - 1
-        step_nonadjoint!(it.current_solution, it.system, it.rhs, idx_prev, Δϵ)
+        step_nonadjoint!(it.current_solution, it.system, it.b_assembler, idx_prev, Δϵ)
     end
     return idx_prev => it.current_solution, idx_prev
 end
 
-function Base.iterate(it::DiscretePNIterator, idx::ϵidx)
+function Base.iterate(it::IterableDiscretePNSolution, idx::ϵidx)
     ϵs = energy_model(it.system.problem.model)
-    Δϵ = step(ϵs)
+    T = base_type(architecture(it.system.problem))
+    Δϵ = T(step(ϵs))
     if it.reverse return _iterate_reverse(it, idx) end
     idx_next = next(idx)
     if isnothing(idx_next) return nothing end
     if _is_adjoint_solution(it)
         # update the system from idx.i - 1/2 -> idx.i + 1/2
-        step_adjoint!(it.current_solution, it.system, it.rhs, idx, Δϵ)
+        step_adjoint!(it.current_solution, it.system, it.b_assembler, idx, Δϵ)
     else
         # update the system from idx.i -> idx.i - 1
-        step_nonadjoint!(it.current_solution, it.system, it.rhs, idx, Δϵ)
+        step_nonadjoint!(it.current_solution, it.system, it.b_assembler, idx, Δϵ)
     end
     return idx_next => it.current_solution, idx_next
 end
@@ -115,10 +118,10 @@ end
     cached_solution
 end
 
-_is_adjoint_solution(it::CachedDiscretePNSolution) = _is_adjoint_solution(it.it)
-Base.length(it::CachedDiscretePNSolution) = length(it.it)
+_is_adjoint_solution(it::DiscreteIntervalPNIterator) = _is_adjoint_solution(it.it)
+Base.length(it::DiscreteIntervalPNIterator) = length(it.it) - 1
 
-function taketwo(it::DiscretePNIterator)
+function taketwo(it::IterableDiscretePNSolution)
     DiscreteIntervalPNIterator(it, allocate_solution_vector(it.system))
 end
 
@@ -126,7 +129,7 @@ function taketwo(it::CachedDiscretePNSolution)
     DiscreteIntervalPNIterator(it, nothing)
 end
 
-function Base.iterate(it::DiscreteIntervalPNIterator{<:DiscretePNIterator})
+function Base.iterate(it::DiscreteIntervalPNIterator{<:IterableDiscretePNSolution})
     ret1 = iterate(it.it)
     if isnothing(ret1) return nothing end
     (idx1, sol1), idx = ret1
@@ -144,7 +147,7 @@ function Base.iterate(it::DiscreteIntervalPNIterator{<:DiscretePNIterator})
     end
 end
 
-function Base.iterate(it::DiscreteIntervalPNIterator{<:DiscretePNIterator}, idx::ϵidx)
+function Base.iterate(it::DiscreteIntervalPNIterator{<:IterableDiscretePNSolution}, idx::ϵidx)
     idx1 = idx
     copy!(it.cached_solution, it.it.current_solution)
 

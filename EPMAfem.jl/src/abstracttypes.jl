@@ -14,25 +14,37 @@ abstract type AbstractDiscretePNSystemIM <: AbstractDiscretePNSystem end
 
 abstract type AbstractDiscretePNVector end
 # there is no structural difference between a vector and its adjoint (but during construction we can specify if we want to use it with with the adjoint or nonadjoint system)
-is_adjoint(b::AbstractDiscretePNVector) = _is_adjoint_vector(b)
+_is_adjoint_vector(b::AbstractArray{<:AbstractDiscretePNVector}) = all(bi -> _is_adjoint_vector(bi) == _is_adjoint_vector(first(b)), b) ? _is_adjoint_vector(first(b)) : throw(ArgumentError("Vectors have different adjoint properties"))
+
+@concrete terse struct PNVectorIntegrator{V}
+    b::V
+    cache
+end
+_is_adjoint_vector((; b)::PNVectorIntegrator) = _is_adjoint_vector(b)
+
+@concrete terse struct PNVectorAssembler{V}
+    b::V
+    cache
+end
+_is_adjoint_vector((; b)::PNVectorAssembler) = _is_adjoint_vector(b)
+
 
 # this is "almost" a AbstractDiscretePNVector. But we have to differentiate the two, because the adjoint-solution has the shifted energy grid. (typically iterators)
 abstract type AbstractDiscretePNSolution end
-is_adjoint(ψ::AbstractDiscretePNSolution) = _is_adjoint_solution(ψ)
 
 ## some syntactic sugar
-Base.:*(A::AbstractDiscretePNSystem, g::AbstractDiscretePNVector) = DiscretePNIterator(A, g)
-Base.:*(g::AbstractDiscretePNVector, A::AbstractDiscretePNSystem) = DiscretePNIterator(adjoint(A), g)
-Base.:*(A::AbstractDiscretePNSystem, g::AbstractArray{<:AbstractDiscretePNVector}) = [DiscretePNIterator(A, g_) for g_ in g]
-Base.:*(g::AbstractArray{<:AbstractDiscretePNVector}, A::AbstractDiscretePNSystem) = [DiscretePNIterator(adjoint(A), g_) for g_ in g]
+Base.:*(A::AbstractDiscretePNSystem, g::AbstractDiscretePNVector) = IterableDiscretePNSolution(A, g)
+Base.:*(g::AbstractDiscretePNVector, A::AbstractDiscretePNSystem) = IterableDiscretePNSolution(adjoint(A), g)
+Base.:*(A::AbstractDiscretePNSystem, g::AbstractArray{<:AbstractDiscretePNVector}) = [IterableDiscretePNSolution(A, g_) for g_ in g]
+Base.:*(g::AbstractArray{<:AbstractDiscretePNVector}, A::AbstractDiscretePNSystem) = [IterableDiscretePNSolution(adjoint(A), g_) for g_ in g]
 
 function solve_and_integrate(b::Union{AbstractDiscretePNVector, AbstractArray{<:AbstractDiscretePNVector}}, it::AbstractDiscretePNSolution)
-    cache = initialize_integration(b)
+    b_integrator! = initialize_integration(b)
     for (idx, ψ) in it
         if is_first(idx) continue end # (where ψ is initialized to 0 anyways..)
-        integrate_at!(cache, idx, b, ψ)
+        b_integrator!(idx, ψ)
     end
-    return finalize_integration(cache, b)
+    return finalize_integration(b_integrator!)
 end
 
 function Base.:*(h::Union{AbstractDiscretePNVector, AbstractArray{<:AbstractDiscretePNVector}}, ψ::AbstractDiscretePNSolution)

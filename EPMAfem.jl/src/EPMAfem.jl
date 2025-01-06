@@ -33,7 +33,7 @@ include("pnproblem.jl")
 include("pnindex.jl")
 include("pniterators.jl")
 include("pnvector.jl")
-# include("pnderivativevector.jl")
+include("pnderivativevector.jl")
 
 include("pndiscretization.jl")
 include("systems/pnsystems.jl")

@@ -1,10 +1,10 @@
-function step_nonadjoint!(x, pnsystem::AbstractDiscretePNSystemIM, rhs::AbstractDiscretePNVector, i, Δϵ)
+function step_nonadjoint!(x, pnsystem::AbstractDiscretePNSystemIM, rhs::PNVectorAssembler, i, Δϵ)
     if pnsystem.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
     if pnsystem.adjoint != _is_adjoint_vector(rhs) @warn "System {$(pnsystem.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}" end
     _step_nonadjoint!(x, pnsystem, rhs, i, Δϵ)
 end
 
-function step_adjoint!(x, pnsystem::AbstractDiscretePNSystemIM, rhs::AbstractDiscretePNVector, i, Δϵ)
+function step_adjoint!(x, pnsystem::AbstractDiscretePNSystemIM, rhs::PNVectorAssembler, i, Δϵ)
     if !pnsystem.adjoint @warn "Trying to step_adjoint with system marked as nonadjoint" end
     if pnsystem.adjoint != _is_adjoint_vector(rhs) @warn "System {$(pnsystem.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs))}" end
     _step_adjoint!(x, pnsystem, rhs, i, Δϵ)
@@ -85,9 +85,9 @@ function update_coefficients_mat_adjoint!(system::AbstractDiscretePNSystemIM, pr
 end
 
 # update the rhs for the nonadjoint step from idx to idx-1
-function update_rhs_nonadjoint!(x, system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, rhs::AbstractDiscretePNVector, idx, Δϵ, sym)
+function update_rhs_nonadjoint!(x, system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, b_ass::PNVectorAssembler, idx, Δϵ, sym)
     # minus because we have to bring b to the right side of the equation 
-    assemble_at!(system.rhs, rhs, minus½(idx), -Δϵ, sym)
+    assemble_at!(system.rhs, b_ass, minus½(idx), -Δϵ, sym)
     a, b, c = update_coefficients_rhs_nonadjoint!(system, problem, idx, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, system.tmp, system.tmp2, sym)
@@ -96,9 +96,9 @@ function update_rhs_nonadjoint!(x, system::AbstractDiscretePNSystemIM, problem::
 end
 
 # update the rhs for the adjoint step from idx to idx+1
-function update_rhs_adjoint!(x, system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, rhs::AbstractDiscretePNVector, idx, Δϵ, sym)
+function update_rhs_adjoint!(x, system::AbstractDiscretePNSystemIM, problem::DiscretePNProblem, b_ass::PNVectorAssembler, idx, Δϵ, sym)
     # minus because we have to bring b to the right side of the equation 
-    assemble_at!(system.rhs, rhs, plus½(idx), -Δϵ, sym)
+    assemble_at!(system.rhs, b_ass, plus½(idx), -Δϵ, sym)
     a, b, c = update_coefficients_rhs_adjoint!(system, problem, idx, Δϵ)
     # minus because we have to bring b to the right side of the equation
     A = FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, a, b, c, system.tmp, system.tmp2, sym)
@@ -125,7 +125,7 @@ function Base.adjoint(A::DiscretePNSystem_IMF)
 end
 
 # update the system state from i to i-1
-function _step_nonadjoint!(x, pnsystem::DiscretePNSystem_IMF, rhs::AbstractDiscretePNVector, idx, Δϵ)
+function _step_nonadjoint!(x, pnsystem::DiscretePNSystem_IMF, rhs::PNVectorAssembler, idx, Δϵ)
     problem = pnsystem.problem
     update_rhs_nonadjoint!(x, pnsystem, problem, rhs, idx, Δϵ, true)
     a, b, c = update_coefficients_mat_nonadjoint!(pnsystem, problem, idx, Δϵ)
@@ -136,7 +136,7 @@ function _step_nonadjoint!(x, pnsystem::DiscretePNSystem_IMF, rhs::AbstractDiscr
 end
 
 # update the system state from i to i+1
-function _step_adjoint!(x, pnsystem::DiscretePNSystem_IMF, rhs::AbstractDiscretePNVector, idx, Δϵ)
+function _step_adjoint!(x, pnsystem::DiscretePNSystem_IMF, rhs::PNVectorAssembler, idx, Δϵ)
     problem = pnsystem.problem
     update_rhs_adjoint!(x, pnsystem, problem, rhs, idx, Δϵ, true)
     a, b, c = update_coefficients_mat_adjoint!(pnsystem, problem, idx, Δϵ)
@@ -288,7 +288,7 @@ function allocate_solution_vector(pnsystem::DiscretePNSystem_IMS)
 end
 
 
-function _step_nonadjoint!(x, pnsystem::DiscretePNSystem_IMS, rhs::AbstractDiscretePNVector, i, Δϵ)
+function _step_nonadjoint!(x, pnsystem::DiscretePNSystem_IMS, rhs::PNVectorAssembler, i, Δϵ)
     problem = pnsystem.problem
     update_rhs_nonadjoint!(x, pnsystem, problem, rhs, i, Δϵ, false)
     a, b, c = update_coefficients_mat_nonadjoint!(pnsystem, problem, i, Δϵ)
@@ -302,7 +302,7 @@ function _step_nonadjoint!(x, pnsystem::DiscretePNSystem_IMS, rhs::AbstractDiscr
     return
 end
 
-function _step_adjoint!(x, pnsystem::DiscretePNSystem_IMS, rhs::AbstractDiscretePNVector, i, Δϵ)
+function _step_adjoint!(x, pnsystem::DiscretePNSystem_IMS, rhs::PNVectorAssembler, i, Δϵ)
     problem = pnsystem.problem
     update_rhs_adjoint!(x, pnsystem, problem, rhs, i, Δϵ, false)
     a, b, c = update_coefficients_mat_adjoint!(pnsystem, problem, i, Δϵ)

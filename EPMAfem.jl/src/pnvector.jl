@@ -9,20 +9,19 @@
 end
 
 _is_adjoint_vector(b::Rank1DiscretePNVector) = b.adjoint
-_is_adjoint_vector(b::AbstractArray{<:Rank1DiscretePNVector}) = all(bi -> _is_adjoint_vector(bi) == _is_adjoint_vector(first(b)), b) ? _is_adjoint_vector(first(b)) : throw(ArgumentError("Vectors have different adjoint properties"))
 
 function initialize_integration(b::Rank1DiscretePNVector)
     (_, (_, _), (nΩp, _)) = n_basis(b.model)
     buf = allocate_vec(b.arch, nΩp)
     cache = (integral = [0.0], buf = buf)
-    return cache
+    return PNVectorIntegrator(b, cache)
 end
 
-function finalize_integration(cache, b::Rank1DiscretePNVector)
+function finalize_integration((; b, cache)::PNVectorIntegrator{<:Rank1DiscretePNVector})
     return cache.integral[1]
 end
 
-function integrate_at!(cache, idx, b::Rank1DiscretePNVector, ψ)
+function ((; b, cache)::PNVectorIntegrator{<:Rank1DiscretePNVector})(idx, ψ)
     ψp = pview(ψ, b.model)
     Δϵ = step(energy_model(b.model))
     T = base_type(b.arch)
@@ -37,20 +36,25 @@ function integrate_at!(cache, idx, b::Rank1DiscretePNVector, ψ)
     # mul!(transpose(cache.buf), transpose(b.bxp), ψp) AT = BT * C <=> A = CT * B
     mul!(cache.buf, transpose(ψp), b.bxp)
     cache.integral[1] += Δϵ * bϵ2 * dot(cache.buf, b.bΩp)
+    return nothing
 end
 
-# if β isa Number we add to b
-function assemble_at!(b, rhs::Rank1DiscretePNVector, idx, Δ, sym, β=false)
-    bp, bm = pmview(b, rhs.model)
-    T = base_type(rhs.arch)
+function initialize_assembly(b::Rank1DiscretePNVector)
+    return PNVectorAssembler(b, nothing)
+end
+
+# if β isa Number we add to rhs
+function assemble_at!(rhs, (; b)::PNVectorAssembler{<:Rank1DiscretePNVector}, idx, Δ, sym, β=false)
+    bp, bm = pmview(rhs, b.model)
+    T = base_type(b.arch)
     if idx.adjoint #you are assembling the rhs at the half step
-        @assert !_is_adjoint_vector(rhs)
-        bϵ2 = T(0.5)*(rhs.bϵ[minus½(idx)] + rhs.bϵ[plus½(idx)])
+        @assert !_is_adjoint_vector(b)
+        bϵ2 = T(0.5)*(b.bϵ[minus½(idx)] + b.bϵ[plus½(idx)])
     else
-        @assert _is_adjoint_vector(rhs)
-        bϵ2 = rhs.bϵ[idx]
+        @assert _is_adjoint_vector(b)
+        bϵ2 = b.bϵ[idx]
     end
-    mul!(bp, rhs.bxp, transpose(rhs.bΩp), bϵ2*Δ, β)
+    mul!(bp, b.bxp, transpose(b.bΩp), bϵ2*Δ, β)
     my_rmul!(bm, β) # * -1 if sym
 end
 
@@ -71,20 +75,20 @@ function ideal_index_order(b_arr::Array{<:Rank1DiscretePNVector})
     return d2
 end
 
-## for array values integrations
+## for array valued integrations
 function initialize_integration(b::Array{<:Rank1DiscretePNVector})
     (_, (_, _), (nΩp, _)) = n_basis(first(b).model)
     buf = allocate_vec(first(b).arch, nΩp)
-    cache = (integral = [0.0], buf = buf)
     idx_order = ideal_index_order(b)
     cache = (integral = zeros(size(b)), idx_order = idx_order, buf = buf)
+    return PNVectorIntegrator(b, cache)
 end
 
-function finalize_integration(cache, b::Array{<:Rank1DiscretePNVector})
+function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:Rank1DiscretePNVector}})
     return cache.integral
 end
 
-function integrate_at!(cache, idx, b::Array{<:Rank1DiscretePNVector}, ψ)
+function ((; b, cache)::PNVectorIntegrator{<:Array{<:Rank1DiscretePNVector}})(idx, ψ)
     ψp = pview(ψ, first(b).model)
     Δϵ = step(energy_model(first(b).model))
     T = base_type(first(b).arch)
@@ -115,13 +119,18 @@ _is_adjoint_vector(b::SumOfAbstractDiscretePNVector) = all(bi -> _is_adjoint_vec
 
 function weighted(weights, vecs::Array{<:AbstractDiscretePNVector})
     @assert size(weights) == size(vecs)
-    if !all(r1 -> _is_adjoint_vector(first(vecs)) == _is_adjoint_vector(r1), vecs) @warn "creating a sum of vectors with different adjoint properties" end
+    if !all(r1 -> _is_adjoint_vector(first(vecs)) == _is_adjoint_vector(r1), vecs) throw(ErrorException("cannot create a sum of vectors with different adjoint properties")) end
     return SumOfAbstractDiscretePNVector(weights, vecs)
 end
 
-function assemble_at!(b, rhs::SumOfAbstractDiscretePNVector, idx, Δ, sym, β=false)
-    for i in eachindex(rhs.weights, rhs.vecs)
-        assemble_at!(b, rhs.vecs[i], idx, Δ*rhs.weights[i], sym, β)
+function initialize_assembly(b::SumOfAbstractDiscretePNVector)
+    cache = [initialize_assembly(b.vecs[i]) for i in eachindex(b.vecs)]
+    return PNVectorAssembler(b, cache)
+end
+
+function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:SumOfAbstractDiscretePNVector}, idx, Δ, sym, β=false)
+    for i in eachindex(b.vecs)
+        assemble_at!(rhs, cache[i], idx, Δ*b.weights[i], sym, β)
         β = true
     end
 end
