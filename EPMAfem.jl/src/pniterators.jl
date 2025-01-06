@@ -18,7 +18,7 @@ function initialize_or_fillzero!(it::IterableDiscretePNSolution, initial_solutio
     copy!(it.current_solution, initial_solution)
 end
 
-function IterableDiscretePNSolution(system::AbstractDiscretePNSystem, b::AbstractDiscretePNVector)
+function IterableDiscretePNSolution(system::AbstractDiscretePNSystem, b::AbstractDiscretePNVector; initial_solution=nothing)
     if system.adjoint != _is_adjoint_vector(b)
         @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(b))}"
     end
