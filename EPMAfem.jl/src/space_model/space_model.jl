@@ -57,3 +57,26 @@ function projection(f, model, space)
     op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, V)
     return Gridap.solve(op).free_values
 end
+
+# dirac basis evaluation
+function eval_basis(model, x::Point{D}) where D
+    @assert length(dimensions(dimensionality(model))) == D
+    δ = DiracDelta(model.discrete_model, x)
+    bp = assemble_linear((v, args...) -> δ(v), model, even(model))
+    bm = assemble_linear((v, args...) -> δ(v), model, odd(model))
+    return (p=bp, m=bm)
+end
+
+# dirac basis evaluation
+function eval_basis(model, μ::Function)
+    bp = assemble_linear(∫R_μv(μ), model, even(model))
+    bm = assemble_linear(∫R_μv(μ), model, odd(model))
+    return (p=bp, m=bm)
+end
+
+function interpolable(vec, model)
+    p_func = FEFunction(even(model), Float64.(vec.p))
+    m_func = FEFunction(odd(model), Float64.(vec.m))
+    return p_func + m_func
+end
+

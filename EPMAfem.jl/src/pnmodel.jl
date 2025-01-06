@@ -37,6 +37,26 @@ function energy_model(model::PNGridapModel)
     return model.energy_mdl
 end
 
+# dirac basis evaluation
+function energy_eval_basis(energy_model, ϵ::Real)
+    if (ϵ > energy_model[end] || ϵ < energy_model[1]) throw(ErrorException("$ϵ is not a part of $energy_model")) end
+    basis = zeros(length(energy_model))
+    i = findfirst(ϵi -> ϵ < ϵi, energy_model)
+    if isnothing(i) # ϵi == energy_model[end]
+        basis[end] = 1.0
+    else
+        basis[i-1] = (energy_model[i] - ϵ) / (energy_model[i] - energy_model[i-1])
+        basis[i] = (ϵ - energy_model[i-1]) / (energy_model[i] - energy_model[i-1])
+    end
+    return basis
+end
+
+function energy_eval_basis(energy_model, f::Function)
+    return f.(energy_model)
+end
+
+
+
 function direction_model(model::PNGridapModel)
     return model.direction_mdl
 end

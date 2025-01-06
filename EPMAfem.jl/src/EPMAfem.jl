@@ -34,6 +34,7 @@ include("pnindex.jl")
 include("pniterators.jl")
 include("pnvector.jl")
 include("pnderivativevector.jl")
+include("pnprobes.jl")
 
 include("pndiscretization.jl")
 include("systems/pnsystems.jl")

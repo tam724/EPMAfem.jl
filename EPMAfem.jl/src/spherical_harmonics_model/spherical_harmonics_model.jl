@@ -200,5 +200,24 @@ function eval_basis_functions!(model::AbstractSphericalHarmonicsModel{ND1}, Ω::
     _eval_basis_functions!(model, extend_3D(Ω), idx)
 end
 
+#dirac basis evaluation
+function eval_basis(model, Ω::VectorValue{D}) where D
+    eval_basis_functions!(model, Ω)
+    (p=collect(model.sh_cache.Y[even(model)]), m=collect(model.sh_cache.Y[odd(model)]))
+end
+
+#integrated basis functions
+function eval_basis(model, h::Function)
+    (p=assemble_linear(∫S²_hv(h), model, even(model)), m=assemble_linear(∫S²_hv(h), model, odd(model)))
+end
+
+
+function interpolable(b, model)
+    function interpolant(Ω)
+        eval_basis_functions!(model, Ω)
+        return dot(b.p, model.sh_cache.Y[even(model)]) + dot(b.m, model.sh_cache.Y[odd(model)])
+    end
+    return interpolant
+end
 
 
