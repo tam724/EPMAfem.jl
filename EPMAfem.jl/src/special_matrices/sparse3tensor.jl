@@ -369,7 +369,7 @@ function special_matmul!(uv_nz, is, js, u, v, α, β)
         for l in 1:size(u, 2)
             tmp += u[i, l] * v[j, l]
         end
-        uv_nz[k] = α * tmp + β * out[k]
+        out[k] = α * tmp + β * out[k]
     end
     backend = KernelAbstractions.get_backend(uv_nz)
     kernel! = special_matmul_kernel!(backend)
