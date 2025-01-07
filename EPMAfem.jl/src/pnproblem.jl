@@ -9,9 +9,9 @@
 
     # space (might be moved to gpu)
     ρp
-    ρp_tens
+    # ρp_tens
     ρm
-    ρm_tens
+    # ρm_tens
 
     ∂p
     ∇pm
@@ -28,7 +28,36 @@ end
 architecture(pnproblem::DiscretePNProblem) = pnproblem.arch
 n_basis(pnproblem::DiscretePNProblem) = n_basis(pnproblem.model)
 n_sums(pnproblem::DiscretePNProblem) = (nd = length(pnproblem.∇pm), ne = size(pnproblem.s, 1), nσ = size(pnproblem.σ, 2))
-n_parameters(pnproblem::DiscretePNProblem) = (size(pnproblem.s, 1), num_free_dofs(SpaceModels.material(space_model(pnproblem.model))))
+
+Base.show(io::IO, p::DiscretePNProblem) = print(io, "PNProblem [$(n_basis(p)) and $(n_sums(p))]")
+Base.show(io::IO, ::MIME"text/plain", p::DiscretePNProblem) = show(io, p)
+
+# this is more or less "activity tracking" for the derivative
+@concrete struct UpdatableDiscretePNProblem
+    problem
+    ρs
+    ρp_tens
+    ρm_tens
+end
+
+n_parameters(upd_problem::UpdatableDiscretePNProblem) = (size(upd_problem.problem.s, 1), num_free_dofs(SpaceModels.material(space_model(upd_problem.problem.model))))
+
+Base.show(io::IO, p::UpdatableDiscretePNProblem) = print(io, "UpdateablePNProblem [$(n_basis(p.problem)) and $(n_sums(p.problem))]")
+Base.show(io::IO, ::MIME"text/plain", p::UpdatableDiscretePNProblem) = show(io, p)
+
+function update_problem!(upd_problem::UpdatableDiscretePNProblem, ρs)
+    # ρs = [SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_mdl) for e in 1:number_of_elements(pn_eq)]
+    problem = upd_problem.problem
+    arch = problem.arch
+    @assert size(ρs) == n_parameters(upd_problem)
+    upd_problem.ρs .= ρs
+    for i in 1:n_parameters(upd_problem)[1]
+        Sparse3Tensor.project!(upd_problem.ρp_tens, @view(ρs[i, :]))
+        nonzeros(problem.ρp[i]) .= nonzeros(upd_problem.ρp_tens.skeleton) |> arch
+        Sparse3Tensor.project!(upd_problem.ρm_tens, @view(ρs[i, :]))
+        nonzeros(problem.ρm[i]) .= nonzeros(upd_problem.ρm_tens.skeleton) |> arch
+    end
+end
 
 # mainly used this for debugging.. 
 function (problem::DiscretePNProblem)(ψ::AbstractDiscretePNSolution, ϕ::AbstractDiscretePNSolution)

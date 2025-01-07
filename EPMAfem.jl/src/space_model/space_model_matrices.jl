@@ -3,7 +3,7 @@
 ∂y(u, dims) = ∂(Y(), u, dims)
 ∂z(u, dims) = ∂(Z(), u, dims)
 
-∫R_ρuv(u, v, ρ, (dims, R, dx, ∂R, dΓ, n)) = ∫(ρ*u*v)dx
+∫R_ρuv(ρ) = (u, v, (dims, R, dx, ∂R, dΓ, n)) -> ∫(ρ*u*v)dx
 ∫R_uv(u, v, (dims, R, dx, ∂R, dΓ, n)) = ∫(u*v)dx
 # ∫R_v(v, (dims, R, dx, ∂R, dΓ, n)) = ∫(v)dx
 

@@ -42,7 +42,7 @@ LinearAlgebra.matprod_dest(A, B::Union{BlockedMatrix, Transpose{T, <:BlockedMatr
 LinearAlgebra.matprod_dest(A::Union{BlockedMatrix, Transpose{T, <:BlockedMatrix}}, B, TS) where T = similar(B, TS, (size(A, 1), size(B, 2)))
 
 Base.show(io::IO, A::BlockedMatrix) = print(io, "$(size(A, 1))x$(size(A, 2)) BlockedMatrix{$(eltype(A))} with blocks: $(["$(length(A.indices[i][1]))x$(length(A.indices[i][2]))" * ((i!=num_blocks(A)) ? ", " : "") for i in 1:num_blocks(A)]...)")
-Base.show(io::IO, m::MIME"text/plain", A::BlockedMatrix) = print(io, "$(size(A, 1))x$(size(A, 2)) BlockedMatrix{$(eltype(A))} with blocks: $(["$(length(A.indices[i][1]))x$(length(A.indices[i][2]))" * ((i!=num_blocks(A)) ? ", " : "") for i in 1:num_blocks(A)]...)")
+Base.show(io::IO, ::MIME"text/plain", A::BlockedMatrix) = show(io, A)
 
 function Base.getindex(A::BlockedMatrix{T}, i::Integer, j::Integer, warn=true) where T
     !warn || @warn "Accessing elements of BlockedMatrix is slow"

@@ -1,4 +1,4 @@
-@concrete struct Rank1DiscretePNVector <: AbstractDiscretePNVector
+@concrete terse struct Rank1DiscretePNVector <: AbstractDiscretePNVector
     adjoint::Bool
     model
     arch
@@ -7,6 +7,9 @@
     bxp
     bΩp
 end
+
+Base.show(io::IO, v::Rank1DiscretePNVector) = print(io, "Rank1DiscretePNVector [adj = $(v.adjoint)]")
+Base.show(io::IO, ::MIME"text/plain", v::Rank1DiscretePNVector) = show(io, v)
 
 _is_adjoint_vector(b::Rank1DiscretePNVector) = b.adjoint
 
@@ -136,18 +139,18 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:SumOfAbstractDiscre
 end
 
 function initialize_integration(b::SumOfAbstractDiscretePNVector)
-    caches = [initialize_integration(v) for v in b.vecs]
-    return caches
+    cache = [initialize_integration(v) for v in b.vecs]
+    return PNVectorIntegrator(b, cache)
 end
 
-function integrate_at!(caches, idx, b::SumOfAbstractDiscretePNVector, ψ)
-    for i in eachindex(b.vecs, caches)
-        integrate_at!(caches[i], idx, b.vecs[i], ψ)
+function ((; b, cache)::PNVectorIntegrator{<:SumOfAbstractDiscretePNVector})(idx, ψ)
+    for i in eachindex(b.vecs, cache)
+        cache[i](idx, ψ)
     end
 end
 
-function finalize_integration(caches, b::SumOfAbstractDiscretePNVector)
-    return sum(b.weights[i] * finalize_integration(caches[i], b.vecs[i]) for i in eachindex(b.weights, b.vecs))
+function finalize_integration((; b, cache)::PNVectorIntegrator{<:SumOfAbstractDiscretePNVector})
+    return sum(b.weights[i] * finalize_integration(cache[i]) for i in eachindex(b.weights, b.vecs))
 end
 
 # for fun

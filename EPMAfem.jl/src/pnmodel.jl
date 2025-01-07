@@ -1,11 +1,11 @@
-@concrete struct PNGridapModel <: AbstractPNModel
+@concrete struct DiscretePNModel <: AbstractPNModel
     space_mdl
     energy_mdl
     direction_mdl
     number_of_basis_functions::@NamedTuple{nϵ::Int64, nx::@NamedTuple{p::Int64, m::Int64}, nΩ::@NamedTuple{p::Int64, m::Int64}}
 end
 
-function PNGridapModel(space_model, energy_model, direction_model)
+function DiscretePNModel(space_model, energy_model, direction_model)
     @assert SpaceModels.dimensionality(space_model) == SphericalHarmonicsModels.dimensionality(direction_model)
     n_basis_energy = length(energy_model)
     n_basis_space = SpaceModels.n_basis(space_model)
@@ -15,7 +15,7 @@ function PNGridapModel(space_model, energy_model, direction_model)
         nx = n_basis_space,
         nΩ = n_basis_direction)
 
-    return PNGridapModel(
+    return DiscretePNModel(
         space_model,
         energy_model,
         direction_model,
@@ -23,17 +23,20 @@ function PNGridapModel(space_model, energy_model, direction_model)
     )
 end
 
+Base.show(io::IO, m::DiscretePNModel) = print(io, "DiscretePNModel [$(length(dimensions(m)))D, N=$(direction_model(m).N), cells:$(n_basis(m).nx.m)]")
+Base.show(io::IO, ::MIME"text/plain", m::DiscretePNModel) = show(io, m)
+
 # function MKLSparse.SparseMatrixCSR{T, Ti}(A::SparseMatrixCSC) where {T, Ti}
 #     # very inefficient, but only do this once!
 #     AT = sparse(transpose(A))
 #     return MKLSparse.SparseMatrixCSR{T, Ti}(AT.m, AT.n, Vector{Ti}(AT.colptr), Vector{Ti}(AT.rowval), Vector{T}(AT.nzval))
 # end
 
-function space_model(model::PNGridapModel)
+function space_model(model::DiscretePNModel)
     return model.space_mdl
 end
 
-function energy_model(model::PNGridapModel)
+function energy_model(model::DiscretePNModel)
     return model.energy_mdl
 end
 
@@ -57,12 +60,12 @@ end
 
 
 
-function direction_model(model::PNGridapModel)
+function direction_model(model::DiscretePNModel)
     return model.direction_mdl
 end
 
-dimensionality(model::PNGridapModel) = SpaceModels.dimensionality(space_model(model))
-dimensions(model::PNGridapModel) = Dimensions.dimensions(dimensionality(model))
+dimensionality(model::DiscretePNModel) = SpaceModels.dimensionality(space_model(model))
+dimensions(model::DiscretePNModel) = Dimensions.dimensions(dimensionality(model))
 
 # max_degree(model::PNGridapModel) = model.direction_model
 # space_directions(model::PNGridapModel) = space_directions(space_model(model))
@@ -80,7 +83,7 @@ dimensions(model::PNGridapModel) = Dimensions.dimensions(dimensionality(model))
 #     return U, V, (model=space_model, R=R, dx=Measure(R, 2), ∂R=∂R, dΓ= Measure(∂R, 2), n=get_normal_vector(∂R))
 # end
 
-function n_basis(model::PNGridapModel)
+function n_basis(model::DiscretePNModel)
     return model.number_of_basis_functions
 end
 

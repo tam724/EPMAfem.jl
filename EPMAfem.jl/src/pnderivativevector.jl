@@ -1,28 +1,29 @@
 @concrete terse struct TangentDiscretePNVector <: AbstractDiscretePNVector
     adjoint::Bool
-    problem
+    updatable_problem
     cached_solution
     element_index
     cell_index
 end
 
-function tangent(problem::DiscretePNProblem, ψ::AbstractDiscretePNSolution)
+function tangent(upd_problem::UpdatableDiscretePNProblem, ψ::AbstractDiscretePNSolution)
     # this basically creates the "PNVectors" \dot{a}(\cdot{}, ψ) or \dot{a}(ψ, \cdot{})
     # if ψ is an adjoint solution, this is an nonadjoint vector, is ψ is a nonadjoint solution, this is an adjoint vector 
-    (n_e, n_cells) = n_parameters(problem)
-    return [TangentDiscretePNVector(_is_adjoint_solution(ψ), problem, ψ, i, j) for i in 1:n_e, j in 1:n_cells]
+    (n_e, n_cells) = n_parameters(upd_problem)
+    return [TangentDiscretePNVector(_is_adjoint_solution(ψ), upd_problem, ψ, i, j) for i in 1:n_e, j in 1:n_cells]
 end
 
 _is_adjoint_vector(b::TangentDiscretePNVector) = b.adjoint
 
 function initialize_integration(b::Array{<:TangentDiscretePNVector})
-    problem = first(b).problem
+    upd_problem = first(b).updatable_problem
+    problem = upd_problem.problem
     arch = problem.arch
     T = base_type(arch)
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
 
-    isp, jsp = arch.(Int64, Sparse3Tensor.get_ijs(problem.ρp_tens))
-    ism, jsm = arch.(Int64, Sparse3Tensor.get_ijs(problem.ρm_tens))
+    isp, jsp = arch.(Int64, Sparse3Tensor.get_ijs(upd_problem.ρp_tens))
+    ism, jsm = arch.(Int64, Sparse3Tensor.get_ijs(upd_problem.ρm_tens))
     Λtemp = allocate_vec(arch, max(nxp*nΩp, nxm*nΩm))
     σtemp = allocate_vec(arch, max(nΩp, nΩm))
     ΛpΦp = [allocate_vec(arch, length(isp)) for _ in 1:length(problem.ρp)]
@@ -38,13 +39,14 @@ function initialize_integration(b::Array{<:TangentDiscretePNVector})
 end
 
 function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector}})
-    problem = first(b).problem
+    upd_problem = first(b).updatable_problem
+    problem = upd_problem.problem
     (; ΛpΦp, ΛmΦm) = cache
 
     ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space_model(problem.model)))) for _ in 1:length(problem.ρp)]
     for i_e in 1:length(problem.ρp)
-        Sparse3Tensor.contract!(ρs_adjoint[i_e], problem.ρp_tens, ΛpΦp[i_e] |> collect, true, true)
-        Sparse3Tensor.contract!(ρs_adjoint[i_e], problem.ρm_tens, ΛmΦm[i_e] |> collect, true, true)
+        Sparse3Tensor.contract!(ρs_adjoint[i_e], upd_problem.ρp_tens, ΛpΦp[i_e] |> collect, true, true)
+        Sparse3Tensor.contract!(ρs_adjoint[i_e], upd_problem.ρm_tens, ΛmΦm[i_e] |> collect, true, true)
     end
     return ρs_adjoint
 end
@@ -55,7 +57,8 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector}})(
     end
     (; isp, jsp, ism, jsm, Λtemp, σtemp, ΛpΦp, ΛmΦm) = cache
 
-    problem = first(b).problem
+    upd_problem = first(b).updatable_problem
+    problem = upd_problem.problem
     T = base_type(architecture(problem))
 
     Δϵ = T(step(energy_model(problem.model)))
@@ -99,32 +102,33 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector}})(
     end
 end
 
-
 # assembly
 function initialize_assembly(b::TangentDiscretePNVector)
-    (n_elem, n_cells) = n_parameters(b.problem)
+    upd_problem = b.updatable_problem
+    problem = upd_problem.problem
+    (n_elem, n_cells) = n_parameters(problem)
 
-    arch = architecture(b.problem)
+    arch = architecture(problem)
     T = base_type(arch)
-    ρp_tangent = [similar(b.problem.ρp_tens.skeleton) |> arch for _ in 1:n_elem]
-    ρm_tangent = [similar(b.problem.ρm_tens.skeleton) |> arch for _ in 1:n_elem]
+    ρp_tangent = [similar(upd_problem.ρp_tens.skeleton) |> arch for _ in 1:n_elem]
+    ρm_tangent = [similar(upd_problem.ρm_tens.skeleton) |> arch for _ in 1:n_elem]
 
     onehot = zeros(n_cells)
     for i in 1:n_elem
         if i == b.element_index onehot[b.cell_index] = 1.0 end
-        Sparse3Tensor.project!(b.problem.ρp_tens, onehot)
-        Sparse3Tensor.project!(b.problem.ρm_tens, onehot)
-        copyto!(nonzeros(ρp_tangent[i]), nonzeros(b.problem.ρp_tens.skeleton))
-        copyto!(nonzeros(ρm_tangent[i]), nonzeros(b.problem.ρm_tens.skeleton))
+        Sparse3Tensor.project!(upd_problem.ρp_tens, onehot)
+        Sparse3Tensor.project!(upd_problem.ρm_tens, onehot)
+        copyto!(nonzeros(ρp_tangent[i]), nonzeros(upd_problem.ρp_tens.skeleton))
+        copyto!(nonzeros(ρm_tangent[i]), nonzeros(upd_problem.ρm_tens.skeleton))
         if i == b.element_index onehot[b.cell_index] = 0.0 end
     end
 
-    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(b.problem.model)
+    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
     np, nm = nxp*nΩp, nxm*nΩm
     tmp = allocate_vec(arch, max(np, nm))
     tmp2 = allocate_vec(arch, max(nΩp, nΩm))
 
-    (nd, ne, nσ) = n_sums(b.problem)
+    (nd, ne, nσ) = n_sums(problem)
     a = Vector{T}(undef, ne)
     c = [Vector{T}(undef, nσ) for _ in 1:ne]
 
@@ -137,20 +141,20 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
     if _is_adjoint_solution(b.cached_solution) != true
         throw(ErrorException("not implemented yet"))
     end
+    upd_problem = b.updatable_problem
+    problem = upd_problem.problem
 
-    # my_rmul!(rhs, β)
+    T = base_type(architecture(problem))
+    Δϵ = T(step(energy_model(problem.model)))
 
-    T = base_type(architecture(b.problem))
-    Δϵ = T(step(energy_model(b.problem.model)))
-
-    rhsp, rhsm = pmview(rhs, b.problem.model)
+    rhsp, rhsm = pmview(rhs, problem.model)
     
     # si = b.problem.s[rhs.i_e, idx]
     # τi = b.problem.τ[rhs.i_e, idx]
     # σi = @view(b.problem.σ[rhs.i_e, :, idx])
 
-    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(b.problem.model)
-    (nd, ne, nσ) = n_sums(b.problem)
+    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
+    (nd, ne, nσ) = n_sums(problem)
 
     for ie in 1:ne
         cache.a[ie] = b.problem.s[ie, idx]/Δϵ + b.problem.τ[ie, idx]*0.5
@@ -160,20 +164,20 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
     end
     γ = sym ? -1 : 1
 
-    Λp⁻½, Λm⁻½ = pmview(b.cached_solution[minus½(idx)], b.problem.model)
-    Λp⁺½, Λm⁺½ = pmview(b.cached_solution[plus½(idx)], b.problem.model)
+    Λp⁻½, Λm⁻½ = pmview(b.cached_solution[minus½(idx)], problem.model)
+    Λp⁺½, Λm⁺½ = pmview(b.cached_solution[plus½(idx)], problem.model)
 
-    mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, b.problem.Ip, b.problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁺½[:]), Δ, β)
-    mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, b.problem.Im, b.problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁺½[:]), γ*Δ, β)
+    mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁺½[:]), Δ, β)
+    mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁺½[:]), γ*Δ, β)
 
     for ie in 1:ne
-        cache.a[ie] = -b.problem.s[ie, idx]/Δϵ + b.problem.τ[ie, idx]*0.5
+        cache.a[ie] = -problem.s[ie, idx]/Δϵ + problem.τ[ie, idx]*0.5
         for iσ in 1:nσ
-            cache.c[ie][iσ] = -b.problem.σ[ie, iσ, idx]*0.5
+            cache.c[ie][iσ] = -problem.σ[ie, iσ, idx]*0.5
         end
     end
-    mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, b.problem.Ip, b.problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁻½[:]), Δ, true)
-    mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, b.problem.Im, b.problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁻½[:]), γ*Δ, true)
+    mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁻½[:]), Δ, true)
+    mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁻½[:]), γ*Δ, true)
     
 end
 
