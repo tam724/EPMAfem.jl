@@ -17,6 +17,10 @@ end
 abstract type AbstractSphericalHarmonicsModel{ND} end
 dimensionality(::AbstractSphericalHarmonicsModel{ND}) where {ND} = dimensionality_type(ND)
 
+function findSHML_index(m, N)
+    return findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only
+end
+
 @concrete struct EOSphericalHarmonicsModel{ND} <: AbstractSphericalHarmonicsModel{ND}
     N
     num_dofs
@@ -30,8 +34,8 @@ function EOSphericalHarmonicsModel(N, ND)
     sort!(viable_moments, lt=isless_evenodd)
 
     # compute the index to evaluate using SphericalHarmonics.jl
-    sh_index_even = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if is_even(m)]
-    sh_index_odd = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if is_odd(m)]
+    sh_index_even = [findSHML_index(m, N) for m in viable_moments if is_even(m)]
+    sh_index_odd = [findSHML_index(m, N) for m in viable_moments if is_odd(m)]
 
     sh_index = ComponentVector(even=sh_index_even, odd=sh_index_odd)
 
@@ -53,6 +57,12 @@ function odd(model::EOSphericalHarmonicsModel)
     return model.sh_index.odd
 end
 
+function get_basis_harmonics(model::EOSphericalHarmonicsModel{ND}) where ND
+    viable_moments = get_all_viable_harmonics_up_to(max_degree(model), dimensionality_type(ND))
+    sort!(viable_moments, lt=isless_evenodd)
+    return viable_moments
+end
+
 @concrete struct EEEOSphericalHarmonicsModel{ND} <: AbstractSphericalHarmonicsModel{ND}
     N
     num_dofs
@@ -66,15 +76,15 @@ function EEEOSphericalHarmonicsModel(N, ND)
     sort!(viable_moments, lt=isless_eeevenodd)
 
     # compute the index to evaluate using SphericalHarmonics.jl
-    sh_index_eee = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if get_eee(m) == EEEO.eee]
-    sh_index_eoo = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if get_eee(m) == EEEO.eoo]
-    sh_index_oeo = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if get_eee(m) == EEEO.oeo]
-    sh_index_ooe = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if get_eee(m) == EEEO.ooe]
+    sh_index_eee = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.eee]
+    sh_index_eoo = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.eoo]
+    sh_index_oeo = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.oeo]
+    sh_index_ooe = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.ooe]
 
-    sh_index_oee = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if get_eee(m) == EEEO.oee]
-    sh_index_eoe = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if get_eee(m) == EEEO.eoe]
-    sh_index_eeo = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if get_eee(m) == EEEO.eeo]
-    sh_index_ooo = [findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only for m in viable_moments if get_eee(m) == EEEO.ooo]
+    sh_index_oee = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.oee]
+    sh_index_eoe = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.eoe]
+    sh_index_eeo = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.eeo]
+    sh_index_ooo = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.ooo]
 
     sh_index = ComponentVector(eee=sh_index_eee, eoo=sh_index_eoo, oeo=sh_index_oeo, ooe=sh_index_ooe, oee=sh_index_oee, eoe=sh_index_eoe, eeo=sh_index_eeo, ooo=sh_index_ooo)
 
@@ -88,13 +98,13 @@ function EEEOSphericalHarmonicsModel(N, ND)
     return EEEOSphericalHarmonicsModel{ND}(N, num_dofs, sh_index, sh_cache)
 end
 
-max_degree(model::AbstractSphericalHarmonicsModel) = model.N
-
-function get_basis_harmonics(model::EOSphericalHarmonicsModel{ND}) where ND
-    viable_moments = get_all_viable_harmonics_up_to(max_degree(model), ND)
-    sort!(viable_moments, lt=isless_evenodd)
+function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND
+    viable_moments = get_all_viable_harmonics_up_to(max_degree(model), dimensionality_type(ND))
+    sort!(viable_moments, lt=isless_eeevenodd)
     return viable_moments
 end
+
+max_degree(model::AbstractSphericalHarmonicsModel) = model.N
 
 function even(model::EEEOSphericalHarmonicsModel)
     return @view(model.sh_index[(:eee, :eoo, :oeo, :ooe)])
@@ -153,12 +163,6 @@ function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{3}, ::Y)
     n_even = n_basis(model).p
     list = ((:eeo, :eee), (:eoe, :eoo), (:oee, :oeo), (:ooo, :ooe))
     return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
-end
-
-function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND
-    viable_moments = get_all_viable_harmonics_up_to(max_degree(model), ND)
-    sort!(viable_moments, lt=isless_eeevenodd)
-    return viable_moments
 end
 
 function num_dofs(model::EOSphericalHarmonicsModel)
