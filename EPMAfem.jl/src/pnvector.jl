@@ -8,7 +8,7 @@
     bΩp
 end
 
-Base.show(io::IO, v::Rank1DiscretePNVector) = print(io, "Rank1DiscretePNVector [adj = $(v.adjoint)]")
+Base.show(io::IO, v::Rank1DiscretePNVector) = print(io, "Rank1DiscretePNVector [$(n_basis(v.model)) adj=$(v.adjoint)]")
 Base.show(io::IO, ::MIME"text/plain", v::Rank1DiscretePNVector) = show(io, v)
 
 _is_adjoint_vector(b::Rank1DiscretePNVector) = b.adjoint
@@ -61,6 +61,8 @@ function assemble_at!(rhs, (; b)::PNVectorAssembler{<:Rank1DiscretePNVector}, id
     my_rmul!(bm, β) # * -1 if sym
 end
 
+
+## for array valued integrations
 function ideal_index_order(b_arr::Array{<:Rank1DiscretePNVector})
     d = Dict{Int64, Vector{Int64}}()
     for i in eachindex(b_arr)
@@ -75,10 +77,21 @@ function ideal_index_order(b_arr::Array{<:Rank1DiscretePNVector})
             push!(get!(Vector{typeof(i)}, d2[k], isnothing(key_or_nothing) ? v[i] : key_or_nothing), v[i])
         end
     end
-    return d2
+    d3 = Dict{Int64, Dict{Int64, Dict{Int64, Vector{Int64}}}}()
+    for (k1, v1) in d2
+        d3[k1] = Dict()
+        for (k2, v2) in v1
+            d3[k1][k2] = Dict()
+            for i in eachindex(v2)
+                key_or_nothing = findfirst(((key, val), ) -> b_arr[key].bϵ === b_arr[v2[i]].bϵ, ((k, v) for (k, v) in d3[k1][k2]))
+                push!(get!(Vector{typeof(i)}, d3[k1][k2], isnothing(key_or_nothing) ? v2[i] : key_or_nothing), v2[i])
+            end
+        end
+    end
+
+    return d3
 end
 
-## for array valued integrations
 function initialize_integration(b::Array{<:Rank1DiscretePNVector})
     (_, (_, _), (nΩp, _)) = n_basis(first(b).model)
     buf = allocate_vec(first(b).arch, nΩp)
@@ -101,13 +114,16 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:Rank1DiscretePNVector}})(id
         mul!(cache.buf, transpose(ψp), b[x_base].bxp)
         for (Ω_base, Ωx_rem) in x_rem
             bufbuf = dot(b[Ω_base].bΩp, cache.buf)
-            for i in Ωx_rem
+            for (ϵ_base, ϵΩx_rem) in Ωx_rem
                 if idx.adjoint
-                    @assert !_is_adjoint_vector(b[i])
-                    cache.integral[i] += Δϵ * T(0.5) * (b[i].bϵ[plus½(idx)] + b[i].bϵ[minus½(idx)])*bufbuf
+                    @assert !_is_adjoint_vector(b[ϵ_base])
+                    bϵ = Δϵ * T(0.5) * (b[ϵ_base].bϵ[plus½(idx)] + b[ϵ_base].bϵ[minus½(idx)])
                 else
-                    @assert _is_adjoint_vector(b[i])
-                    cache.integral[i] += Δϵ * b[i].bϵ[idx] * bufbuf
+                    @assert _is_adjoint_vector(b[ϵ_base])
+                    bϵ = Δϵ * b[ϵ_base].bϵ[idx]
+                end
+                for i in ϵΩx_rem
+                    cache.integral[i] += bϵ * bufbuf
                 end
             end
         end
@@ -160,3 +176,24 @@ Base.:+(a::AbstractDiscretePNVector, b::AbstractDiscretePNVector) = weighted([1.
 Base.:+(a::AbstractDiscretePNVector, b::SumOfAbstractDiscretePNVector) = weighted([1.0, b.weights...], [a, b.vecs...])
 Base.:+(a::SumOfAbstractDiscretePNVector, b::AbstractDiscretePNVector) = b + a
 Base.:+(a::SumOfAbstractDiscretePNVector, b::SumOfAbstractDiscretePNVector) = weighted([a.weights..., b.weights...], [a.vecs..., b.vecs...])
+Base.sum(vecs::Array{<:AbstractDiscretePNVector}) = weighted(ones(size(vecs)), vecs)
+LinearAlgebra.dot(weights::AbstractArray, vecs::Array{<:AbstractDiscretePNVector}) = weighted(weights, vecs)
+
+@concrete terse struct UpdatableRank1DiscretePNVector
+    vector
+    ρ_proj
+    element_index
+end
+
+n_parameters(upd_vector::UpdatableRank1DiscretePNVector) = n_basis(upd_vector.vector.model).nx.m
+
+Base.show(io::IO, v::UpdatableRank1DiscretePNVector) = print(io, "UpdatableRank1DiscretePNVector [$(n_basis(v.vector.model)) adj=$(v.vector.adjoint)]")
+Base.show(io::IO, ::MIME"text/plain", v::UpdatableRank1DiscretePNVector) = show(io, v)
+
+function update_vector!(upd_vector::UpdatableRank1DiscretePNVector, ρs)
+    vector = upd_vector.vector
+    arch = vector.arch
+    vector.bxp .= upd_vector.ρ_proj*@view(ρs[upd_vector.element_index, :]) |> arch
+end
+
+

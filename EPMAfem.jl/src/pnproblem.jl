@@ -9,9 +9,7 @@
 
     # space (might be moved to gpu)
     ρp
-    # ρp_tens
     ρm
-    # ρm_tens
 
     ∂p
     ∇pm
@@ -32,25 +30,23 @@ n_sums(pnproblem::DiscretePNProblem) = (nd = length(pnproblem.∇pm), ne = size(
 Base.show(io::IO, p::DiscretePNProblem) = print(io, "PNProblem [$(n_basis(p)) and $(n_sums(p))]")
 Base.show(io::IO, ::MIME"text/plain", p::DiscretePNProblem) = show(io, p)
 
+
 # this is more or less "activity tracking" for the derivative
 @concrete struct UpdatableDiscretePNProblem
     problem
-    ρs
     ρp_tens
     ρm_tens
 end
 
-n_parameters(upd_problem::UpdatableDiscretePNProblem) = (size(upd_problem.problem.s, 1), num_free_dofs(SpaceModels.material(space_model(upd_problem.problem.model))))
+n_parameters(upd_problem::UpdatableDiscretePNProblem) = (size(upd_problem.problem.s, 1), n_basis(upd_problem.problem.model).nx.m)
 
 Base.show(io::IO, p::UpdatableDiscretePNProblem) = print(io, "UpdateablePNProblem [$(n_basis(p.problem)) and $(n_sums(p.problem))]")
 Base.show(io::IO, ::MIME"text/plain", p::UpdatableDiscretePNProblem) = show(io, p)
 
 function update_problem!(upd_problem::UpdatableDiscretePNProblem, ρs)
-    # ρs = [SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_mdl) for e in 1:number_of_elements(pn_eq)]
     problem = upd_problem.problem
     arch = problem.arch
     @assert size(ρs) == n_parameters(upd_problem)
-    upd_problem.ρs .= ρs
     for i in 1:n_parameters(upd_problem)[1]
         Sparse3Tensor.project!(upd_problem.ρp_tens, @view(ρs[i, :]))
         nonzeros(problem.ρp[i]) .= nonzeros(upd_problem.ρp_tens.skeleton) |> arch

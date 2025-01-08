@@ -1,3 +1,8 @@
+function discretize_mass_concentrations(pn_eq::AbstractPNEquations, mdl::DiscretePNModel)
+    space_mdl = space_model(mdl)
+    SM = EPMAfem.SpaceModels
+    return vcat((SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_mdl)' for e in 1:number_of_elements(pn_eq))...)
+end
 
 function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, arch::PNArchitecture; updatable=false)
     T = base_type(arch)
@@ -27,7 +32,7 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, ar
         ρm_tens = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.odd(space_mdl)))
         ρm = [similar(ρm_tens.skeleton) |> arch for _ in 1:n_elem]
 
-        ρs = vcat((SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_mdl)' for e in 1:number_of_elements(pn_eq))...)
+        ρs = discretize_mass_concentrations(pn_eq, mdl)
         for i in 1:number_of_elements(pn_eq)
             Sparse3Tensor.project!(ρp_tens, @view(ρs[i, :]))
             nonzeros(ρp[i]) .= nonzeros(ρp_tens.skeleton) |> arch
@@ -58,20 +63,11 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, ar
     # Ωpm = Ωpm_full |> arch
     problem = DiscretePNProblem(mdl, arch, s, τ, σ, ρp, ρm, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
     if updatable
-        return UpdatableDiscretePNProblem(problem, ρs, ρp_tens, ρm_tens)
+        return UpdatableDiscretePNProblem(problem, ρp_tens, ρm_tens)
     else
         return problem
     end
 end
-
-# function update_problem!(discrete_system, ρs)
-#     for (ρp, ρ) in zip(discrete_system.ρp, ρs)
-#         Sparse3Tensor._project!(ρp, discrete_system.ρp_tens, ρ)
-#     end
-#     for (ρm, ρ) in zip(discrete_system.ρm, ρs)
-#         Sparse3Tensor._project!(ρm, discrete_system.ρm_tens, ρ)
-#     end
-# end
 
 function discretize_rhs(pn_ex::PNExcitation, mdl::DiscretePNModel, arch::PNArchitecture)
     T = base_type(arch)
@@ -105,22 +101,28 @@ end
 #     return Rank1DiscretePNVector{false}(discrete_model, gϵs, gxps, gΩps)
 # end
 
-function discretize_extraction(pn_ex::PNExtraction, discrete_model::DiscretePNModel, arch::PNArchitecture)
+function discretize_extraction(pn_ex::PNExtraction, mdl::DiscretePNModel, arch::PNArchitecture; updatable=true)
     T = base_type(arch)
 
     ## instantiate Gridap
     SM = EPMAfem.SpaceModels
     SH = EPMAfem.SphericalHarmonicsModels
 
-    space_mdl = space_model(discrete_model)
-    direction_mdl = direction_model(discrete_model)
+    space_mdl = space_model(mdl)
+    direction_mdl = direction_model(mdl)
 
     ## ... and extraction
-    μϵs = [Vector{T}([extraction_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(discrete_model)]) for i in 1:number_of_extractions(pn_ex)]
-    μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.even(space_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
+    μϵs = [Vector{T}([extraction_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(mdl)]) for i in 1:number_of_extractions(pn_ex)]
     μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.even(direction_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
 
-    return [Rank1DiscretePNVector(true, discrete_model, arch, μϵs[i], μxps[i], μΩps[i]) for i in 1:number_of_extractions(pn_ex)]
+    if updatable
+        ρ_proj = SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.even(space_mdl))
+        ρs = discretize_mass_concentrations(pn_ex.pn_eq, mdl)
+        return [UpdatableRank1DiscretePNVector(Rank1DiscretePNVector(true, mdl, arch, μϵs[i], ρ_proj*@view(ρs[i, :]) |> arch, μΩps[i]), ρ_proj, i) for i in 1:number_of_extractions(pn_ex)]
+    else
+        μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.even(space_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
+        return [Rank1DiscretePNVector(true, mdl, arch, μϵs[i], μxps[i], μΩps[i]) for i in 1:number_of_extractions(pn_ex)]
+    end
 end
 
 # function discretize_extraction_old(pn_ex::PNExtraction, discrete_model::PNGridapModel, arch::PNArchitecture)

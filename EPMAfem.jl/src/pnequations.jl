@@ -77,16 +77,13 @@ end
 
 @concrete struct PNExtraction
     extraction_energies
+    pn_eq
 end
 
-number_of_extractions(eq::PNExtraction) = 2
+number_of_extractions(eq::PNExtraction) = number_of_elements(eq.pn_eq)
 
 function extraction_space_distribution(eq::PNExtraction, i, x)
-    if x[2] > -0.3 && x[2] < 0.3
-        return 1.0
-    else
-        return 0.0
-    end
+    mass_concentrations(eq.pn_eq, i, x)
 end
 
 function extraction_direction_distribution(eq::PNExtraction, i, Ω)

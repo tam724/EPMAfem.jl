@@ -1,22 +1,22 @@
-@concrete terse struct TangentDiscretePNVector <: AbstractDiscretePNVector
+@concrete terse struct TangentDiscretePNVector{U} <: AbstractDiscretePNVector
     adjoint::Bool
-    updatable_problem
+    updatable_problem_or_vector::U
     cached_solution
-    element_index
-    cell_index
+    parameter_index
 end
 
 function tangent(upd_problem::UpdatableDiscretePNProblem, ψ::AbstractDiscretePNSolution)
     # this basically creates the "PNVectors" \dot{a}(\cdot{}, ψ) or \dot{a}(ψ, \cdot{})
     # if ψ is an adjoint solution, this is an nonadjoint vector, is ψ is a nonadjoint solution, this is an adjoint vector 
     (n_e, n_cells) = n_parameters(upd_problem)
-    return [TangentDiscretePNVector(_is_adjoint_solution(ψ), upd_problem, ψ, i, j) for i in 1:n_e, j in 1:n_cells]
+    return [TangentDiscretePNVector(_is_adjoint_solution(ψ), upd_problem, ψ, (i, j)) for i in 1:n_e, j in 1:n_cells]
 end
 
 _is_adjoint_vector(b::TangentDiscretePNVector) = b.adjoint
 
-function initialize_integration(b::Array{<:TangentDiscretePNVector})
-    upd_problem = first(b).updatable_problem
+function initialize_integration(b::Array{<:TangentDiscretePNVector{<:UpdatableDiscretePNProblem}})
+    if !allunique(b) @warn "Duplicate TangentDiscretePNVector instances detected in the input array. Computed tangents are aliased" end
+    upd_problem = first(b).updatable_problem_or_vector
     problem = upd_problem.problem
     arch = problem.arch
     T = base_type(arch)
@@ -38,26 +38,31 @@ function initialize_integration(b::Array{<:TangentDiscretePNVector})
     return PNVectorIntegrator(b, cache)
 end
 
-function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector}})
-    upd_problem = first(b).updatable_problem
+function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:UpdatableDiscretePNProblem}}})
+    upd_problem = first(b).updatable_problem_or_vector
     problem = upd_problem.problem
     (; ΛpΦp, ΛmΦm) = cache
 
-    ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space_model(problem.model)))) for _ in 1:length(problem.ρp)]
+    # first we collect the adjoint for all parameters
+    ρs_adjoint = zeros(n_parameters(upd_problem))
     for i_e in 1:length(problem.ρp)
-        Sparse3Tensor.contract!(ρs_adjoint[i_e], upd_problem.ρp_tens, ΛpΦp[i_e] |> collect, true, true)
-        Sparse3Tensor.contract!(ρs_adjoint[i_e], upd_problem.ρm_tens, ΛmΦm[i_e] |> collect, true, true)
+        Sparse3Tensor.contract!(@view(ρs_adjoint[i_e, :]), upd_problem.ρp_tens, ΛpΦp[i_e] |> collect, true, true)
+        Sparse3Tensor.contract!(@view(ρs_adjoint[i_e, :]), upd_problem.ρm_tens, ΛmΦm[i_e] |> collect, true, true)
     end
-    return ρs_adjoint
+    integral = zeros(size(b))
+    for i in eachindex(b)
+        integral[i] = ρs_adjoint[b[i].parameter_index |> CartesianIndex]
+    end
+    return integral
 end
 
-function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector}})(idx, ψ)
+function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:UpdatableDiscretePNProblem}}})(idx, ψ)
     if !_is_adjoint_vector(b)
         throw(ErrorException("not implemented yet"))
     end
     (; isp, jsp, ism, jsm, Λtemp, σtemp, ΛpΦp, ΛmΦm) = cache
 
-    upd_problem = first(b).updatable_problem
+    upd_problem = first(b).updatable_problem_or_vector
     problem = upd_problem.problem
     T = base_type(architecture(problem))
 
@@ -103,8 +108,8 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector}})(
 end
 
 # assembly
-function initialize_assembly(b::TangentDiscretePNVector)
-    upd_problem = b.updatable_problem
+function initialize_assembly(b::TangentDiscretePNVector{<:UpdatableDiscretePNProblem})
+    upd_problem = b.updatable_problem_or_vector
     problem = upd_problem.problem
     (n_elem, n_cells) = n_parameters(problem)
 
@@ -114,13 +119,14 @@ function initialize_assembly(b::TangentDiscretePNVector)
     ρm_tangent = [similar(upd_problem.ρm_tens.skeleton) |> arch for _ in 1:n_elem]
 
     onehot = zeros(n_cells)
+    element_index, cell_index = b.parameter_index
     for i in 1:n_elem
-        if i == b.element_index onehot[b.cell_index] = 1.0 end
+        if i == element_index onehot[cell_index] = 1.0 end
         Sparse3Tensor.project!(upd_problem.ρp_tens, onehot)
         Sparse3Tensor.project!(upd_problem.ρm_tens, onehot)
         copyto!(nonzeros(ρp_tangent[i]), nonzeros(upd_problem.ρp_tens.skeleton))
         copyto!(nonzeros(ρm_tangent[i]), nonzeros(upd_problem.ρm_tens.skeleton))
-        if i == b.element_index onehot[b.cell_index] = 0.0 end
+        if i == element_index onehot[cell_index] = 0.0 end
     end
 
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
@@ -137,11 +143,11 @@ function initialize_assembly(b::TangentDiscretePNVector)
     return PNVectorAssembler(b, cache)
 end
 
-function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVector}, idx, Δ, sym, β=false)
+function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVector{<:UpdatableDiscretePNProblem}}, idx, Δ, sym, β=false)
     if _is_adjoint_solution(b.cached_solution) != true
         throw(ErrorException("not implemented yet"))
     end
-    upd_problem = b.updatable_problem
+    upd_problem = b.updatable_problem_or_vector
     problem = upd_problem.problem
 
     T = base_type(architecture(problem))
@@ -178,151 +184,103 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
     end
     mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁻½[:]), Δ, true)
     mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁻½[:]), γ*Δ, true)
-    
 end
 
-# function Base.getindex(arr::ArrayOfTangentDiscretePNVector, i_e, i_x, Δ=true)
-#     system = arr.cached_solution.it.system
-#     problem = system.problem
-#     # T = base_type(architecture(discrete_system.model))
-#     # VT = vec_type(architecture(discrete_system.model))
+## NOW VECTOR
+function tangent(upd_vector::UpdatableRank1DiscretePNVector)
+    # this basically creates the "PNVectors" \dot{b}(ψ)
+    n_cells = n_parameters(upd_vector)
+    return [TangentDiscretePNVector(_is_adjoint_vector(upd_vector.vector), upd_vector, nothing, j) for j in 1:n_cells]
+end
 
-#     # cv(x) = convert_to_architecture(architecture(discrete_system.model), x)
+function initialize_integration(b::TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector})
+    arch = b.updatable_problem_or_vector.vector.arch
+    bxp_adjoint = allocate_vec(arch, length(b.updatable_problem_or_vector.vector.bxp))
+    fill!(bxp_adjoint, zero(eltype(bxp_adjoint)))
+    cache = (bxp_adjoint = bxp_adjoint, )
+    return PNVectorIntegrator(b, cache)
+end
 
-#     onehot = zeros(num_free_dofs(SpaceModels.material(space_model(problem.model))))
-#     onehot[i_x] = Δ
-#     Sparse3Tensor.project!(problem.ρp_tens, onehot)
-#     Sparse3Tensor.project!(problem.ρm_tens, onehot)
+function finalize_integration((; b, cache)::PNVectorIntegrator{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}})
+    arch = b.updatable_problem_or_vector.vector.arch
+    ρ_proj = b.updatable_problem_or_vector.ρ_proj[:, b.parameter_index]
+    return dot(ρ_proj.nzval, @view(cache.bxp_adjoint[arch(Int, ρ_proj.nzind)]) |> collect)
+end
 
-#     copyto!(nonzeros(arr.ρp_tangent), nonzeros(problem.ρp_tens.skeleton))
-#     copyto!(nonzeros(arr.ρm_tangent), nonzeros(problem.ρm_tens.skeleton))
-#     return TangentDiscretePNVector(arr, i_x, i_e)
-#     # return DiscretePNVector(arr.ρp_tangent[i], arr.ρm_tangent[i], arr.cached_solution)
-# end
-    
+function ((; b, cache)::PNVectorIntegrator{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}})(idx, ψ)
+    upd_vector = b.updatable_problem_or_vector
+    vector = upd_vector.vector
+    model = vector.model
+    ψp = pview(ψ, model)
+    Δϵ = step(energy_model(model))
+    T = base_type(vector.arch)
+    if idx.adjoint
+        @assert !_is_adjoint_vector(vector)
+        bϵ2 = T(0.5) * (vector.bϵ[minus½(idx)] + vector.bϵ[plus½(idx)])
+    else
+        @assert _is_adjoint_vector(b)
+        bϵ2 = vector.bϵ[idx]
+    end
+    mul!(cache.bxp_adjoint, ψp, vector.bΩp, Δϵ * bϵ2, true)
+end
 
-# INTEGRATION
-# function (arr::ArrayOfTangentDiscretePNVector)(it::DiscretePNIterator)
-#     @assert _is_adjoint_solution(it)
-#     system = arr.cached_solution.it.system
-#     problem = system.problem
-#     arch = problem.arch
+## for array valued integrations
 
-#     T = base_type(arch)
-#     # cv_Int(x) = convert_to_architecture(Int64, architecture(discrete_system.model), x)
+function initialize_integration(b::Array{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}})
+    if !allunique(b) @warn "Duplicate TangentDiscretePNVector instances detected in the input array. Computed tangents are aliased" end
+    arch = first(b).updatable_problem_or_vector.vector.arch
+    idx_order = ideal_index_order([bi.updatable_problem_or_vector.vector for bi in b])
+    bxp_adjoints = Dict((i => allocate_vec(arch, length(first(b).updatable_problem_or_vector.vector.bxp)) for i in keys(idx_order)))
+    for (i, bxp_adjoint) in bxp_adjoints
+        fill!(bxp_adjoint, zero(eltype(bxp_adjoint)))
+    end
+    cache = (idx_order=idx_order, bxp_adjoints=bxp_adjoints)
+    return PNVectorIntegrator(b, cache)
+end
 
-#     Δϵ = T(step(energy_model(problem.model)))
+function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}}})
+    # arch = first(b).updatable_problem_or_vector.vector.arch
 
-#     isp, jsp = arch.(Int64, Sparse3Tensor.get_ijs(problem.ρp_tens))
-#     ism, jsm = arch.(Int64, Sparse3Tensor.get_ijs(problem.ρm_tens))
+    ρ_adjoints = Dict(k => zeros(n_parameters(first(b).updatable_problem_or_vector)) for (k, v) in cache.bxp_adjoints)
+    for (x_base, bxp_adjoint) in cache.bxp_adjoints
+        mul!(ρ_adjoints[x_base], transpose(b[x_base].updatable_problem_or_vector.ρ_proj), bxp_adjoint |> collect, true, true)
+    end
+    integral = zeros(size(b))
+    for (x_base, x_rem) in cache.idx_order
+        for (Ω_base, Ωx_rem) in x_rem
+            for (ϵ_base, ϵΩx_rem) in Ωx_rem
+                for i in ϵΩx_rem
+                    integral[i] = ρ_adjoints[x_base][b[i].parameter_index |> CartesianIndex]
+                end
+            end
+        end
+    end
+    return integral
+end
 
-#     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
-
-#     Λtemp = allocate_vec(arch, max(nxp*nΩp, nxm*nΩm))
-#     Λtempp = reshape(@view(Λtemp[1:nxp*nΩp]), (nxp, nΩp))
-#     Λtempm = reshape(@view(Λtemp[1:nxm*nΩm]), (nxm, nΩm))
-
-#     σtemp = allocate_vec(arch, max(nΩp, nΩm))
-#     σtempp = Diagonal(@view(σtemp[1:nΩp]))
-#     σtempm = Diagonal(@view(σtemp[1:nΩm]))
-
-#     ΛpΦp = [allocate_vec(arch, length(isp)) for _ in 1:length(problem.ρp)]
-#     ΛmΦm = [allocate_vec(arch, length(ism)) for _ in 1:length(problem.ρp)]
-
-#     skip_initial = true
-#     write_initial = false
-#     for (ϵ, i_ϵ) in it
-#         if skip_initial
-#             skip_initial = false
-#             continue
-#         end
-#         Φp = pview(current_solution(it.system), problem.model)
-#         Φm = mview(current_solution(it.system), problem.model)
-
-#         Λ_im2p = pview(arr.cached_solution[i_ϵ], problem.model)
-#         Λ_im2m = mview(arr.cached_solution[i_ϵ], problem.model)
-#         Λ_ip2p = pview(arr.cached_solution[i_ϵ+1], problem.model)
-#         Λ_ip2m = mview(arr.cached_solution[i_ϵ+1], problem.model)
-
-#         for i_e in 1:1:length(problem.ρp)
-#             s_i = problem.s[i_e, i_ϵ]
-#             τ_i = problem.τ[i_e, i_ϵ]
-
-#             my_rmul!(σtempp.diag, false)
-#             for i in 1:size(problem.σ, 2)
-#                 σtempp.diag .+= problem.σ[i_e, i, i_ϵ] .* problem.kp[i_e][i].diag
-#             end
-
-#             mul!(Λtempp, Λ_ip2p, σtempp, -T(0.5), false)
-#             mul!(Λtempp, Λ_im2p, σtempp, -T(0.5), true)
-#             Λtempp .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2p .+ (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2p
-
-#             Sparse3Tensor.special_matmul!(ΛpΦp[i_e], isp, jsp, Λtempp, Φp, Δϵ, write_initial)
-
-#             my_rmul!(σtempm.diag, false)
-#             for i in 1:size(problem.σ, 2)
-#                 σtempm.diag .+= problem.σ[i_e, i, i_ϵ] .* problem.km[i_e][i].diag
-#             end
-
-#             mul!(Λtempm, Λ_ip2m, σtempm, -T(0.5), false)
-#             mul!(Λtempm, Λ_im2m, σtempm, -T(0.5), true)
-#             Λtempm .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2m .+ (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2m
-
-#             Sparse3Tensor.special_matmul!(ΛmΦm[i_e], ism, jsm, Λtempm, Φm, Δϵ, write_initial)
-#         end
-#         write_initial = true
-#     end
-#     ρs_adjoint = [zeros(num_free_dofs(SpaceModels.material(space_model(problem.model)))) for _ in 1:length(problem.ρp)]
-#     for i_e in 1:length(problem.ρp)
-#         Sparse3Tensor.contract!(ρs_adjoint[i_e], problem.ρp_tens, ΛpΦp[i_e] |> collect, true, true)
-#         Sparse3Tensor.contract!(ρs_adjoint[i_e], problem.ρm_tens, ΛmΦm[i_e] |> collect, true, true)
-#     end
-#     return ρs_adjoint
-# end
-
-# @concrete struct TangentDiscretePNVector <: AbstractDiscretePNVector
-#     parent
-#     i_x
-#     i_e
-# end
-
-# function assemble_rhs!(b, rhs::TangentDiscretePNVector, i, Δ, sym)
-#     system = rhs.parent.cached_solution.it.system
-#     problem = system.problem
-#     arch = system.problem.arch
-
-#     T = base_type(arch)
-#     Δϵ = T(step(energy_model(problem.model)))
-
-#     fill!(b, zero(eltype(b)))
-
-#     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
-#     np = nxp*nΩp
-#     nm = nxm*nΩm
-
-#     bp = @view(b[1:np])
-#     bm = @view(b[np+1:np+nm])
-
-#     si = problem.s[rhs.i_e, i]
-#     τi = problem.τ[rhs.i_e, i]
-#     σi = problem.σ[rhs.i_e, :, i]
-
-#     Λ_im2 = rhs.parent.cached_solution[i]
-#     Λ_ip2 = rhs.parent.cached_solution[i+1]
-
-#     #TODO: move temporary allocations somwhere else
-#     tmp = allocate_vec(arch, max(np, nm))
-#     tmp2 = allocate_vec(arch, max(nΩp, nΩm))
-
-#     a = [(si/Δϵ + τi*0.5)]
-#     c = [(-σi.*0.5)]
-#     γ = sym ? -1 : 1
-
-#     mul!(bp, ZMatrix([rhs.parent.ρp_tangent], problem.Ip, [problem.kp[rhs.i_e]], a, c, mat_view(tmp, nxp, nΩp), Diagonal(@view(tmp2[1:nΩp]))), @view(Λ_ip2[1:np]), Δ, false)
-#     mul!(bm, ZMatrix([rhs.parent.ρm_tangent], problem.Im, [problem.km[rhs.i_e]], a, c, mat_view(tmp, nxm, nΩm), Diagonal(@view(tmp2[1:nΩm]))), @view(Λ_ip2[np+1:np+nm]), γ*Δ, false)
-
-#     a = [(-si/Δϵ + τi*0.5)]
-#     c = [(-σi.*0.5)]
-#     mul!(bp, ZMatrix([rhs.parent.ρp_tangent], problem.Ip, [problem.kp[rhs.i_e]], a, c, mat_view(tmp, nxp, nΩp), Diagonal(@view(tmp2[1:nΩp]))), @view(Λ_im2[1:np]), Δ, true)
-#     mul!(bm, ZMatrix([rhs.parent.ρm_tangent], problem.Im, [problem.km[rhs.i_e]], a, c, mat_view(tmp, nxm, nΩm), Diagonal(@view(tmp2[1:nΩm]))), @view(Λ_im2[np+1:np+nm]), γ*Δ, true)
-# end
+function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}}})(idx, ψ)
+    model = first(b).updatable_problem_or_vector.vector.model
+    arch = first(b).updatable_problem_or_vector.vector.arch
+    ψp = pview(ψ, model)
+    Δϵ = step(energy_model(model))
+    T = base_type(arch)
+    for (x_base, x_rem) in cache.idx_order
+        bpx_adjoint = cache.bxp_adjoints[x_base]
+        for (Ω_base, Ωx_rem) in x_rem
+            bΩp_i = b[Ω_base].updatable_problem_or_vector.vector.bΩp
+            for (ϵ_base, ϵΩx_rem) in Ωx_rem
+                bϵ_i = b[ϵ_base].updatable_problem_or_vector.vector.bϵ
+                if idx.adjoint
+                    @assert !_is_adjoint_vector(b[ϵ_base])
+                    Δbϵ_i = Δϵ * T(0.5) * (bϵ_i[minus½(idx)] + bϵ_i[plus½(idx)])
+                else
+                    @assert _is_adjoint_vector(b[ϵ_base])
+                    Δbϵ_i = Δϵ * bϵ_i[idx]
+                end
+                # the remaining vectors share the same bxp, bΩp and bϵ -> collectively compute all tangents (looping over tangent indices happens in finalize)
+                mul!(bpx_adjoint, ψp, bΩp_i, Δbϵ_i, true)
+                # for i in ϵΩx_rem ... end
+            end
+        end
+    end
+end
