@@ -189,8 +189,8 @@ end
 ## NOW VECTOR
 function tangent(upd_vector::UpdatableRank1DiscretePNVector)
     # this basically creates the "PNVectors" \dot{b}(ψ)
-    n_cells = n_parameters(upd_vector)
-    return [TangentDiscretePNVector(_is_adjoint_vector(upd_vector.vector), upd_vector, nothing, j) for j in 1:n_cells]
+    (n_e, n_cells) = n_parameters(upd_vector)
+    return [TangentDiscretePNVector(_is_adjoint_vector(upd_vector.vector), upd_vector, nothing, (i, j))  for i in 1:n_e, j in 1:n_cells]
 end
 
 function initialize_integration(b::TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector})
@@ -203,8 +203,12 @@ end
 
 function finalize_integration((; b, cache)::PNVectorIntegrator{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}})
     arch = b.updatable_problem_or_vector.vector.arch
-    ρ_proj = b.updatable_problem_or_vector.ρ_proj[:, b.parameter_index]
-    return dot(ρ_proj.nzval, @view(cache.bxp_adjoint[arch(Int, ρ_proj.nzind)]) |> collect)
+    if b.parameter_index[1] == b.updatable_problem_or_vector.element_index
+        ρ_proj = b.updatable_problem_or_vector.ρ_proj[:, b.parameter_index[2]]
+        return dot(ρ_proj.nzval, @view(cache.bxp_adjoint[arch(Int, ρ_proj.nzind)]) |> collect)
+    else
+        return 0.0
+    end
 end
 
 function ((; b, cache)::PNVectorIntegrator{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}})(idx, ψ)
@@ -241,7 +245,7 @@ end
 function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}}})
     # arch = first(b).updatable_problem_or_vector.vector.arch
 
-    ρ_adjoints = Dict(k => zeros(n_parameters(first(b).updatable_problem_or_vector)) for (k, v) in cache.bxp_adjoints)
+    ρ_adjoints = Dict(k => zeros(n_parameters(first(b).updatable_problem_or_vector)[2]) for (k, v) in cache.bxp_adjoints)
     for (x_base, bxp_adjoint) in cache.bxp_adjoints
         mul!(ρ_adjoints[x_base], transpose(b[x_base].updatable_problem_or_vector.ρ_proj), bxp_adjoint |> collect, true, true)
     end
@@ -250,7 +254,9 @@ function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:Tangent
         for (Ω_base, Ωx_rem) in x_rem
             for (ϵ_base, ϵΩx_rem) in Ωx_rem
                 for i in ϵΩx_rem
-                    integral[i] = ρ_adjoints[x_base][b[i].parameter_index |> CartesianIndex]
+                    if b[i].parameter_index[1] == b[i].updatable_problem_or_vector.element_index
+                        integral[i] = ρ_adjoints[x_base][b[i].parameter_index[2]]
+                    end
                 end
             end
         end

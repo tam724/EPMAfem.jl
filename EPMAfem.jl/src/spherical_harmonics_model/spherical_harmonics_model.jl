@@ -215,11 +215,16 @@ function eval_basis(model, h::Function)
     (p=assemble_linear(∫S²_hv(h), model, even(model)), m=assemble_linear(∫S²_hv(h), model, odd(model)))
 end
 
-
 function interpolable(b, model)
     function interpolant(Ω)
         eval_basis_functions!(model, Ω)
-        return dot(b.p, model.sh_cache.Y[even(model)]) + dot(b.m, model.sh_cache.Y[odd(model)])
+        if hasproperty(b, :m) # if not we assume its zero
+            return dot(b.p, model.sh_cache.Y[even(model)]) + dot(b.m, model.sh_cache.Y[odd(model)])
+        elseif hasproperty(b, :p) # if not we assume that b = b.p
+            return dot(b.p, model.sh_cache.Y[even(model)])
+        else
+            return dot(b, model.sh_cache.Y[even(model)])
+        end
     end
     return interpolant
 end

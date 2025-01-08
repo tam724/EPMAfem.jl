@@ -36,9 +36,11 @@ Base.show(io::IO, ::MIME"text/plain", p::DiscretePNProblem) = show(io, p)
     problem
     ρp_tens
     ρm_tens
+
+    n_parameters
 end
 
-n_parameters(upd_problem::UpdatableDiscretePNProblem) = (size(upd_problem.problem.s, 1), n_basis(upd_problem.problem.model).nx.m)
+n_parameters(upd_problem::UpdatableDiscretePNProblem) = upd_problem.n_parameters
 
 Base.show(io::IO, p::UpdatableDiscretePNProblem) = print(io, "UpdateablePNProblem [$(n_basis(p.problem)) and $(n_sums(p.problem))]")
 Base.show(io::IO, ::MIME"text/plain", p::UpdatableDiscretePNProblem) = show(io, p)

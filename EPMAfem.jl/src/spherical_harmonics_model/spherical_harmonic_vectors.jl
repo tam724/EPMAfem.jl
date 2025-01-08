@@ -3,10 +3,6 @@
     g
 end
 
-@concrete struct ∫S²_hv
-    h
-end
-
 function assemble_linear(int::∫S²_nΩgv, model, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
     cache = zeros(length(V))
     function f!(cache, Ω)
@@ -21,6 +17,11 @@ function assemble_linear(int::∫S²_nΩgv, model, V, quad::SphericalQuadrature=
     end
     return quad(f!, cache)
 end
+
+@concrete struct ∫S²_hv
+    h
+end
+
 
 function assemble_linear(int::∫S²_hv, model, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
     cache = zeros(length(V))

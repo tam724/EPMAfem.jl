@@ -142,6 +142,14 @@ function weighted(weights, vecs::Array{<:AbstractDiscretePNVector})
     return SumOfAbstractDiscretePNVector(weights, vecs)
 end
 
+function weighted(weights, vecs::Vector{<:Array})
+    @assert all(v isa Array{<:AbstractDiscretePNVector} for v in vecs)
+    @assert size(weights) == size(vecs)
+    @assert all([size(v) == size(first(vecs)) for v in vecs])
+    if !all(r1 -> _is_adjoint_vector(first(vecs)) == _is_adjoint_vector(r1), vecs) throw(ErrorException("cannot create a sum of vectors with different adjoint properties")) end
+    return SumOfAbstractDiscretePNVector(weights, vecs)
+end
+
 function initialize_assembly(b::SumOfAbstractDiscretePNVector)
     cache = [initialize_assembly(b.vecs[i]) for i in eachindex(b.vecs)]
     return PNVectorAssembler(b, cache)
@@ -172,6 +180,7 @@ end
 # for fun
 Base.:*(a::Real, b::AbstractDiscretePNVector) = weighted([a], [b])
 Base.:*(b::AbstractDiscretePNVector, a::Real) = a * b
+Base.:+(a::Array{<:AbstractDiscretePNVector}, b::Array{<:AbstractDiscretePNVector}) = weighted([1.0, 1.0], [a, b])
 Base.:+(a::AbstractDiscretePNVector, b::AbstractDiscretePNVector) = weighted([1.0, 1.0], [a, b])
 Base.:+(a::AbstractDiscretePNVector, b::SumOfAbstractDiscretePNVector) = weighted([1.0, b.weights...], [a, b.vecs...])
 Base.:+(a::SumOfAbstractDiscretePNVector, b::AbstractDiscretePNVector) = b + a
@@ -182,15 +191,18 @@ LinearAlgebra.dot(weights::AbstractArray, vecs::Array{<:AbstractDiscretePNVector
 @concrete terse struct UpdatableRank1DiscretePNVector
     vector
     ρ_proj
+
+    n_parameters
     element_index
 end
 
-n_parameters(upd_vector::UpdatableRank1DiscretePNVector) = n_basis(upd_vector.vector.model).nx.m
+n_parameters(upd_vector::UpdatableRank1DiscretePNVector) = upd_vector.n_parameters
 
 Base.show(io::IO, v::UpdatableRank1DiscretePNVector) = print(io, "UpdatableRank1DiscretePNVector [$(n_basis(v.vector.model)) adj=$(v.vector.adjoint)]")
 Base.show(io::IO, ::MIME"text/plain", v::UpdatableRank1DiscretePNVector) = show(io, v)
 
 function update_vector!(upd_vector::UpdatableRank1DiscretePNVector, ρs)
+    @assert size(ρs) == n_parameters(upd_vector)
     vector = upd_vector.vector
     arch = vector.arch
     vector.bxp .= upd_vector.ρ_proj*@view(ρs[upd_vector.element_index, :]) |> arch
