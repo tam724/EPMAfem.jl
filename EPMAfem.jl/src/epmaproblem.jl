@@ -43,7 +43,6 @@ function (epma_problem::EPMAProblem)(ρs::Array)
 end
 
 function ChainRulesCore.rrule(epma_problem::EPMAProblem, ρs::Array)
-    @show "calling rrule"
     update_problem_and_vectors!(epma_problem, ρs)
     @assert length(epma_problem.upd_extractions) < length(epma_problem.excitations)
     intensities = [extraction.vector for extraction in epma_problem.upd_extractions] * epma_problem.system * epma_problem.excitations

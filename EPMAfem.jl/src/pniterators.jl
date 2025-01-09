@@ -87,6 +87,7 @@ end
 end
 
 function saveall(it)
+    # for not the cached solution remains in the "architecture" device.. 
     CachedDiscretePNSolution(it, Dict(idx => copy(sol) for (idx, sol) in it))
 end
 
