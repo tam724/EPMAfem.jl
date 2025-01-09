@@ -2,7 +2,8 @@ using Plots
 using Gridap
 include("../EPMAfem.jl/src/space_dimensions.jl")
 # Plots overloads (for fast plotting of FE functions)
-import Plots: plot, plot!, heatmap, surface
+import Plots: plot, plot!, heatmap, surface, contourf, contour
+
 function plot(x, u::CellField; kw...)
     points = Point.(x)
     eval = u(points)
@@ -13,16 +14,21 @@ function plot!(x, u::CellField; kw...)
     eval = u(points)
     return plot!(x, eval; kw...)
 end
-function heatmap(x, y, u::CellField; kw...)
-    points = Point.(x', y)
-    eval = reshape(u(reshape(points, :)), (length(y), length(x)))
-    return heatmap(x, y, eval; kw...)
+
+for plot_func_2d in (:heatmap, :surface, :contourf, :contour)
+    @eval begin 
+        function $(plot_func_2d)(x, y, u::CellField; swapxy=false, kw...)
+            points = Point.(x', y)
+            eval = reshape(u(reshape(points, :)), (length(y), length(x)))
+            if swapxy
+                return $(plot_func_2d)(y, x, transpose(eval); kw...)
+            else
+                return $(plot_func_2d)(x, y, eval; kw...)
+            end
+        end
+    end
 end
-function surface(x, y, u::CellField; kw...)
-    points = Point.(x', y)
-    eval = reshape(u(reshape(points, :)), (length(y), length(x)))
-    return surface(x, y, eval; kw...)
-end
+
 function sphere_surf(u::Function; kw...)
     plotly()
     θ = range(0, π, length=180)
