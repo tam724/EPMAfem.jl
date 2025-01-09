@@ -4,6 +4,12 @@ function discretize_mass_concentrations(pn_eq::AbstractPNEquations, mdl::Discret
     return vcat((SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_mdl)' for e in 1:number_of_elements(pn_eq))...)
 end
 
+function discretize_mass_concentrations(mass_concentrations::AbstractVector{<:Function}, mdl::DiscretePNModel)
+    space_mdl = space_model(mdl)
+    SM = EPMAfem.SpaceModels
+    return vcat((SM.L2_projection(x -> mass_concentrations[e](x), space_mdl)' for e in 1:length(mass_concentrations))...)
+end
+
 function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, arch::PNArchitecture; updatable=false)
     T = base_type(arch)
 

@@ -23,12 +23,16 @@ function stopping_power(::PNEquations, e, ϵ)
     end 
 end
 
-function absorption_coefficient(::PNEquations, e, ϵ)
-    return 1.0
+function absorption_coefficient(eq::PNEquations, e, ϵ)
+    return scattering_coefficient(eq, e, 1, ϵ)
 end
 
 function scattering_coefficient(::PNEquations, e, i, ϵ)
-    return 1.0
+    if e == 1
+        return 2*exp(-ϵ*0.7)
+    elseif e == 2
+        return 2*exp(-ϵ*1.1)
+    end 
 end
 
 function mass_concentrations(::PNEquations, e, x)
