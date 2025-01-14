@@ -2,7 +2,7 @@ using Plots
 using Gridap
 include("../EPMAfem.jl/src/space_dimensions.jl")
 # Plots overloads (for fast plotting of FE functions)
-import Plots: plot, plot!, heatmap, surface, contourf, contour
+import Plots: plot, plot!, heatmap, surface, contourf, contour, contour!, contourf!
 
 function plot(x, u::CellField; kw...)
     points = Point.(x)
@@ -15,7 +15,7 @@ function plot!(x, u::CellField; kw...)
     return plot!(x, eval; kw...)
 end
 
-for plot_func_2d in (:heatmap, :surface, :contourf, :contour)
+for plot_func_2d in (:heatmap, :surface, :contourf, :contour, :contour!, :contourf!)
     @eval begin 
         function $(plot_func_2d)(x, y, u::CellField; swapxy=false, kw...)
             points = Point.(x', y)
