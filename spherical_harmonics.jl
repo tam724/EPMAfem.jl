@@ -7,7 +7,7 @@ module SphericalHarmonicsMatrices
     using LegendrePolynomials
     using Serialization
     using Logging
-    using MathLink
+    # using MathLink
 
 
 
@@ -236,32 +236,32 @@ module SphericalHarmonicsMatrices
         return A
     end
 
-    function compute_boundary_matrix_entry_mathematica(D, m1, m2)
-        realsphericalharmonics = W`RealSphericalHarmonicY[l_, m_, \[Theta]_, \[Phi]_] := FullSimplify[If[m < 0, 
-            (-1)^m*I/Sqrt[2]*(SphericalHarmonicY[l, m, \[Theta], \[Phi]] - (-1)^m*SphericalHarmonicY[l, -m, \[Theta], \[Phi]]),
-            If[m > 0,
-            (-1)^m*1/Sqrt[2]*(SphericalHarmonicY[l, -m, \[Theta], \[Phi]] + (-1)^m*SphericalHarmonicY[l, m, \[Theta], \[Phi]]),
-            SphericalHarmonicY[l, m, \[Theta], \[Phi]]]]]`
-        weval(realsphericalharmonics)
+    # function compute_boundary_matrix_entry_mathematica(D, m1, m2)
+    #     realsphericalharmonics = W`RealSphericalHarmonicY[l_, m_, \[Theta]_, \[Phi]_] := FullSimplify[If[m < 0, 
+    #         (-1)^m*I/Sqrt[2]*(SphericalHarmonicY[l, m, \[Theta], \[Phi]] - (-1)^m*SphericalHarmonicY[l, -m, \[Theta], \[Phi]]),
+    #         If[m > 0,
+    #         (-1)^m*1/Sqrt[2]*(SphericalHarmonicY[l, -m, \[Theta], \[Phi]] + (-1)^m*SphericalHarmonicY[l, m, \[Theta], \[Phi]]),
+    #         SphericalHarmonicY[l, m, \[Theta], \[Phi]]]]]`
+    #     weval(realsphericalharmonics)
 
-        boundary_integral = (
-            W`N[Integrate[
-                Abs[Sin[\[Theta]]*Cos[\[Phi]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
-                RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
-                Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`,
-            W`N[Integrate[
-                Abs[Sin[\[Theta]]*Sin[\[Phi]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
-                RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
-                Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`,
-            W`N[Integrate[
-                Abs[Cos[\[Theta]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
-                RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
-                Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`
-        )[D]
+    #     boundary_integral = (
+    #         W`N[Integrate[
+    #             Abs[Sin[\[Theta]]*Cos[\[Phi]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
+    #             RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
+    #             Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`,
+    #         W`N[Integrate[
+    #             Abs[Sin[\[Theta]]*Sin[\[Phi]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
+    #             RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
+    #             Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`,
+    #         W`N[Integrate[
+    #             Abs[Cos[\[Theta]]]*RealSphericalHarmonicY[l1, m1, \[Theta], \[Phi]]*
+    #             RealSphericalHarmonicY[l2, m2, \[Theta], \[Phi]]*
+    #             Sin[\[Theta]], {\[Theta], 0, \[Pi]}, {\[Phi], 0, 2  \[Pi]}]]`
+    #     )[D]
 
-        val = weval(boundary_integral; l1=m1[1], m1=m1[2], l2=m2[1], m2=m2[2])
-        return val
-    end 
+    #     val = weval(boundary_integral; l1=m1[1], m1=m1[2], l2=m2[1], m2=m2[2])
+    #     return val
+    # end 
 
     function compute_boundary_matrix_entry(D, m1, m2, tol)
         if tol == 0 return compute_boundary_matrix_entry_mathematica(D, m1, m2), 0.0 end

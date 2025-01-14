@@ -65,7 +65,7 @@ space_model = CartesianDiscreteModel((0.0, 1.0), (n_z))
 # using GridapGmsh
 # model2 = DiscreteModelFromFile("square.msh")
 
-model = PNGridapModel(space_model, range(0, 1, 50), 21, cuda(Float32))
+model = PNGridapModel(space_model, range(0, 1, 50), 21, cpu(Float64))
 pnproblem, pnrhs = discretize(pn_equ, model)
 pnext = discretize_extraction(pn_equ, model)
 solver_dlr = pn_dlrfullimplicitmidpointsolver(pn_equ, model, 40)
