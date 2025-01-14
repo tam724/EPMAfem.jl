@@ -75,8 +75,16 @@ function eval_basis(model, μ::Function)
 end
 
 function interpolable(vec, model)
-    p_func = FEFunction(even(model), Float64.(vec.p))
-    m_func = FEFunction(odd(model), Float64.(vec.m))
-    return p_func + m_func
+    if hasproperty(vec, :p) && hasproperty(vec, :m)
+        p_func = FEFunction(even(model), Float64.(vec.p))
+        m_func = FEFunction(odd(model), Float64.(vec.m))
+        return p_func + m_func
+    elseif hasproperty(vec, :p)
+        p_func = FEFunction(even(model), Float64.(vec.p))
+        return p_func
+    else
+        p_func = FEFunction(even(model), Float64.(vec))
+        return p_func
+    end    
 end
 

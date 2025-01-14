@@ -111,7 +111,7 @@ end
 function initialize_assembly(b::TangentDiscretePNVector{<:UpdatableDiscretePNProblem})
     upd_problem = b.updatable_problem_or_vector
     problem = upd_problem.problem
-    (n_elem, n_cells) = n_parameters(problem)
+    (n_elem, n_cells) = n_parameters(upd_problem)
 
     arch = architecture(problem)
     T = base_type(arch)
@@ -163,9 +163,9 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
     (nd, ne, nσ) = n_sums(problem)
 
     for ie in 1:ne
-        cache.a[ie] = b.problem.s[ie, idx]/Δϵ + b.problem.τ[ie, idx]*0.5
+        cache.a[ie] = problem.s[ie, idx]/Δϵ + problem.τ[ie, idx]*0.5
         for iσ in 1:nσ
-            cache.c[ie][iσ] = -b.problem.σ[ie, iσ, idx]*0.5
+            cache.c[ie][iσ] = -problem.σ[ie, iσ, idx]*0.5
         end
     end
     γ = sym ? -1 : 1
