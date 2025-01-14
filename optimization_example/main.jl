@@ -169,40 +169,8 @@ grad = Zygote.gradient(objective_function, ρs)
 grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][2, :])
 heatmap(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true)
 
-# taylor remainder (should be run on CPU..)
-function finite_difference_grad(f, p, h)
-    val = f(p)
-    grad = similar(p)
-    for i in eachindex(p)
-        @show i, length(p)
-        p[i] += h
-        grad[i] = (f(p) - val)/h
-        p[i] -= h
-    end
-    return grad
-end
-
-δρs = randn(size(ρs)...)
-hs = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
-taylor_1st = zeros(size(hs))
-taylor_2nd_ad = zeros(size(hs))
-grad = Zygote.gradient(objective_function, ρs)
-grad_fd_01 = finite_difference_grad(objective_function, ρs, 1e-1)
-grad_fd_03 = finite_difference_grad(objective_function, ρs, 1e-3)
-for (i, h) in enumerate(hs)
-    Cδρs = objective_function(ρs + h*δρs)
-    C = objective_function(ρs)
-    taylor_1st[i] = abs(Cδρs - C)
-    taylor_2nd_ad[i] = abs(Cδρs - C - h*dot(grad[1], δρs))
-end
-scatter(hs, taylor_1st, xaxis=:log, yaxis=:log)
-scatter!(hs, taylor_2nd_ad, xaxis=:log, yaxis=:log)
-plot!(hs, hs, xaxis=:log, yaxis=:log)
-plot!(hs, hs.^2, xaxis=:log, yaxis=:log)
 
 @time averaged_solution = probe(prob.system * prob.excitations[1, 10, 2])
-
-
 
 @time @gif for i in 20:50
     averaged_solution = probe(prob.system * prob.excitations[1, i, 2])
