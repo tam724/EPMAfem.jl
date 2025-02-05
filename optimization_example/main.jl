@@ -7,14 +7,16 @@ using Zygote
 using LinearAlgebra
 using ComponentArrays
 using LaTeXStrings
+
 include("../scripts/plot_overloads.jl")
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1.5, 1.5), (40, 120)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
-model = EPMAfem.DiscretePNModel(space_model, 0.0:0.01:1.0, direction_model)
+model = EPMAfem.DiscretePNModel(space_model, 0.0:0.05:1.0, direction_model)
 
 equations = EPMAfem.PNEquations()
-excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.7, 0.6], normalize.([VectorValue(-1.0, 0.75, 0.0), VectorValue(-1.0, 0.5, 0.0), VectorValue(-1.0, 0.25, 0.0), VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.25, 0.0), VectorValue(-1.0, -0.5, 0.0), VectorValue(-1.0, -0.75, 0.0)]))
+# excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.7, 0.6], normalize.([VectorValue(-1.0, 0.75, 0.0), VectorValue(-1.0, 0.5, 0.0), VectorValue(-1.0, 0.25, 0.0), VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.25, 0.0), VectorValue(-1.0, -0.5, 0.0), VectorValue(-1.0, -0.75, 0.0)]))
+excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.6], normalize.([VectorValue(-1.0, 0.5, 0.0), VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.5, 0.0)]))
 extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
 
 updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda(), updatable=true)
@@ -28,10 +30,11 @@ EPMAfem.update_standard_intensities!(prob)
 
 # compute the "true measurements"
 function mass_concentrations(e, x)
-    if sqrt((x[1] + 0.05)^2 + (x[2] - 0.3)^2) < 0.2
-        return e==1 ? 1.0 : 0.0
+    if x[2] > -0.1 && x[2] < 0.25
+        # if sqrt((x[1] + 0.05)^2 + (x[2] - 0.3)^2) < 0.2
+        return e == 1 ? 1.0 : 0.0
     else
-        return e==1 ? 0.0 : 1.0
+        return e == 1 ? 0.0 : 1.0
     end
 end
 
@@ -40,17 +43,17 @@ true_meas = prob(true_ρs)
 
 # plots of forward problem
 let
-    probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω = Ω -> 1.0, ϵ = ϵ -> EPMAfem.extraction_energy_distribution(extraction, 1, ϵ))
+    probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> EPMAfem.extraction_energy_distribution(extraction, 1, ϵ))
 
-    averaged_sol = probe(discrete_system * discrete_rhs[1, 36, 4])
+    averaged_sol = probe(discrete_system * discrete_rhs[1, 36, 2])
     averaged_sol2 = probe(discrete_system * discrete_rhs[1, 36, 1])
     func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
     func2 = EPMAfem.SpaceModels.interpolable(averaged_sol2, space_model)
     plot()
     for i in 36:1:40
-        plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, i, Point(0.0, x, 0.0))*0.2, color=:gray, ls=:dash, label=nothing)
+        plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, i, Point(0.0, x, 0.0)) * 0.2, color=:gray, ls=:dash, label=nothing)
     end
-    plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, 36, Point(0.0, x, 0.0))*0.2, color=:black, ls=:dash, label=nothing)
+    plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, 36, Point(0.0, x, 0.0)) * 0.2, color=:black, ls=:dash, label=nothing)
     contourf!(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
     contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), func2, swapxy=true, aspect_ratio=:equal, color=:white)
     scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], zeros(length(excitation.beam_positions)), color=:white, label=nothing, markersize=2)
@@ -66,7 +69,7 @@ end
 
 # plots of adjoint forward problem
 let
-    probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω = Ω -> 1.0, ϵ = ϵ -> EPMAfem.extraction_energy_distribution(extraction, 1, ϵ))
+    probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω->1.0, ϵ=ϵ->1.0)
 
     averaged_sol = probe(discrete_ext[1].vector * discrete_system)
     func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
@@ -83,7 +86,7 @@ end
 
 # plots of riesz representation forward
 let
-    probe_beam = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω = Ω -> EPMAfem.beam_direction_distribution(excitation, 4, Ω))
+    probe_beam = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> EPMAfem.beam_direction_distribution(excitation, 2, Ω))
 
     averaged_sol2 = probe_beam(discrete_ext[1].vector * discrete_system)
 
@@ -94,15 +97,19 @@ let
         boundary_evals[:, i] = EPMAfem.SpaceModels.interpolable(averaged_sol2.p[:, i], space_model)(Point.(0.0, x))
     end
 
-    heatmap(x, EPMAfem.energy_model(model), -boundary_evals', cmap=reverse(cgrad(:roma)), aspect_ratio=:equal, clim=(0, 0.125))
+    contourf(x, EPMAfem.energy_model(model), -boundary_evals', cmap=reverse(cgrad(:roma)), aspect_ratio=:equal, linewidth=0)
     # the 0.12 is only for visualization
-    contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> 0.12*EPMAfem.beam_space_distribution(excitation, 36, Point(0.0, x, 0.0))*EPMAfem.beam_energy_distribution(excitation, 1, ϵ), color=:black, levels=range(0, 0.12, 10), colorbar_entry=false)
+    contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> 0.12 * EPMAfem.beam_space_distribution(excitation, 36, Point(0.0, x, 0.0)) * EPMAfem.beam_energy_distribution(excitation, 1, ϵ), color=:black, levels=range(0, 0.12, 10), colorbar_entry=false)
 
-    scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=3)
-    scatter!([excitation.beam_positions[36].x], [excitation.beam_energies[1]], color=:black, label=nothing, markersize=3)
-    
-    scatter!([pos.x for pos in excitation.beam_positions], [excitation.beam_energies[2]], color=:white, label=nothing, markersize=3)
-    scatter!([pos.x for pos in excitation.beam_positions], [excitation.beam_energies[3]], color=:white, label=nothing, markersize=3)
+    scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
+
+    scatter!([pos.x for pos in excitation.beam_positions[1:35]], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
+    scatter!([excitation.beam_positions[36].x], [excitation.beam_energies[1]], color=:black, label=nothing, markersize=2)
+    scatter!([pos.x for pos in excitation.beam_positions[37:end]], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
+
+    scatter!([pos.x for pos in excitation.beam_positions], [excitation.beam_energies[2]], color=:white, label=nothing, markersize=2)
+
+
     # for j in 10:5:36
     #     contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> EPMAfem.beam_space_distribution(excitation, j, Point(0.0, x, 0.0))*EPMAfem.beam_energy_distribution(excitation, 1, ϵ), color=:gray, ls=:dash)
     # end
@@ -120,20 +127,44 @@ end
 let
     plot()
     for i in 1:size(true_meas, 1), j in 1:size(true_meas, 2), k in 1:size(true_meas, 4)
-        plot!([pos.x for pos in excitation.beam_positions], true_meas[i, j, :, k], color=:lightgray, ls=:dashdot, label=nothing)
+        if i == 1 && j == 1 && k == 2
+            continue
+        end
+        if i == 1 && j == 2 && k == 2
+            continue
+        end
+        if i == 1 && j == 1 && k == 3
+            continue
+        end
+        if i == 2 && j == 1 && k == 2
+            continue
+        end
+        plot!([pos.x for pos in excitation.beam_positions], true_meas[i, j, :, k], color=:lightgray, ls=:dot, label=nothing)
     end
 
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 1, :, 4], color=1, label="A")
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 3, :, 4], color=1, ls=:dash, label=nothing)
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 1, :, 1], color=1, ls=:dot, label=nothing)
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[2, 1, :, 4], color=2, label="B")
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[2, 3, :, 4], color=2, ls=:dash, label=nothing)
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[2, 1, :, 1], color=2, ls=:dot, label=nothing)
-    plot!([0.0], [0.0], color=:gray, ls=:dash, label="different energy")
-    plot!([0.0], [0.0], color=:gray, ls=:dot, label="different direction")
+    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 1, :, 2], color=1, label="A")
+    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 2, :, 2], color=1, ls=:dash, label="A (2nd energy)")
+    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 1, :, 3], color=1, ls=:dashdot, label="A (2nd direction)")
+    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[2, 1, :, 2], color=2, label="B")
 
-    scatter!([excitation.beam_positions[36].x], [true_meas[1, 1, 36, 4]], color=1, label=nothing)
-    scatter!([excitation.beam_positions[36].x], [true_meas[2, 1, 36, 4]], color=2, label=nothing)
+    for i in 1:size(true_meas, 1), j in 1:size(true_meas, 2), k in 1:size(true_meas, 4)
+        if i == 1 && j == 1 && k == 2
+            continue
+        end
+        if i == 1 && j == 2 && k == 2
+            continue
+        end
+        if i == 1 && j == 1 && k == 3
+            continue
+        end
+        if i == 2 && j == 1 && k == 2
+            continue
+        end
+        scatter!([excitation.beam_positions[36].x], [true_meas[i, j, 36, k]], color=:gray, label=nothing, markersize=2)
+    end
+    scatter!(fill(excitation.beam_positions[36].x, 3), [true_meas[1, 1, 36, 2], true_meas[1, 2, 36, 2], true_meas[1, 1, 36, 3]], color=1, label=nothing, markersize=2)
+    scatter!([excitation.beam_positions[36].x], [true_meas[2, 1, 36, 2]], color=2, label=nothing, markersize=2)
+
     plot!(legend=:left)
     plot!(size=(400, 300), dpi=1000)
     savefig("figures/epma_measurements.png")
@@ -141,34 +172,59 @@ end
 
 
 # plots of derivative of adjoint forward
-ρs = similar(true_ρs)
-ρs .= 0.5
-EPMAfem.update_problem_and_vectors!(prob, ρs)
-λ = EPMAfem.saveall(discrete_ext[1].vector * discrete_system)
-probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω = Ω -> 1.0, ϵ = ϵ -> EPMAfem.beam_energy_distribution(excitation, 1, ϵ))
-averaged_sol = probe((EPMAfem.tangent(updatable_pnproblem, λ)[1, 2465]) * discrete_system)
-func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
-contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
+let
+    ρs = similar(true_ρs)
+    ρs .= 0.5
+    EPMAfem.update_problem_and_vectors!(prob, ρs)
+    λ = EPMAfem.saveall(discrete_ext[1].vector * discrete_system)
+    probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> EPMAfem.beam_energy_distribution(excitation, 1, ϵ))
+    averaged_sol = probe((EPMAfem.tangent(updatable_pnproblem, λ)[1, 2465]) * discrete_system)
+    # averaged_sol = probe(((EPMAfem.tangent(updatable_pnproblem, λ)[1, 2465]) + EPMAfem.tangent(discrete_ext[1])[1, 2465]) * discrete_system)
+    func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
+    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
+    xlabel!(L"x")
+    ylabel!(L"z")
+    plot!(size=(400, 300), dpi=1000)
+    savefig("figures/epma_tangent_nonadjoint.png")
+end
 
 # plots of adjoint derivative of adjoint forward
-ρs = similar(true_ρs)
-ρs .= 0.5
-meas2 = prob(ρs)
-Σ_bar = 2*(meas2[1, :, :, :] .- true_meas[1, :, :, :])
-augmented_primal = EPMAfem.weighted(Σ_bar, discrete_rhs)
-probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω = Ω -> 1.0, ϵ = ϵ -> 1.0)
-averaged_sol = probe(discrete_system * augmented_primal)
-func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
-contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
+let
+    ρs = similar(true_ρs)
+    ρs .= 0.5
+    meas2 = prob(ρs)
+    Σ_bar = 2 * (meas2[1, :, :, :] .- true_meas[1, :, :, :])
+    augmented_primal = EPMAfem.weighted(Σ_bar, discrete_rhs)
+    probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> 1.0)
+    averaged_sol = probe(discrete_system * augmented_primal)
+    func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
+    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
+    xlabel!(L"x")
+    ylabel!(L"z")
+    plot!(size=(400, 300), dpi=1000)
+    savefig("figures/epma_tangent_adjoint.png")
+end
 
 # plots of gradient
-ρs = similar(true_ρs)
-ρs .= 0.5
-objective_function(ρs) = sum((true_meas .- prob(ρs)).^2) / length(true_meas)
-grad = Zygote.gradient(objective_function, ρs)
-grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][2, :])
-heatmap(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true)
+let
+    ρs = similar(true_ρs)
+    ρs .= 0.5
+    objective_function(ρs) = sum((true_meas .- prob(ρs)) .^ 2) / length(true_meas)
+    grad = Zygote.gradient(objective_function, ρs)
+    grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][1, :] * 1e3)
+    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
+    xlabel!(L"x")
+    ylabel!(L"z")
+    plot!(size=(400, 300), dpi=1000)
+    savefig("figures/epma_gradient1.png")
 
+    grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][2, :] * 1e3)
+    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
+    xlabel!(L"x")
+    ylabel!(L"z")
+    plot!(size=(400, 300), dpi=1000)
+    savefig("figures/epma_gradient2.png")
+end
 
 @time averaged_solution = probe(prob.system * prob.excitations[1, 10, 2])
 
@@ -176,12 +232,11 @@ heatmap(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true)
     averaged_solution = probe(prob.system * prob.excitations[1, i, 2])
     func = EPMAfem.SpaceModels.interpolable(averaged_solution, space_model)
     contourf(range(-1, 0, 40), range(-1.5, 1.5, 120), func, swapxy=true, aspect_ratio=:equal)
-    vline!([-0.2, 0.2])
+    vline!([-0.15, 0.25])
 end
 
-
 function compute_cell_midpoints(space_model)
-    trian = Gridap.get_triangulation(space_model.discrete_model) 
+    trian = Gridap.get_triangulation(space_model.discrete_model)
     cell_node_ids = trian.grid.cell_node_ids
     midpoints = [mean(trian.grid.node_coords[cell_node_id]) for cell_node_id in cell_node_ids]
     return midpoints
@@ -210,16 +265,17 @@ cached_intensities = zeros(size(true_meas))
 #     return sum((ρs .- true_ρs).^2)*1e-8
 # end
 
+noisy_meas = true_meas .+ randn(size(true_meas)) * 0.01
+
 function objective_function(p)
     intensities = prob(Lux.apply(lux_model, xy, p, st)[1])
-    Zygote.ignore() do 
+    Zygote.ignore() do
         cached_intensities .= intensities
     end
-    return sum((true_meas .- intensities).^2)/length(true_meas)
+    return sum((noisy_meas .- intensities) .^ 2) / length(true_meas)
 end
 
-
-EPMAfem.CUDA.@profile val_and_grad = Zygote.withgradient(objective_function, p0)
+val_and_grad = Zygote.withgradient(objective_function, p0)
 
 function fg!(F, G, p)
     ρs = Lux.apply(lux_model, xy, p, st)[1]
@@ -255,26 +311,78 @@ end
 
 # p0 = Optim.minimizer(res)
 
-res = optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(callback=cb, store_trace=true, extended_trace=true, iterations=100, time_limit=3000, g_abstol=1e-10, g_reltol=1e-10))
+res = optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(callback=cb, store_trace=true, extended_trace=true, iterations=200, time_limit=3000, g_abstol=1e-7, g_reltol=1e-7))
 
-@gif for (s_i, state) in enumerate(res.trace)
+p = res.trace[1].metadata["x"]
+ρs = Lux.apply(lux_model, xy, p, st)[1]
+
+# plot final iteration
+ρs = Lux.apply(lux_model, xy, res.minimizer, st)[1]
+for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti_material_true")]
+    mat_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs_[1, :])
+
+    plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(0, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]))
+    scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
+    xlabel!(L"x")
+    ylabel!(L"z")
+    plot!(size=(400, 300), dpi=1000)
+    savefig("figures/$figname.png")
+end
+
+
+
+# plot final measurements
+plot()
+color_i = 1
+for i in 1:2, j in 1:2, k in 1:3
+    plot!([pos.x for pos in excitation.beam_positions], noisy_meas[i, j, :, k], color=color_i, legend=false, ls=:solid)
+    scatter!([pos.x for pos in excitation.beam_positions], int_store[end][i, j, :, k], color=color_i, markersize=1)
+    color_i += 1
+end
+xlabel!(L"beam center $x$")
+ylabel!(L"observations $\Sigma^{(ji)}$")
+plot!(size=(400, 300), dpi=1000)
+savefig("figures/epma_opti_measurements.png")
+
+# plot animated results
+probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> EPMAfem.extraction_energy_distribution(extraction, 1, ϵ))
+averaged_sol = probe(discrete_system * discrete_rhs[1, 36, 2])
+func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
+
+anim = @animate for (s_i, state) in enumerate(res.trace)
     p = state.metadata["x"]
     ρs = Lux.apply(lux_model, xy, p, st)[1]
-    plt1 = heatmap(reshape(ρs[1, :], (40, 120)), aspect_ratio=:equal, clim=(0, 1), cb=nothing)
-    plt2 = heatmap(reshape(ρs[2, :], (40, 120)), aspect_ratio=:equal, clim=(0, 1), cb=nothing)
-    plt3 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal, clim=(0, 1), cb=nothing)
-    plt4 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal, clim=(0, 1), cb=nothing)
+    grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs[1, :] - ρs[2, :])
+
+    plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(-1, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]), cb=nothing)
+    scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
+
+    grad_func_true = FEFunction(EPMAfem.SpaceModels.odd(space_model), true_ρs[1, :] - true_ρs[2, :])
+    plt3 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func_true, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(-1.5, 1.5), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]), cb=nothing, levels=[0.0])
+
+    plt3 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, color=:black, linewidth=1, clim=(0, 0.1))
+
+    scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], zeros(length(excitation.beam_positions)), color=:white, label=nothing, markersize=2)
+    scatter!([excitation.beam_positions[36].x], [0.0], color=:black, label=nothing, markersize=2)
+
+    plot(plt1, plt3, size=(800, 300))
+
+end fps = 5
+
+gif(anim, "figures/epma_opti_material_noisy.mp4")
+
+using Printf
+
+anim2 = @animate for (s_i, state) in enumerate(res.trace)
     color_i = 1
     plt5 = plot()
-    for i in 1:2, j in 1:2, k in 1:7
-        plot!(int_store[end-84:end][s_i][i, j, :, k], color=color_i)
-        plot!(true_meas[i, j, :, k], color=color_i, legend=false, ls=:dash)
+    for i in 1:2, j in 1:2, k in 1:3
+        plot!([pos.x for pos in excitation.beam_positions], int_store[s_i][i, j, :, k], color=i, markersize=2)
+        plot!([pos.x for pos in excitation.beam_positions], noisy_meas[i, j, :, k], color=i, legend=false, ls=:dash)
         color_i += 1
     end
-    l = @layout [
-    grid(2, 2) grid(1, 1)]
-    plot(plt1, plt2, plt3, plt4, plt5, layout=l, size=(1500, 400))
-    title!("iteration: $s_i")
-end fps=5
+    annotate!(-0.5, 0.5, text("MSE\n = $(@sprintf "%.2e" state.value)", :black, :center, 10))
+    plot!(size=(400, 300))
+end fps = 5
 
-plot(plot(rand(10)), plot(rand(10)), plot(rand(10)), plot(rand(10)), plot(rand(10)), layout=l)
+gif(anim2, "figures/epma_opti_measurements_noisy.mp4")
