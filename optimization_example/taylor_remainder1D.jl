@@ -34,7 +34,6 @@ end
 true_ρs = EPMAfem.discretize_mass_concentrations([x -> mass_concentrations(e, x) for e in 1:2], model)
 @time true_meas = prob(true_ρs)
 
-
 function finite_difference_grad(f, p, h)
     val = f(p)
     grad = similar(p)
@@ -47,7 +46,7 @@ function finite_difference_grad(f, p, h)
     return grad
 end
 
-objective_function(ρs) = sum((true_meas .- prob(ρs)).^2)# / length(true_meas)
+objective_function(ρs) = sum((true_meas .- prob(ρs)).^2) / length(true_meas)
 
 Nδs = 20
 ρs = similar(true_ρs)
@@ -86,8 +85,8 @@ plot!(hs, sum(taylor_2nd_fd_04; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd
 plot!(hs, sum(taylor_2nd_fd_05; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 1e-5)", marker=:x, color=5)
 plot!(hs, sum(taylor_2nd_ad; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (Adjoint)", marker=:x, color=2)
 
-plot!(hs, 1e-2*hs, xaxis=:log, yaxis=:log, color=:gray, ls=:dash, label="1st order")
-plot!(hs, 1e-3*hs.^2, xaxis=:log, yaxis=:log, color=:gray, ls=:dashdot, label="2nd order")
+plot!(hs, 2e-3*hs, xaxis=:log, yaxis=:log, color=:gray, ls=:dash, label="1st order")
+plot!(hs, 2e-4*hs.^2, xaxis=:log, yaxis=:log, color=:gray, ls=:dashdot, label="2nd order")
 plot!(size=(400, 300), dpi=1000, legend=:bottomright)
 xlabel!(L"h")
 ylabel!("taylor remainder")

@@ -170,6 +170,82 @@ let
     savefig("figures/epma_measurements.png")
 end
 
+## taylor remainder
+let
+    function finite_difference_grad(f, p, h)
+        val = f(p)
+        grad = similar(p)
+        for i in eachindex(p)
+            @show i, length(p)
+            p[i] += h
+            grad[i] = (f(p) - val)/h
+            p[i] -= h
+        end
+        return grad
+    end
+    objective_function(ρs) = sum((true_meas .- prob(ρs)).^2) / length(true_meas)
+    ρs = similar(true_ρs)
+    ρs .= 0.5
+    grad = Zygote.gradient(objective_function, ρs)
+    selected_indx = reshape(1:4800, (40, 120))[35:end, 55:65][:]
+    grad_selected = grad[1][:, selected_indx]
+
+    function objective_function_selected(ρs_selected)
+        full_ρs = similar(true_ρs)
+        full_ρs .= 0.5
+        full_ρs[:, selected_indx] .= ρs_selected[:, :]
+        return objective_function(full_ρs)
+    end
+
+    ρs_selected = zeros(size(ρs, 1), length(selected_indx))
+    ρs_selected .= 0.5
+
+    grad_fd_01 = finite_difference_grad(objective_function_selected, ρs_selected, 1e-1)
+    grad_fd_015 = finite_difference_grad(objective_function_selected, ρs_selected, 5e-2)
+    grad_fd_02 = finite_difference_grad(objective_function_selected, ρs_selected, 1e-2)
+
+    Nδs = 7
+    hs = [1/2^(i/2) for i in 0:8]
+    taylor_1st = zeros(size(hs)..., Nδs)
+    taylor_2nd_ad = zeros(size(hs)..., Nδs)
+    taylor_2nd_fd_01 = zeros(size(hs)..., Nδs)
+    taylor_2nd_fd_015 = zeros(size(hs)..., Nδs)
+    taylor_2nd_fd_02 = zeros(size(hs)..., Nδs)
+
+    C = objective_function_selected(ρs_selected)
+
+    for n in 1:Nδs
+        δρs = randn(size(ρs_selected)...) |> normalize
+        for (i, h) in enumerate(hs)
+            @show n, i
+            Cδρs = objective_function_selected(ρs_selected + h*δρs)
+            taylor_1st[i, n] = abs(Cδρs - C)
+            taylor_2nd_ad[i, n] = abs(Cδρs - C - h*dot(grad_selected, δρs))
+            taylor_2nd_fd_01[i, n] = abs(Cδρs - C - h*dot(grad_fd_01, δρs))
+            taylor_2nd_fd_015[i, n] = abs(Cδρs - C - h*dot(grad_fd_015, δρs))
+            taylor_2nd_fd_02[i, n] = abs(Cδρs - C - h*dot(grad_fd_02, δρs))
+            # taylor_2nd_fd_04[i, n] = abs(Cδρs - C - h*dot(grad_fd_04, δρs))
+            # taylor_2nd_fd_05[i, n] = abs(Cδρs - C - h*dot(grad_fd_05, δρs))
+        end
+    end
+
+    gr()
+    plot(hs, sum(taylor_1st; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="1st rem.", marker=:x, color=1)
+    plot!(hs, sum(taylor_2nd_fd_01; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 1e-1)", marker=:x, color=3)
+    plot!(hs, sum(taylor_2nd_fd_015; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 5e-2)", marker=:x, color=4)
+    plot!(hs, sum(taylor_2nd_fd_02; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 1e-2)", marker=:x, color=5)
+    # plot!(hs, sum(taylor_2nd_fd_04; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 1e-4)", marker=:x, color=4)
+    # plot!(hs, sum(taylor_2nd_fd_05; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 1e-5)", marker=:x, color=5)
+    plot!(hs, sum(taylor_2nd_ad; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (Adjoint)", marker=:x, color=2)
+
+    plot!(hs, 1e-4*hs, xaxis=:log, yaxis=:log, color=:gray, ls=:dash, label="1st order")
+    plot!(hs, 1e-6*hs.^2, xaxis=:log, yaxis=:log, color=:gray, ls=:dashdot, label="2nd order")
+    plot!(size=(400, 300), dpi=1000, legend=:bottomright)
+    ylims!(1e-10, 2e-4)
+    xlabel!(L"h")
+    ylabel!("taylor remainder")
+    savefig("figures/epma_taylor_remainder.png")
+end
 
 # plots of derivative of adjoint forward
 let
@@ -328,7 +404,6 @@ for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti
     plot!(size=(400, 300), dpi=1000)
     savefig("figures/$figname.png")
 end
-
 
 
 # plot final measurements
