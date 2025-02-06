@@ -259,14 +259,23 @@ function Base.size(SBM::SchurBlockMat)
 end
 
 function assemble_from_op(A_op)
-    A = zeros(size(A_op))
+    y = zeros(size(A_op)[2])
     e_i = zeros(size(A_op)[1])
+    Is = Int64[]
+    Js = Int64[]
+    Vs = Float64[]
     for i in 1:size(A_op)[1]
         e_i[i] = 1.0
-        mul!(@view(A[:, i]), A_op, e_i, true, false)
+        mul!(y, A_op, e_i, true, false)
         e_i[i] = 0.0
+        y_sparse = sparse(y)
+        for j in nzrange(y_sparse, 1)
+            push!(Is, y_sparse.nzind[j])
+            push!(Js, i)
+            push!(Vs, y_sparse.nzval[j])
+        end
     end
-    return sparse(A)
+    return sparse(Is, Js, Vs)
 end
 
 

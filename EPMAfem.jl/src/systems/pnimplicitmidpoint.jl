@@ -230,6 +230,7 @@ end
 
 Base.@kwdef @concrete struct DiscretePNSystem_IMS <: AbstractDiscretePNSystemIM
     adjoint::Bool=false
+    use_direct_solver::Bool=false #this only goes well for very small systems
     problem
     a
     c
@@ -250,7 +251,7 @@ function Base.adjoint(A::DiscretePNSystem_IMS)
     return DiscretePNSystem_IMS(adjoint=!A.adjoint, problem=A.problem, a=A.a, c=A.c, tmp=A.tmp, tmp2=A.tmp2, tmp3=A.tmp3, D=A.D, rhs_schur=A.rhs_schur, rhs=A.rhs, sol=A.sol, lin_solver=A.lin_solver, rtol=A.rtol, atol=A.atol)
 end
 
-function schurimplicitmidpointsystem(pnproblem::AbstractDiscretePNProblem, tol=nothing)
+function schurimplicitmidpointsystem(pnproblem::AbstractDiscretePNProblem, tol=nothing; use_direct_solver=false)
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(pnproblem)
     (nd, ne, nσ) = n_sums(pnproblem)
 
@@ -264,6 +265,7 @@ function schurimplicitmidpointsystem(pnproblem::AbstractDiscretePNProblem, tol=n
     np = nxp*nΩp
     n_tot = nxp*nΩp + nxm*nΩm
     return DiscretePNSystem_IMS(
+        use_direct_solver=use_direct_solver,
         problem = pnproblem,
         a = Vector{T}(undef, ne),
         c = [Vector{T}(undef, nσ) for _ in 1:ne],
@@ -297,7 +299,12 @@ function _step_nonadjoint!(x, pnsystem::DiscretePNSystem_IMS, rhs::PNVectorAssem
     A_schur = SchurBlockMat(problem.ρp, problem.∇pm, problem.∂p, problem.Ip, problem.kp, problem.Ωpm, problem.absΩp, Diagonal(pnsystem.D), a, b, c, pnsystem.tmp, pnsystem.tmp2, pnsystem.tmp3)
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(pnsystem.problem)
     solver = solver_from_buf(cuview(x, 1:nxp*nΩp), pnsystem.lin_solver)
-    Krylov.solve!(solver, A_schur, cuview(pnsystem.rhs_schur, :), rtol=pnsystem.rtol, atol=pnsystem.atol)
+    if pnsystem.use_direct_solver
+        A = assemble_from_op(A_schur)
+        solver.x .= A \ view(pnsystem.rhs_schur, :)
+    else
+        Krylov.solve!(solver, A_schur, cuview(pnsystem.rhs_schur, :), rtol=pnsystem.rtol, atol=pnsystem.atol)
+    end
     _compute_full_solution_schur(x, pnsystem, a, b, c) # reconstructs lower part of the solution vector
     return
 end
@@ -311,7 +318,13 @@ function _step_adjoint!(x, pnsystem::DiscretePNSystem_IMS, rhs::PNVectorAssemble
     A_schur = SchurBlockMat(problem.ρp, problem.∇pm, problem.∂p, problem.Ip, problem.kp, problem.Ωpm, problem.absΩp, Diagonal(pnsystem.D), a, b, c, pnsystem.tmp, pnsystem.tmp2, pnsystem.tmp3)
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(pnsystem.problem)
     solver = solver_from_buf(cuview(x, 1:nxp*nΩp), pnsystem.lin_solver)
-    Krylov.solve!(solver, A_schur, cuview(pnsystem.rhs_schur, :), rtol=pnsystem.rtol, atol=pnsystem.atol)
+    if pnsystem.use_direct_solver
+        # do not use this!
+        A = assemble_from_op(A_schur)
+        solver.x .= A \ view(pnsystem.rhs_schur, :)
+    else
+        Krylov.solve!(solver, A_schur, cuview(pnsystem.rhs_schur, :), rtol=pnsystem.rtol, atol=pnsystem.atol)
+    end
     _compute_full_solution_schur(x, pnsystem, a, b, c)
     return
 end
