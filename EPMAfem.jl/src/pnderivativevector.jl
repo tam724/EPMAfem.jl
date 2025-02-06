@@ -79,7 +79,7 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:U
     Λ_im2p, Λ_im2m = pmview(Λ[minus½(idx)], problem.model)
     Λ_ip2p, Λ_ip2m = pmview(Λ[plus½(idx)], problem.model)
 
-    for i_e in 1:1:length(problem.ρp)
+    for i_e in 1:length(problem.ρp)
         s_i = problem.s[i_e, idx]
         τ_i = problem.τ[i_e, idx]
 
