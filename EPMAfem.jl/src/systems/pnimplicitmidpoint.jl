@@ -19,7 +19,7 @@ function update_coefficients_rhs_nonadjoint!(system::AbstractDiscretePNSystemIM,
         τi, τip1 = problem.τ[e, minus1(idx)], problem.τ[e, idx]
         system.a[e] = -sip1 + 0.5 * Δϵ * τip1
         for sc in 1:length(system.c[e])
-            σi, σip1 = problem.σ[e, sc, minus1(idx)],  problem.σ[e, sc, minus1(idx)]
+            σi, σip1 = problem.σ[e, sc, minus1(idx)],  problem.σ[e, sc, idx]
             system.c[e][sc] = -0.5 * Δϵ * σip1
         end
     end
