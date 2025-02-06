@@ -258,6 +258,17 @@ function Base.size(SBM::SchurBlockMat)
     return (n, n)
 end
 
+function assemble_from_op(A_op)
+    A = zeros(size(A_op))
+    e_i = zeros(size(A_op)[1])
+    for i in 1:size(A_op)[1]
+        e_i[i] = 1.0
+        mul!(@view(A[:, i]), A_op, e_i, true, false)
+        e_i[i] = 0.0
+    end
+    return sparse(A)
+end
+
 
 # ## EXPLICIT STUFF (this will be phased out.., legacy for the explicit solver)
 # struct PNExplicitImplicitMatrix{T, V<:AbstractVector{T}, Tpnsemi<:PNSemidiscretization{T, V}} <: AbstractMatrix{T}
