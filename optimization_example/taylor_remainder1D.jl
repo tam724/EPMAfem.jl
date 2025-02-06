@@ -81,9 +81,9 @@ end
 
 gr()
 plot(hs, sum(taylor_1st; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="1st rem.", marker=:x, color=1)
-plot!(hs, sum(taylor_2nd_fd_02; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, Δ=1e-2)", marker=:x, color=3)
-plot!(hs, sum(taylor_2nd_fd_04; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, Δ=1e-4)", marker=:x, color=4)
-plot!(hs, sum(taylor_2nd_fd_05; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, Δ=1e-5)", marker=:x, color=5)
+plot!(hs, sum(taylor_2nd_fd_02; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 1e-2)", marker=:x, color=3)
+plot!(hs, sum(taylor_2nd_fd_04; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 1e-4)", marker=:x, color=4)
+plot!(hs, sum(taylor_2nd_fd_05; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (FD, 1e-5)", marker=:x, color=5)
 plot!(hs, sum(taylor_2nd_ad; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd rem. (Adjoint)", marker=:x, color=2)
 
 plot!(hs, 1e-2*hs, xaxis=:log, yaxis=:log, color=:gray, ls=:dash, label="1st order")
