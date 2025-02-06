@@ -83,25 +83,25 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:U
         s_i = problem.s[i_e, idx]
         τ_i = problem.τ[i_e, idx]
 
-        my_rmul!(σtempp.diag, false)
+        σtempp.diag .= τ_i
         for i in 1:size(problem.σ, 2)
-            σtempp.diag .+= problem.σ[i_e, i, idx] .* problem.kp[i_e][i].diag
+            σtempp.diag .-= problem.σ[i_e, i, idx] .* problem.kp[i_e][i].diag
         end
 
-        mul!(Λtempp, Λ_ip2p, σtempp, -T(0.5), false)
-        mul!(Λtempp, Λ_im2p, σtempp, -T(0.5), true)
-        Λtempp .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2p .+ (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2p
+        mul!(Λtempp, Λ_ip2p, σtempp, T(0.5), false)
+        mul!(Λtempp, Λ_im2p, σtempp, T(0.5), true)
+        Λtempp .+= (s_i / Δϵ) .* (Λ_ip2p .- Λ_im2p)
 
         Sparse3Tensor.special_matmul!(ΛpΦp[i_e], isp, jsp, Λtempp, Φp, Δϵ, true)
 
-        my_rmul!(σtempm.diag, false)
+        σtempm.diag .= τ_i
         for i in 1:size(problem.σ, 2)
-            σtempm.diag .+= problem.σ[i_e, i, idx] .* problem.km[i_e][i].diag
+            σtempm.diag .-= problem.σ[i_e, i, idx] .* problem.km[i_e][i].diag
         end
 
-        mul!(Λtempm, Λ_ip2m, σtempm, -T(0.5), false)
-        mul!(Λtempm, Λ_im2m, σtempm, -T(0.5), true)
-        Λtempm .+= (s_i / Δϵ + T(0.5) * τ_i) .* Λ_ip2m .+ (-s_i / Δϵ + T(0.5) * τ_i) .* Λ_im2m
+        mul!(Λtempm, Λ_ip2m, σtempm, T(0.5), false)
+        mul!(Λtempm, Λ_im2m, σtempm, T(0.5), true)
+        Λtempm .+= (s_i / Δϵ) .* (Λ_ip2m .- Λ_im2m)
 
         Sparse3Tensor.special_matmul!(ΛmΦm[i_e], ism, jsm, Λtempm, Φm, Δϵ, true)
     end
