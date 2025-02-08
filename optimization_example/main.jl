@@ -30,7 +30,9 @@ EPMAfem.update_standard_intensities!(prob)
 
 # compute the "true measurements"
 function mass_concentrations(e, x)
-    if x[2] > -0.1 && x[2] < 0.25
+    z_, x_ = x
+    if z_*-0.4 + x_ + 0.1 > 0.0 &&  z_*-0.1 + x_ - 0.2 < 0.0
+    # if x[2] > -0.1 && x[2] < 0.25
         # if sqrt((x[1] + 0.05)^2 + (x[2] - 0.3)^2) < 0.2
         return e == 1 ? 1.0 : 0.0
     else
@@ -41,6 +43,10 @@ end
 true_ρs = EPMAfem.discretize_mass_concentrations([x -> mass_concentrations(e, x) for e in 1:2], model)
 true_meas = prob(true_ρs)
 
+plt1 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal)
+plt2 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal)
+display(plot(plt1, plt2))
+
 # plots of forward problem
 let
     probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> EPMAfem.extraction_energy_distribution(extraction, 1, ϵ))
@@ -49,7 +55,7 @@ let
     averaged_sol2 = probe(discrete_system * discrete_rhs[1, 36, 1])
     func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
     func2 = EPMAfem.SpaceModels.interpolable(averaged_sol2, space_model)
-    plot()
+    plot(fontfamily="Computer Modern")
     for i in 36:1:40
         plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, i, Point(0.0, x, 0.0)) * 0.2, color=:gray, ls=:dash, label=nothing)
     end
@@ -62,7 +68,7 @@ let
     ylims!(-1.02, 0.2)
     xlabel!(L"x")
     ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000)
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm)
     savefig("figures/epma_forward_main.png")
     # savefig("figures/")
 end
@@ -80,7 +86,7 @@ let
     ylims!(-1.02, 0.2)
     xlabel!(L"x")
     ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000)
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     savefig("figures/epma_forward_adjoint.png")
 end
 
@@ -116,13 +122,36 @@ let
     # for i in 2:3
     #     contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> EPMAfem.beam_space_distribution(excitation, 36, Point(0.0, x, 0.0))*EPMAfem.beam_energy_distribution(excitation, i, ϵ), color=:gray, ls=:dash)
     # end
+    xlims!(-0.82, 0.82)
+
     plot!()
     xlabel!(L"x")
     ylabel!(L"\epsilon")
-    plot!(size=(400, 300), dpi=1000)
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     savefig("figures/epma_riesz_forward.png")
 end
 
+let
+    beam_pos = [pos.x for (i, pos) in enumerate(excitation.beam_positions)]
+    plot(beam_pos, true_meas[1, 1, :, 2], color=cgrad(:tab20)[1], label="A, high energy")
+    plot!(beam_pos, true_meas[1, 2, :, 2], color=cgrad(:tab20)[2], label="A, low energy")
+    plot!(beam_pos, true_meas[2, 1, :, 2], color=cgrad(:tab20)[3], label="B, high energy")
+    plot!(beam_pos, true_meas[2, 2, :, 2], color=cgrad(:tab20)[4], label="B, low energy")
+
+    plot!(beam_pos, true_meas[1, 1, :, 3], color=cgrad(:tab20)[1], ls=:dash, label=nothing)
+    plot!(beam_pos, true_meas[1, 2, :, 3], color=cgrad(:tab20)[2], ls=:dash, label=nothing)
+    plot!(beam_pos, true_meas[2, 1, :, 3], color=cgrad(:tab20)[3], ls=:dash, label=nothing)
+    plot!(beam_pos, true_meas[2, 2, :, 3], color=cgrad(:tab20)[4], ls=:dash, label=nothing)
+    plot!([], [], ls=:dash, color=:gray, label="tilted beam")
+
+    i_beam = 36
+    scatter!(fill(beam_pos[i_beam], 8), [true_meas[i, j, i_beam, k] for i in 1:2 for j in 1:2 for k in 2:3], color=:gray, label=nothing, alpha=0.5)
+    plot!(legend=:left)
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    xlabel!("beam position")
+    ylabel!("k-ratio")
+    savefig("figures/epma_measurements.png")
+end
 
 let
     plot()
@@ -166,8 +195,7 @@ let
     scatter!([excitation.beam_positions[36].x], [true_meas[2, 1, 36, 2]], color=2, label=nothing, markersize=2)
 
     plot!(legend=:left)
-    plot!(size=(400, 300), dpi=1000)
-    savefig("figures/epma_measurements.png")
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
 end
 
 ## taylor remainder
@@ -183,6 +211,8 @@ let
         end
         return grad
     end
+    true_ρs = EPMAfem.discretize_mass_concentrations([x -> 0.4, x -> 0.6], model)
+    true_meas = prob(true_ρs)
     objective_function(ρs) = sum((true_meas .- prob(ρs)).^2) / length(true_meas)
     ρs = similar(true_ρs)
     ρs .= 0.5
@@ -240,10 +270,10 @@ let
 
     plot!(hs, 1e-4*hs, xaxis=:log, yaxis=:log, color=:gray, ls=:dash, label="1st order")
     plot!(hs, 1e-6*hs.^2, xaxis=:log, yaxis=:log, color=:gray, ls=:dashdot, label="2nd order")
-    plot!(size=(400, 300), dpi=1000, legend=:bottomright)
     ylims!(1e-10, 2e-4)
     xlabel!(L"h")
-    ylabel!("taylor remainder")
+    ylabel!("Taylor remainder")
+    plot!(size=(400, 300), dpi=1000, legend=:bottomright, fontfamily="Computer Modern")
     savefig("figures/epma_taylor_remainder.png")
 end
 
@@ -260,7 +290,9 @@ let
     contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
     xlabel!(L"x")
     ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000)
+    xlims!(-0.82, 0.82)
+
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     savefig("figures/epma_tangent_nonadjoint.png")
 end
 
@@ -277,7 +309,9 @@ let
     contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
     xlabel!(L"x")
     ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000)
+    xlims!(-0.82, 0.82)
+
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     savefig("figures/epma_tangent_adjoint.png")
 end
 
@@ -291,25 +325,27 @@ let
     contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
     xlabel!(L"x")
     ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000)
+    xlims!(-0.82, 0.82)
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     savefig("figures/epma_gradient1.png")
 
     grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][2, :] * 1e3)
     contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
     xlabel!(L"x")
     ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000)
+    xlims!(-0.82, 0.82)
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     savefig("figures/epma_gradient2.png")
 end
 
-@time averaged_solution = probe(prob.system * prob.excitations[1, 10, 2])
+# @time averaged_solution = probe(prob.system * prob.excitations[1, 10, 2])
 
-@time @gif for i in 20:50
-    averaged_solution = probe(prob.system * prob.excitations[1, i, 2])
-    func = EPMAfem.SpaceModels.interpolable(averaged_solution, space_model)
-    contourf(range(-1, 0, 40), range(-1.5, 1.5, 120), func, swapxy=true, aspect_ratio=:equal)
-    vline!([-0.15, 0.25])
-end
+# @time @gif for i in 20:50
+#     averaged_solution = probe(prob.system * prob.excitations[1, i, 2])
+#     func = EPMAfem.SpaceModels.interpolable(averaged_solution, space_model)
+#     contourf(range(-1, 0, 40), range(-1.5, 1.5, 120), func, swapxy=true, aspect_ratio=:equal)
+#     vline!([-0.15, 0.25])
+# end
 
 function compute_cell_midpoints(space_model)
     trian = Gridap.get_triangulation(space_model.discrete_model)
@@ -387,7 +423,10 @@ end
 
 # p0 = Optim.minimizer(res)
 
-res = optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(callback=cb, store_trace=true, extended_trace=true, iterations=200, time_limit=3000, g_abstol=1e-7, g_reltol=1e-7))
+res = optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(callback=cb, store_trace=true, extended_trace=true, iterations=250, time_limit=4000, g_abstol=1e-7, g_reltol=1e-7))
+using Serialization
+Serialization.serialize("figures/opti_trace.jls", (res, int_store))
+
 
 p = res.trace[1].metadata["x"]
 ρs = Lux.apply(lux_model, xy, p, st)[1]
@@ -396,12 +435,16 @@ p = res.trace[1].metadata["x"]
 ρs = Lux.apply(lux_model, xy, res.minimizer, st)[1]
 for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti_material_true")]
     mat_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs_[1, :])
+    mat_func_true = FEFunction(EPMAfem.SpaceModels.odd(space_model), true_ρs[1, :])
 
     plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(0, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]))
+    plt1 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func_true, linewidth=1, swapxy=true, aspect_ratio=:equal, clim=(0, 1), color=:lightgray, levels=1)
     scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
     xlabel!(L"x")
     ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000)
+    xlims!(-0.82, 0.82)
+
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     savefig("figures/$figname.png")
 end
 
@@ -415,8 +458,8 @@ for i in 1:2, j in 1:2, k in 1:3
     color_i += 1
 end
 xlabel!(L"beam center $x$")
-ylabel!(L"observations $\Sigma^{(ji)}$")
-plot!(size=(400, 300), dpi=1000)
+ylabel!(L"observations $\mathcal{Y}^{(ji)}$")
+plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
 savefig("figures/epma_opti_measurements.png")
 
 # plot animated results
@@ -445,6 +488,7 @@ anim = @animate for (s_i, state) in enumerate(res.trace)
 end fps = 5
 
 gif(anim, "figures/epma_opti_material_noisy.mp4")
+gif(anim, "figures/epma_opti_material_noisy.gif")
 
 using Printf
 
@@ -461,3 +505,41 @@ anim2 = @animate for (s_i, state) in enumerate(res.trace)
 end fps = 5
 
 gif(anim2, "figures/epma_opti_measurements_noisy.mp4")
+gif(anim2, "figures/epma_opti_measurements_noisy.gif")
+
+anim3 = @animate for (s_i, state) in enumerate(res.trace)
+    p = state.metadata["x"]
+    ρs = Lux.apply(lux_model, xy, p, st)[1]
+    grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs[1, :] - ρs[2, :])
+
+    plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(-1, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]), cb=nothing)
+    scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
+
+    grad_func_true = FEFunction(EPMAfem.SpaceModels.odd(space_model), true_ρs[1, :] - true_ρs[2, :])
+    plt3 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func_true, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(-1.5, 1.5), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]), cb=nothing, levels=[0.0])
+
+    plt3 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, color=:black, linewidth=1, clim=(0, 0.1))
+
+    scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], zeros(length(excitation.beam_positions)), color=:white, label=nothing, markersize=2)
+    scatter!([excitation.beam_positions[36].x], [0.0], color=:black, label=nothing, markersize=2)
+
+    plt5 = plot()
+    color_i = 1
+    for i in 1:2, j in 1:2, k in 1:3
+        plot!([pos.x for pos in excitation.beam_positions], int_store[s_i][i, j, :, k], color=i, markersize=2)
+        plot!([pos.x for pos in excitation.beam_positions], noisy_meas[i, j, :, k], color=i, legend=false, ls=:dash)
+        color_i += 1
+    end
+    annotate!(-0.5, 0.5, text("MSE\n = $(@sprintf "%.2e" state.value)", :black, :center, 10))
+    plot!(size=(400, 300))
+
+    plt_mse = plot([t.value for t in res.trace], label=nothing, yaxis=:log)
+    vline!(s_i, label=nothing)
+    scatter!([s_i], [state.value], color=1, label=nothing)
+
+    plot(plt1, plt3, plt5, plt_mse, size=(800, 300))
+
+end fps = 5
+
+gif(anim3, "figures/epma_opti_all_noisy.mp4")
+gif(anim3, "figures/epma_opti_all_noisy.gif")

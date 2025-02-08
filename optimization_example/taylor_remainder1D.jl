@@ -87,7 +87,7 @@ plot!(hs, sum(taylor_2nd_ad; dims=2)/Nδs, xaxis=:log, yaxis=:log, label="2nd re
 
 plot!(hs, 2e-3*hs, xaxis=:log, yaxis=:log, color=:gray, ls=:dash, label="1st order")
 plot!(hs, 2e-4*hs.^2, xaxis=:log, yaxis=:log, color=:gray, ls=:dashdot, label="2nd order")
-plot!(size=(400, 300), dpi=1000, legend=:bottomright)
+plot!(size=(400, 300), dpi=1000, legend=:bottomright, fontfamily="Computer Modern")
 xlabel!(L"h")
-ylabel!("taylor remainder")
+ylabel!("Taylor remainder")
 savefig("figures/epma_taylor_remainder_direct_1D.png")
