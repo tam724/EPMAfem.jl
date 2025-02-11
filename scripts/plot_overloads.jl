@@ -1,6 +1,6 @@
 using Plots
 using Gridap
-include("../EPMAfem.jl/src/space_dimensions.jl")
+include("../src/space_dimensions.jl")
 # Plots overloads (for fast plotting of FE functions)
 import Plots: plot, plot!, heatmap, surface, contourf, contour, contour!, contourf!
 
