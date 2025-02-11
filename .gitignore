@@ -4,5 +4,5 @@ figures/
 figures_old/
 *.nsys-rep
 *.vtu
-.vscode/settings.json
+.vscode/
 old_stuff/
