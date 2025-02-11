@@ -1,0 +1,12 @@
+---
+title : Weave example
+author : Matti Pastell
+date: 15th December 2016
+---
+
+So lets try this...
+```julia
+using Plots
+x = 0:0.01:1
+plot(x, sin)
+```

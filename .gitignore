@@ -1,7 +1,8 @@
 **/Manifest.toml
 **/EPMAfem_testplots/
-figures/*
-figures_old/*
+figures/
+figures_old/
 *.nsys-rep
 *.vtu
 .vscode/settings.json
+old_stuff/
