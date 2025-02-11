@@ -9,6 +9,7 @@ using ComponentArrays
 using LaTeXStrings
 
 include("../scripts/plot_overloads.jl")
+figpath = mkpath(joinpath(pwd(), "figures"))
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1.5, 1.5), (40, 120)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
@@ -69,7 +70,7 @@ let
     xlabel!(L"x")
     ylabel!(L"z")
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm)
-    savefig("figures/epma_forward_main.png")
+    savefig(joinpath(figpath, "epma_forward_main.png"))
     # savefig("figures/")
 end
 
@@ -87,7 +88,8 @@ let
     xlabel!(L"x")
     ylabel!(L"z")
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig("figures/epma_forward_adjoint.png")
+    savefig(joinpath(figpath, "epma_forward_adjoint.png"))
+
 end
 
 # plots of riesz representation forward
@@ -128,7 +130,8 @@ let
     xlabel!(L"x")
     ylabel!(L"\epsilon")
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig("figures/epma_riesz_forward.png")
+    savefig(joinpath(figpath, "epma_riesz_forward.png"))
+
 end
 
 let
@@ -150,52 +153,8 @@ let
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     xlabel!("beam position")
     ylabel!("k-ratio")
-    savefig("figures/epma_measurements.png")
-end
+    savefig(joinpath(figpath, "epma_measurements.png"))
 
-let
-    plot()
-    for i in 1:size(true_meas, 1), j in 1:size(true_meas, 2), k in 1:size(true_meas, 4)
-        if i == 1 && j == 1 && k == 2
-            continue
-        end
-        if i == 1 && j == 2 && k == 2
-            continue
-        end
-        if i == 1 && j == 1 && k == 3
-            continue
-        end
-        if i == 2 && j == 1 && k == 2
-            continue
-        end
-        plot!([pos.x for pos in excitation.beam_positions], true_meas[i, j, :, k], color=:lightgray, ls=:dot, label=nothing)
-    end
-
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 1, :, 2], color=1, label="A")
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 2, :, 2], color=1, ls=:dash, label="A (2nd energy)")
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[1, 1, :, 3], color=1, ls=:dashdot, label="A (2nd direction)")
-    plot!([pos.x for (i, pos) in enumerate(excitation.beam_positions)], true_meas[2, 1, :, 2], color=2, label="B")
-
-    for i in 1:size(true_meas, 1), j in 1:size(true_meas, 2), k in 1:size(true_meas, 4)
-        if i == 1 && j == 1 && k == 2
-            continue
-        end
-        if i == 1 && j == 2 && k == 2
-            continue
-        end
-        if i == 1 && j == 1 && k == 3
-            continue
-        end
-        if i == 2 && j == 1 && k == 2
-            continue
-        end
-        scatter!([excitation.beam_positions[36].x], [true_meas[i, j, 36, k]], color=:gray, label=nothing, markersize=2)
-    end
-    scatter!(fill(excitation.beam_positions[36].x, 3), [true_meas[1, 1, 36, 2], true_meas[1, 2, 36, 2], true_meas[1, 1, 36, 3]], color=1, label=nothing, markersize=2)
-    scatter!([excitation.beam_positions[36].x], [true_meas[2, 1, 36, 2]], color=2, label=nothing, markersize=2)
-
-    plot!(legend=:left)
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
 end
 
 ## taylor remainder
@@ -274,7 +233,7 @@ let
     xlabel!(L"h")
     ylabel!("Taylor remainder")
     plot!(size=(400, 300), dpi=1000, legend=:bottomright, fontfamily="Computer Modern")
-    savefig("figures/epma_taylor_remainder.png")
+    savefig(joinpath(figpath, "epma_taylor_remainder.png"))
 end
 
 # plots of derivative of adjoint forward
@@ -293,7 +252,8 @@ let
     xlims!(-0.82, 0.82)
 
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig("figures/epma_tangent_nonadjoint.png")
+    savefig(joinpath(figpath, "epma_tangent_nonadjoint.png"))
+
 end
 
 # plots of adjoint derivative of adjoint forward
@@ -312,7 +272,8 @@ let
     xlims!(-0.82, 0.82)
 
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig("figures/epma_tangent_adjoint.png")
+    savefig(joinpath(figpath, "epma_tangent_adjoint.png"))
+
 end
 
 # plots of gradient
@@ -327,7 +288,8 @@ let
     ylabel!(L"z")
     xlims!(-0.82, 0.82)
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig("figures/epma_gradient1.png")
+    savefig(joinpath(figpath, "epma_gradient1.png"))
+
 
     grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][2, :] * 1e3)
     contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
@@ -335,7 +297,8 @@ let
     ylabel!(L"z")
     xlims!(-0.82, 0.82)
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig("figures/epma_gradient2.png")
+    savefig(joinpath(figpath, "epma_gradient2.png"))
+
 end
 
 # @time averaged_solution = probe(prob.system * prob.excitations[1, 10, 2])
@@ -425,7 +388,8 @@ end
 
 res = optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(callback=cb, store_trace=true, extended_trace=true, iterations=250, time_limit=4000, g_abstol=1e-7, g_reltol=1e-7))
 using Serialization
-Serialization.serialize("figures/opti_trace.jls", (res, int_store))
+Serialization.serialize(joinpath(figpath, "opti_trace.jls"), (res, int_store))
+
 
 
 p = res.trace[1].metadata["x"]
@@ -445,7 +409,8 @@ for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti
     xlims!(-0.82, 0.82)
 
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig("figures/$figname.png")
+    savefig(joinpath(figpath, "$figname.png"))
+
 end
 
 
@@ -460,7 +425,8 @@ end
 xlabel!(L"beam center $x$")
 ylabel!(L"observations $\mathcal{Y}^{(ji)}$")
 plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-savefig("figures/epma_opti_measurements.png")
+savefig(joinpath(figpath, "epma_opti_measurements.png"))
+
 
 # plot animated results
 probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> EPMAfem.extraction_energy_distribution(extraction, 1, ϵ))
@@ -487,8 +453,8 @@ anim = @animate for (s_i, state) in enumerate(res.trace)
 
 end fps = 5
 
-gif(anim, "figures/epma_opti_material_noisy.mp4")
-gif(anim, "figures/epma_opti_material_noisy.gif")
+gif(anim, joinpath(figpath, "epma_opti_material_noisy.mp4"))
+gif(anim, joinpath(figpath, "epma_opti_material_noisy.gif"))
 
 using Printf
 
@@ -504,8 +470,8 @@ anim2 = @animate for (s_i, state) in enumerate(res.trace)
     plot!(size=(400, 300))
 end fps = 5
 
-gif(anim2, "figures/epma_opti_measurements_noisy.mp4")
-gif(anim2, "figures/epma_opti_measurements_noisy.gif")
+gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.mp4"))
+gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.gif"))
 
 anim3 = @animate for (s_i, state) in enumerate(res.trace)
     p = state.metadata["x"]
@@ -541,5 +507,5 @@ anim3 = @animate for (s_i, state) in enumerate(res.trace)
 
 end fps = 5
 
-gif(anim3, "figures/epma_opti_all_noisy.mp4")
-gif(anim3, "figures/epma_opti_all_noisy.gif")
+gif(anim3, joinpath(figpath, "epma_opti_all_noisy.mp4"))
+gif(anim3, joinpath(figpath, "epma_opti_all_noisy.gif"))
