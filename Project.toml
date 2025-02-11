@@ -1,6 +1,6 @@
 name = "EPMAfem"
 uuid = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
-authors = ["Tamme Claus <tamme.claus@rwth-aachen.de>"]
+authors = ["Tamme Claus <claus@acom.rwth-aachen.de>"]
 version = "0.1.0"
 
 [deps]
