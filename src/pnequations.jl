@@ -23,8 +23,33 @@ function stopping_power(::PNEquations, e, ϵ)
     end 
 end
 
+function stopping_power(eq::PNEquations, energy_model)
+    n_elem = number_of_elements(eq)
+    S = zeros(n_elem, length(energy_model))
+    for e in 1:n_elem
+        for (i_ϵ, ϵ) in enumerate(energy_model)
+            S[e, i_ϵ] = stopping_power(eq, e, ϵ)
+        end
+    end
+    return S
+end
+
 function absorption_coefficient(eq::PNEquations, e, ϵ)
-    return scattering_coefficient(eq, e, 1, ϵ)
+    return sum(scattering_coefficient(eq, e, i, ϵ) for i in 1:number_of_scatterings(eq))
+end
+
+function absorption_coefficient(eq::PNEquations, energy_model)
+    n_elem = number_of_elements(eq)
+    A = zeros(n_elem, length(energy_model))
+    for e in 1:n_elem
+        for (i_ϵ, ϵ) in enumerate(energy_model)
+            for i_s = 1:number_of_scatterings(eq)
+                # τ = σ
+                A[e, i_ϵ] += scattering_coefficient(eq, e, i_s, ϵ)
+            end
+        end
+    end
+    return A
 end
 
 function scattering_coefficient(::PNEquations, e, i, ϵ)
@@ -33,6 +58,21 @@ function scattering_coefficient(::PNEquations, e, i, ϵ)
     elseif e == 2
         return 2*exp(-ϵ*1.1)
     end 
+end
+
+function scattering_coefficient(eq::PNEquations, energy_model)
+    n_elem = number_of_elements(eq)
+    n_scat = number_of_scatterings(eq)
+    S = zeros(n_elem, n_scat, length(energy_model))
+    for e in 1:n_elem
+        for (i_ϵ, ϵ) in enumerate(energy_model)
+            for i_s = 1:n_scat
+                # τ = σ
+                S[e, i_s, i_ϵ] = scattering_coefficient(eq, e, i_s, ϵ)
+            end
+        end
+    end
+    return S
 end
 
 function mass_concentrations(::PNEquations, e, x)
@@ -45,6 +85,8 @@ function electron_scattering_kernel(eq::PNEquations, e, i, μ)
     # for now we ignore e and i
     return scattering_kernel_func(μ) / eq.scattering_norm_factor
 end
+
+electron_scattering_kernel_f(eq::PNEquations, e, i) = μ -> electron_scattering_kernel(eq, e, i, μ)
 
 @concrete struct PNExcitation
     beam_positions
