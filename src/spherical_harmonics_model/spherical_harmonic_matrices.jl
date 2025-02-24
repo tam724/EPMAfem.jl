@@ -1,4 +1,8 @@
 const ∫S²_uv = Val{:∫S²_uv}()
+@concrete struct ∫S²_μuv{F}
+    μ::F
+end
+
 const ∫S²_Ωzuv = Val{:∫S²_Ωzuv}()
 const ∫S²_Ωxuv = Val{:∫S²_Ωxuv}()
 const ∫S²_Ωyuv = Val{:∫S²_Ωyuv}()
@@ -24,6 +28,7 @@ dim(::Val{:∫S²_absΩxuv}) = X()
 dim(::Val{:∫S²_absΩyuv}) = Y()
 
 int_func(::Val{:∫S²_uv}, Ω) = 1
+int_func(int::∫S²_μuv, Ω) = int.μ(Ω)
 int_func(::Val{:∫S²_Ωxuv}, Ω) = Ωx(Ω)
 int_func(::Val{:∫S²_Ωyuv}, Ω) = Ωy(Ω)
 int_func(::Val{:∫S²_Ωzuv}, Ω) = Ωz(Ω)
@@ -35,7 +40,7 @@ int_func(::Val{:∫S²_absΩzuv}, Ω) = abs(Ωz(Ω))
     k
 end
 
-const IntFuncIntegral = Union{Val{:∫S²_uv}, Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv}, Val{:∫S²_Ωyuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}, Val{:∫S²_absΩzuv}}
+const IntFuncIntegral = Union{Val{:∫S²_uv}, ∫S²_μuv, Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv}, Val{:∫S²_Ωyuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}, Val{:∫S²_absΩzuv}}
 
 abstract type SphericalQuadrature end
 struct lebedev_quadrature <: SphericalQuadrature

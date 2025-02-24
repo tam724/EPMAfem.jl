@@ -21,6 +21,11 @@ struct SphericalHarmonic{T<:Integer}
     end
 end
 
+function (sh::SphericalHarmonic)(Ω::VectorValue)
+    θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ωz(Ω), -Ωx(Ω), -Ωy(Ω)))
+    return SphericalHarmonics.computeYlm(θ, ϕ, lmax=degree(sh), SHType=SphericalHarmonics.RealHarmonics())[(degree(sh), order(sh))]
+end
+
 degree(sh::SphericalHarmonic) = sh.degree
 order(sh::SphericalHarmonic) = sh.order
 
@@ -49,7 +54,31 @@ function is_even_in(sh::SphericalHarmonic, ::Y) # y basis vector
     return order(sh) >= 0
 end
 
+function is_even_in(sh, n::VectorValue)
+    # only test a few random directions
+    n_rand = 10
+    is_even = zeros(Bool, 10)
+    is_odd = zeros(Bool, 10)
+    for i in 1:n_rand
+        Ω = VectorValue(randn(), randn(), randn()) |> normalize
+        a = sh(Ω)
+        b = sh(Ω - 2.0*dot(n, Ω)*n)
+        is_even[i] = a ≈ b
+        is_odd[i] = a ≈ -b
+    end
+    if all(is_even)
+        return true
+    elseif all(is_odd)
+        return false
+    else
+        @show is_even
+        @show is_odd
+        error("Spherical harmonic $sh is neither even nor odd in the given direction")
+    end
+end
+
 is_odd_in(sh::SphericalHarmonic, d::SpaceDimension) = !is_even_in(sh, d)
+is_odd_in(sh, n::VectorValue) = !is_even_in(sh, n)
 
 function get_eee(sh::SphericalHarmonic)
     return map(d -> is_even_in(sh, d), dimensions())
