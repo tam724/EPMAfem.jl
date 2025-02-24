@@ -10,26 +10,71 @@ const EEEO = (
     ooo = (false, false, false),
 )
 
-struct SphericalHarmonic{T<:Integer}
+struct SphericalHarmonic{T<:Integer, C}
     degree::T # l
     order::T # k (jonas thesis) or m (wikipedia)
+    cache::C # for fast evaluations
 
-    function SphericalHarmonic(degree, order)
+    function SphericalHarmonic(degree, order, cache=nothing)
         deg = (degree >= 0) ? degree : error("degree = $(degree) must be >= 0")
         ord = (abs(order) <= deg) ? order : error("abs(order = $(order)) must be <= degree")
-        return new{typeof(deg)}(deg, ord)
+        if isnothing(cache)
+            @warn "For fast evaluations of spherical harmonics, also pass a cache to the constructor"
+        else
+            #check cache validity
+            cache.lmax >= deg || error("cache lmax $cache.lmax < degree $deg")
+        end
+        return new{typeof(deg), typeof(cache)}(deg, ord, cache)
     end
-end
-
-function (sh::SphericalHarmonic)(Ω::VectorValue)
-    θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ωz(Ω), -Ωx(Ω), -Ωy(Ω)))
-    return SphericalHarmonics.computeYlm(θ, ϕ, lmax=degree(sh), SHType=SphericalHarmonics.RealHarmonics())[(degree(sh), order(sh))]
 end
 
 degree(sh::SphericalHarmonic) = sh.degree
 order(sh::SphericalHarmonic) = sh.order
 
 degreeorder(sh::SphericalHarmonic) = sh.degree, sh.order
+
+Base.show(io::IO, sh::SphericalHarmonic) = print(io, "SH(deg=$(degree(sh)),ord=$(order(sh)))")
+Base.show(io::IO, ::MIME"text/plain", sh::SphericalHarmonic) = show(io, sh)
+
+ComponentArrays.recursive_length(sh::SphericalHarmonic) = 1
+
+# Base.to_index(sh::SphericalHarmonic) = (degree(sh), order(sh))
+
+function get_cache(N)
+    return SphericalHarmonics.cache(Float64, N; SHType=SphericalHarmonics.RealHarmonics())
+end
+
+function eval_cache!(cache, θ, ϕ)
+    SphericalHarmonics.computePlmcostheta!(cache, θ)
+    SphericalHarmonics.computeYlm!(cache, θ, ϕ)
+end
+
+function (sh::SphericalHarmonic)(Ω::VectorValue)
+    # TODO (check): we mirror x and y to fit the definition on wikipedia https://en.wikipedia.org/wiki/Spherical_harmonics
+    θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ωz(Ω), -Ωx(Ω), -Ωy(Ω)))
+    if isnothing(sh.cache)
+        return SphericalHarmonics.computeYlm(θ, ϕ, lmax=degree(sh), SHType=SphericalHarmonics.RealHarmonics())[(degree(sh), order(sh))]
+    else
+        eval_cache!(sh.cache, θ, ϕ)
+        return sh.cache.Y[sh]
+    end
+end
+
+function eval_vec!(y, sh_vec::AbstractVector{<:SphericalHarmonic}, Ω::VectorValue)
+    # we assume that all sh share the same cache (otherwise the access [(.., ..)] will fail anyways..)
+    cache = first(sh_vec).cache
+    θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ωz(Ω), -Ωx(Ω), -Ωy(Ω)))
+    eval_cache!(cache, θ, ϕ)
+    for (i, sh) in enumerate(sh_vec)
+        y[i] = cache.Y[(degree(sh), order(sh))]
+    end
+    return y
+end
+
+
+function (sh_vec::AbstractVector{<:SphericalHarmonic})(Ω::VectorValue)
+    eval_vec!(zeros(length(sh_vec)), sh_vec, Ω)
+end
 
 """
     classification of spherical harmonics in even f(Ω) = f(-Ω) and odd f(Ω) = -f(-Ω) functions

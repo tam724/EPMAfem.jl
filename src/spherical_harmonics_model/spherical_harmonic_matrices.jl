@@ -99,12 +99,9 @@ function assemble_bilinear(integral::∫S²_kuv, model, U, V, quad::hcubature_qu
     N = max_degree(model)
     Σl = 2*π*hquadrature(μ -> integral.k(μ).*Pl.(μ, 0:N), -1.0, 1.0, rtol=quad.rtol, atol=quad.atol, maxevals=quad.maxevals)[1]
     A = zeros(length(V), length(U))
-    all_harmonics = SphericalHarmonics.ML(0:max_degree(model)) |> collect
 
-    for i in eachindex(V)
-        for j in eachindex(U)
-            v = SphericalHarmonic(all_harmonics[V[i]]...)
-            u = SphericalHarmonic(all_harmonics[U[j]]...)
+    for (i, v) in enumerate(V)
+        for (j, u) in enumerate(U)
             if u == v # isotropic scattering is diagonal (in spherical harmonic basis)
                 l = degree(u) #  == degree(v)
                 A[i, j] = Σl[l+1]
@@ -141,13 +138,9 @@ function assemble_bilinear(::Val{:∫S²_uv}, model, U, V, ::exact_quadrature)
 end
 
 function assemble_bilinear(integral::Union{Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv}, Val{:∫S²_Ωyuv}}, model, U, V, ::exact_quadrature)
-    all_harmonics = SphericalHarmonics.ML(0:max_degree(model)) |> collect
     A = zeros(length(V), length(U))
-
-    for i in eachindex(V)
-        for j in eachindex(U)
-            m1 = SphericalHarmonic(all_harmonics[V[i]]...)
-            m2 = SphericalHarmonic(all_harmonics[U[j]]...)
+    for (i, m1) in enumerate(V)
+        for (j, m2) in enumerate(U)
             A[i, j] = get_transport_coefficient(m1, m2, dim(integral))
         end
     end
@@ -155,13 +148,9 @@ function assemble_bilinear(integral::Union{Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv
 end
 
 function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}}, model, U, V, ::exact_quadrature)
-    all_harmonics = SphericalHarmonics.ML(0:max_degree(model)) |> collect
     A = zeros(length(V), length(U))
-
-    for i in eachindex(V)
-        for j in eachindex(U)
-            m1 = SphericalHarmonic(all_harmonics[V[i]]...)
-            m2 = SphericalHarmonic(all_harmonics[U[j]]...)
+    for (i, m1) in enumerate(V)
+        for (j, m2) in enumerate(U)
             A[i, j] = get_cached_boundary_coefficient(m1, m2, dim(integral))
         end
     end

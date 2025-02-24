@@ -49,8 +49,8 @@ end
 function test_transport_matrix_assembly(N, ND)
     model = SH.EOSphericalHarmonicsModel(N, ND)
     # we use all moments, not just the even or odd ones
-    U = model.sh_index
-    V = model.sh_index
+    U = SH.get_basis_harmonics(model)
+    V = SH.get_basis_harmonics(model)
     
     for ∫ in (SH.∫S²_Ωzuv, SH.∫S²_Ωxuv, SH.∫S²_Ωyuv)
         @testset "$(∫), $(N), $(ND)" begin
@@ -98,9 +98,9 @@ end
 
 function test_scattering_kernel_integration()
     model = SH.EOSphericalHarmonicsModel(11, 3)
-    U = model.sh_index
-    V = model.sh_index
-
+    U = SH.get_basis_harmonics(model)
+    V = SH.get_basis_harmonics(model)
+    
     # quad = SH.lebedev_quadrature(SH.guess_lebedev_order_from_model(model))
     scattering_kernel_func(μ) = exp(-5.0*(μ-1.0)^2)
     scattering_norm_factor = 2*π*hquadrature(x -> scattering_kernel_func(x), -1.0, 1.0)[1]
