@@ -15,7 +15,7 @@ function Dimensionless.dimless(v::Base.TwicePrecision, bas::DimBasis)
 end
 
 function Dimensionless.dimless(v::StepRangeLen, bas::DimBasis)
-    return StepRangeLen(dimless(v.ref, bas), dimless(v.step, bas), v.len)
+    return StepRangeLen(dimless(v.ref, bas), dimless(v.step, bas), v.len, v.offset)
 end
 
 

@@ -74,6 +74,13 @@ function eval_basis(model, μ::Function)
     return (p=bp, m=bm)
 end
 
+# boundary basis evaluation
+function eval_basis_boundary(model, μ::Function, dim)
+    bp = assemble_linear(∫∂R_ngv{dim}(μ), model, even(model))
+    bm = zeros(num_free_dofs(odd(model)))
+    return (p=bp, m=bm)
+end
+
 function interpolable(vec, model)
     if hasproperty(vec, :p) && hasproperty(vec, :m)
         p_func = FEFunction(even(model), Float64.(vec.p))
