@@ -95,6 +95,16 @@ function (quad::hcubature_quadrature)(f!, cache)
     return hcubature(integrand, (0, 0), (π, 2π), atol=quad.atol, rtol=quad.rtol, maxevals=quad.maxevals)[1]
 end
 
+function (quad::SphericalQuadrature)(f::Function)
+    # evaluate once to compute cache size
+    Ω = VectorValue(randn(), randn(), randn())
+    cache = zeros(size(f(Ω)))
+    function f!(cache, Ω)
+        cache[:] .= f(Ω)
+    end
+    return quad(f!, cache)
+end
+    
 function assemble_bilinear(integral::∫S²_kuv, model, U, V, quad::hcubature_quadrature)
     N = max_degree(model)
     Σl = 2*π*hquadrature(μ -> integral.k(μ).*Pl.(μ, 0:N), -1.0, 1.0, rtol=quad.rtol, atol=quad.atol, maxevals=quad.maxevals)[1]
