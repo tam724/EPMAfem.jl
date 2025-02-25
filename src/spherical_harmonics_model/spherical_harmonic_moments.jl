@@ -56,7 +56,7 @@ function (sh::SphericalHarmonic)(Ω::VectorValue)
         return SphericalHarmonics.computeYlm(θ, ϕ, lmax=degree(sh), SHType=SphericalHarmonics.RealHarmonics())[(degree(sh), order(sh))]
     else
         eval_cache!(sh.cache, θ, ϕ)
-        return sh.cache.Y[sh]
+        return sh.cache.Y[(degree(sh), order(sh))]
     end
 end
 
