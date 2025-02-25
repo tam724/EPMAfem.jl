@@ -9,7 +9,8 @@ function is_viable(m::SphericalHarmonic, ND)
 end
 
 function get_all_viable_harmonics_up_to(N, ND)
-    all_moments = (SphericalHarmonic(l, k) for l in 0:N for k in -l:l)
+    cache = get_cache(N)
+    all_moments = (SphericalHarmonic(l, k, cache) for l in 0:N for k in -l:l)
     viable_moments = [m for m in all_moments if is_viable(m, ND)]
     return viable_moments
 end
@@ -24,8 +25,7 @@ end
 @concrete struct EOSphericalHarmonicsModel{ND} <: AbstractSphericalHarmonicsModel{ND}
     N
     num_dofs
-    sh_index
-    sh_cache
+    moments
 end
 
 function EOSphericalHarmonicsModel(N, ND)
@@ -34,40 +34,37 @@ function EOSphericalHarmonicsModel(N, ND)
     sort!(viable_moments, lt=isless_evenodd)
 
     # compute the index to evaluate using SphericalHarmonics.jl
-    sh_index_even = [findSHML_index(m, N) for m in viable_moments if is_even(m)]
-    sh_index_odd = [findSHML_index(m, N) for m in viable_moments if is_odd(m)]
+    even_moments = [m for m in viable_moments if is_even(m)]
+    odd_moments = [m for m in viable_moments if is_odd(m)]
 
-    sh_index = ComponentVector(even=sh_index_even, odd=sh_index_odd)
+    moments = ComponentVector(even=even_moments, odd=odd_moments)
 
     # compute the number of even and odd basis functions
-    num_dofs_even = length(sh_index_even)
-    num_dofs_odd = length(sh_index_odd)
+    num_dofs_even = length(even_moments)
+    num_dofs_odd = length(odd_moments)
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    # compute the SphericalHarmonics.jl cache
-    sh_cache = SphericalHarmonics.cache(Float64, N, SHType=SphericalHarmonics.RealHarmonics())
-    return EOSphericalHarmonicsModel{ND}(N, num_dofs, sh_index, sh_cache)
+    return EOSphericalHarmonicsModel{ND}(N, num_dofs, moments)
 end
 
 function even(model::EOSphericalHarmonicsModel)
-    return model.sh_index.even
+    return model.moments.even
 end
 
 function odd(model::EOSphericalHarmonicsModel)
-    return model.sh_index.odd
+    return model.moments.odd
 end
 
 function get_basis_harmonics(model::EOSphericalHarmonicsModel{ND}) where ND
-    viable_moments = get_all_viable_harmonics_up_to(max_degree(model), dimensionality_type(ND))
-    sort!(viable_moments, lt=isless_evenodd)
-    return viable_moments
+    # viable_moments = get_all_viable_harmonics_up_to(max_degree(model), dimensionality_type(ND))
+    # sort!(viable_moments, lt=isless_evenodd)
+    return model.moments
 end
 
 @concrete struct EEEOSphericalHarmonicsModel{ND} <: AbstractSphericalHarmonicsModel{ND}
     N
     num_dofs
-    sh_index
-    sh_cache
+    moments
 end
 
 function EEEOSphericalHarmonicsModel(N, ND)
@@ -76,93 +73,107 @@ function EEEOSphericalHarmonicsModel(N, ND)
     sort!(viable_moments, lt=isless_eeevenodd)
 
     # compute the index to evaluate using SphericalHarmonics.jl
-    sh_index_eee = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.eee]
-    sh_index_eoo = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.eoo]
-    sh_index_oeo = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.oeo]
-    sh_index_ooe = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.ooe]
+    moments_eee = [m for m in viable_moments if get_eee(m) == EEEO.eee]
+    moments_eoo = [m for m in viable_moments if get_eee(m) == EEEO.eoo]
+    moments_oeo = [m for m in viable_moments if get_eee(m) == EEEO.oeo]
+    moments_ooe = [m for m in viable_moments if get_eee(m) == EEEO.ooe]
 
-    sh_index_oee = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.oee]
-    sh_index_eoe = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.eoe]
-    sh_index_eeo = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.eeo]
-    sh_index_ooo = [findSHML_index(m, N) for m in viable_moments if get_eee(m) == EEEO.ooo]
+    moments_oee = [m for m in viable_moments if get_eee(m) == EEEO.oee]
+    moments_eoe = [m for m in viable_moments if get_eee(m) == EEEO.eoe]
+    moments_eeo = [m for m in viable_moments if get_eee(m) == EEEO.eeo]
+    moments_ooo = [m for m in viable_moments if get_eee(m) == EEEO.ooo]
 
-    sh_index = ComponentVector(eee=sh_index_eee, eoo=sh_index_eoo, oeo=sh_index_oeo, ooe=sh_index_ooe, oee=sh_index_oee, eoe=sh_index_eoe, eeo=sh_index_eeo, ooo=sh_index_ooo)
+    moments = ComponentVector(eee=moments_eee, eoo=moments_eoo, oeo=moments_oeo, ooe=moments_ooe, oee=moments_oee, eoe=moments_eoe, eeo=moments_eeo, ooo=moments_ooo)
 
     # compute the number of even and odd basis functions
     num_dofs_even = count(is_even.(viable_moments))
     num_dofs_odd = count(is_odd.(viable_moments))
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    # compute the SphericalHarmonics.jl cache
-    sh_cache = SphericalHarmonics.cache(Float64, N, SHType=SphericalHarmonics.RealHarmonics())
-    return EEEOSphericalHarmonicsModel{ND}(N, num_dofs, sh_index, sh_cache)
+    return EEEOSphericalHarmonicsModel{ND}(N, num_dofs, moments)
 end
 
 function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND
-    viable_moments = get_all_viable_harmonics_up_to(max_degree(model), dimensionality_type(ND))
-    sort!(viable_moments, lt=isless_eeevenodd)
-    return viable_moments
+    return model.moments
 end
 
 max_degree(model::AbstractSphericalHarmonicsModel) = model.N
 
 function even(model::EEEOSphericalHarmonicsModel)
-    return @view(model.sh_index[(:eee, :eoo, :oeo, :ooe)])
+    return @view(model.moments[(:eee, :eoo, :oeo, :ooe)])
 end
 
 function odd(model::EEEOSphericalHarmonicsModel)
-    return @view(model.sh_index[(:oee, :eoe, :eeo, :ooo)])
+    return @view(model.moments[(:oee, :eoe, :eeo, :ooo)])
 end
+
+function even_in(model::EEEOSphericalHarmonicsModel{ND}, n::VectorValue) where ND
+    return [m for m in model.moments if is_even_in(m, n)]
+    # _XD = dimensionality_type(ND)
+    # viable_moments = get_all_viable_harmonics_up_to(model.N, _XD)
+    # sort!(viable_moments, lt=isless_eeevenodd)
+    # sh_index_even_in = [findSHML_index(m, model.N) for m in viable_moments if is_even_in(m, n)]
+    # return sh_index_even_in
+end 
+
+function odd_in(model::EEEOSphericalHarmonicsModel{ND}, n::VectorValue) where ND
+    return [m for m in model.moments if is_odd_in(m, n)]
+    # _XD = dimensionality_type(ND)
+    # viable_moments = get_all_viable_harmonics_up_to(model.N, _XD)
+    # sort!(viable_moments, lt=isless_eeevenodd)
+    # sh_index_even_in = [findSHML_index(m, model.N) for m in viable_moments if is_odd_in(m, n)]
+    # return sh_index_even_in
+end 
 
 function get_indices_∫S²absΩuv(model::EEEOSphericalHarmonicsModel{1})
     list = ((:eee, :eee), )
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1], getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1], getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function get_indices_∫S²absΩuv(model::EEEOSphericalHarmonicsModel{2})
     list = ((:eee, :eee), (:ooe, :ooe))
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1], getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1], getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function get_indices_∫S²absΩuv(model::EEEOSphericalHarmonicsModel{3})
     list = ((:eee, :eee), (:eoo, :eoo), (:oeo, :oeo), (:ooe, :ooe))
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1], getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1], getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{1}, ::Z)
     n_even = n_basis(model).p
     list = ((:oee, :eee), )
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1].-n_even, getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{2}, ::Z)
     n_even = n_basis(model).p
     list = ((:oee, :eee), (:eoe, :ooe))
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1].-n_even, getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{2}, ::X)
     n_even = n_basis(model).p
     list = ((:eoe, :eee), (:oee, :ooe))
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1].-n_even, getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{3}, ::Z)
     n_even = n_basis(model).p
     list = ((:oee, :eee), (:ooo, :eoo), (:eeo, :oeo), (:eoe, :ooe))
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1].-n_even, getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{3}, ::X)
     n_even = n_basis(model).p
     list = ((:eoe, :eee), (:eeo, :eoo), (:ooo, :oeo), (:oee, :ooe))
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1].-n_even, getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{3}, ::Y)
     n_even = n_basis(model).p
     list = ((:eeo, :eee), (:eoe, :eoo), (:oee, :oeo), (:ooo, :ooe))
-    return tuple(((getproperty(model.sh_index, l[1]).indices[1].-n_even, getproperty(model.sh_index, l[2]).indices[1]) for l in list)...)
+    return tuple(((getproperty(model.moments, l[1]).indices[1].-n_even, getproperty(model.moments, l[2]).indices[1]) for l in list)...)
 end
 
 function num_dofs(model::EOSphericalHarmonicsModel)
@@ -177,37 +188,45 @@ function n_basis(model::AbstractSphericalHarmonicsModel)
     return (p=model.num_dofs.even, m=model.num_dofs.odd)
 end
 
-function _eval_basis_functions_cache!(model::AbstractSphericalHarmonicsModel, Ω::VectorValue{3})
-    # TODO (check): we mirror x and y to fit the definition on wikipedia https://en.wikipedia.org/wiki/Spherical_harmonics
-    θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ωz(Ω), -Ωx(Ω), -Ωy(Ω)))
-    SphericalHarmonics.computePlmcostheta!(model.sh_cache, θ)
-    SphericalHarmonics.computeYlm!(model.sh_cache, θ, ϕ)
+# should not be needed anymore
+# function _eval_basis_functions_cache!(model::AbstractSphericalHarmonicsModel, Ω::VectorValue{3})
+#     # TODO (check): we mirror x and y to fit the definition on wikipedia https://en.wikipedia.org/wiki/Spherical_harmonics
+#     θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ωz(Ω), -Ωx(Ω), -Ωy(Ω)))
+#     SphericalHarmonics.computePlmcostheta!(model.sh_cache, θ)
+#     SphericalHarmonics.computeYlm!(model.sh_cache, θ, ϕ)
+# end
+
+function _eval_basis_functions!(::AbstractSphericalHarmonicsModel, Ω::VectorValue{3}, idx)
+    return idx(Ω)
+    # _eval_basis_functions_cache!(model, Ω)
+    # return @view(model.sh_cache.Y[idx])
 end
 
-
-function _eval_basis_functions!(model::AbstractSphericalHarmonicsModel, Ω::VectorValue{3}, idx)
-    _eval_basis_functions_cache!(model, Ω)
-    return @view(model.sh_cache.Y[idx])
+function _eval_basis_functions!(::AbstractSphericalHarmonicsModel, Ω::VectorValue{3}, idx1, idx2)
+    y1 = idx1(Ω)
+    cache = first(idx1).cache
+    y2 = zeros(length(idx2))
+    for (i, sh) in enumerate(idx2)
+        y2[i] = cache.Y[(degree(sh), order(sh))]
+    end
+    return y1, y2
+    # _eval_basis_functions_cache!(model, Ω)
+    # return @view(model.sh_cache.Y[idx1]), @view(model.sh_cache.Y[idx2])
 end
 
-function _eval_basis_functions!(model::AbstractSphericalHarmonicsModel, Ω::VectorValue{3}, idx1, idx2)
-    _eval_basis_functions_cache!(model, Ω)
-    return @view(model.sh_cache.Y[idx1]), @view(model.sh_cache.Y[idx2])
+function eval_basis_functions!(model::AbstractSphericalHarmonicsModel{ND}, Ω::VectorValue{ND}, idx...=model.moments) where ND
+    _eval_basis_functions!(model, extend_3D(Ω), idx...)
 end
 
-function eval_basis_functions!(model::AbstractSphericalHarmonicsModel{ND}, Ω::VectorValue{ND}, idx=model.sh_index) where ND
-    _eval_basis_functions!(model, extend_3D(Ω), idx)
-end
-
-function eval_basis_functions!(model::AbstractSphericalHarmonicsModel{ND1}, Ω::VectorValue{ND2}, idx=model.sh_index) where {ND1, ND2}
+function eval_basis_functions!(model::AbstractSphericalHarmonicsModel{ND1}, Ω::VectorValue{ND2}, idx...=model.moments) where {ND1, ND2}
     @warn "spherical harmonics basis of dimension $ND1 evaluated with direction of dimension $ND2"
-    _eval_basis_functions!(model, extend_3D(Ω), idx)
+    _eval_basis_functions!(model, extend_3D(Ω), idx...)
 end
 
 #dirac basis evaluation
-function eval_basis(model, Ω::VectorValue{D}) where D
-    eval_basis_functions!(model, Ω)
-    (p=collect(model.sh_cache.Y[even(model)]), m=collect(model.sh_cache.Y[odd(model)]))
+function eval_basis(model::AbstractSphericalHarmonicsModel, Ω::VectorValue)
+    p_vals, m_vals = eval_basis_functions!(model, Ω, even(model), odd(model))
+    (p=p_vals, m=m_vals)
 end
 
 #integrated basis functions

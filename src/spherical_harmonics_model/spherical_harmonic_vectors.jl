@@ -12,7 +12,7 @@ function assemble_linear(int::∫S²_nΩgv, model, V, quad::SphericalQuadrature=
             # TODO: maybe add the two here.
             cache .= (dot_n_Ω * int.g(Ω)) .* Y_V
         else
-            cache .= zero(cache)
+            cache .= zero(eltype(cache))
         end
     end
     return quad(f!, cache)
