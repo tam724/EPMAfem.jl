@@ -107,7 +107,7 @@ function odd(model::EEEOSphericalHarmonicsModel)
     return @view(model.moments[(:oee, :eoe, :eeo, :ooo)])
 end
 
-function even_in(model::EEEOSphericalHarmonicsModel{ND}, n::VectorValue) where ND
+function even_in(model::AbstractSphericalHarmonicsModel{ND}, n::VectorValue) where ND
     return [m for m in model.moments if is_even_in(m, n)]
     # _XD = dimensionality_type(ND)
     # viable_moments = get_all_viable_harmonics_up_to(model.N, _XD)
@@ -116,7 +116,7 @@ function even_in(model::EEEOSphericalHarmonicsModel{ND}, n::VectorValue) where N
     # return sh_index_even_in
 end 
 
-function odd_in(model::EEEOSphericalHarmonicsModel{ND}, n::VectorValue) where ND
+function odd_in(model::AbstractSphericalHarmonicsModel{ND}, n::VectorValue) where ND
     return [m for m in model.moments if is_odd_in(m, n)]
     # _XD = dimensionality_type(ND)
     # viable_moments = get_all_viable_harmonics_up_to(model.N, _XD)
