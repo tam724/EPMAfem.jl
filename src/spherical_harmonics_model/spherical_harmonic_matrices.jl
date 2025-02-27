@@ -119,11 +119,18 @@ end
 function (quad::SphericalQuadrature)(f::Function)
     # evaluate once to compute cache size
     Ω = VectorValue(randn(), randn(), randn())
-    cache = zeros(size(f(Ω)))
+    y = f(Ω)
+    isscalar = !(y isa AbstractArray)
+    cache = zeros(size(y))
     function f!(cache, Ω)
         cache[:] .= f(Ω)
     end
-    return quad(f!, cache)
+    I = quad(f!, cache)
+    if isscalar
+        return I[1]
+    else
+        return I
+    end
 end
     
 
