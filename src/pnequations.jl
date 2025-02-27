@@ -114,11 +114,11 @@ function beam_space_distribution(eq::PNExcitation, i, (z, x, y))
 end
 
 function beam_direction_distribution(eq::PNExcitation, i, Ω)
-    return pdf(VonMisesFisher([eq.beam_directions[i]...], 10.0), [Ω...])
+    return pdf(VonMisesFisher([eq.beam_directions[i]...], 50.0), [Ω...])
 end
 
 function beam_energy_distribution(eq::PNExcitation, i, ϵ)
-    return expm2(ϵ, eq.beam_energies[i], 0.1)
+    return expm2(ϵ, eq.beam_energies[i], 0.02)
 end
 
 function compute_influx(eq::PNExcitation, mdl, ϵ_func=ϵ->1)
@@ -137,7 +137,7 @@ function compute_influx(eq::PNExcitation, mdl, ϵ_func=ϵ->1)
     for i in 1:number_of_beam_energies(eq), j in 1:number_of_beam_positions(eq), k in 1:number_of_beam_directions(eq)
         influx[i, j, k] = energy_influx[i]*space_influx[j]*dir_influx[k]
     end
-    return -influx
+    return influx
 end
 
 @concrete struct PNExtraction
