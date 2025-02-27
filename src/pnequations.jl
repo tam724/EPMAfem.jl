@@ -121,6 +121,25 @@ function beam_energy_distribution(eq::PNExcitation, i, ϵ)
     return expm2(ϵ, eq.beam_energies[i], 0.1)
 end
 
+function compute_influx(eq::PNExcitation, mdl, ϵ_func=ϵ->1)
+    influx = zeros(number_of_beam_energies(eq), number_of_beam_positions(eq), number_of_beam_directions(eq))
+    quad = SphericalHarmonicsModels.lebedev_quadrature_max()
+    n_ = VectorValue(1.0, 0.0, 0.0) #assuming outwards normal
+    dir_influx = [quad(Ω -> dot(n_, Ω) <= 0 ? dot(n_, Ω)*beam_direction_distribution(eq, i, Ω) : 0.0) for i in 1:number_of_beam_directions(eq)]
+    space_mdl = space_model(mdl)
+    space_influx = [SpaceModels.assemble_linear(SpaceModels.∫∂R_ngv{Dimensions.Z}(x -> beam_space_distribution(eq, i, Dimensions.extend_3D(x))), space_mdl, SpaceModels.even(space_mdl))|>sum for i in 1:number_of_beam_positions(eq)]
+    function trapz_quad(f, xs)
+        v = [f(x) for x in xs]
+        Δx = step(xs)
+        return Δx*(sum(v[2:end-1]) + 0.5*(v[1] + v[end]))
+    end
+    energy_influx = [trapz_quad(ϵ -> ϵ_func(ϵ)*beam_energy_distribution(eq, i, ϵ), energy_model(mdl)) for i in 1:number_of_beam_energies(eq)]
+    for i in 1:number_of_beam_energies(eq), j in 1:number_of_beam_positions(eq), k in 1:number_of_beam_directions(eq)
+        influx[i, j, k] = energy_influx[i]*space_influx[j]*dir_influx[k]
+    end
+    return -influx
+end
+
 @concrete struct PNExtraction
     extraction_energies
     pn_eq

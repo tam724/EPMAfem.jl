@@ -133,6 +133,24 @@ function discretize_extraction(pn_ex::PNExtraction, mdl::DiscretePNModel, arch::
     end
 end
 
+function discretize_outflux(mdl::DiscretePNModel, arch::PNArchitecture, ϵ_func=ϵ->one(base_type(T)))
+    T = base_type(arch)
+
+    ## instantiate Gridap
+    SM = EPMAfem.SpaceModels
+    SH = EPMAfem.SphericalHarmonicsModels
+
+    space_mdl = space_model(mdl)
+    direction_mdl = direction_model(mdl)
+
+    ## ... and extraction
+    μϵ = Vector{T}([ϵ_func(T) for ϵ ∈ energy_model(mdl)])
+    n = VectorValue(1.0, 0.0, 0.0)
+    μΩp = SH.assemble_linear(SH.∫S²_hv(Ω -> abs(dot(Ω, n))), direction_mdl, SH.even(direction_mdl)) |> arch
+    μxp = SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> isapprox(x[1], 0.0)), space_mdl, SM.even(space_mdl)) |> arch
+    return Rank1DiscretePNVector(true, mdl, arch, μϵ, μxp, μΩp)
+end
+
 # function discretize_extraction_old(pn_ex::PNExtraction, discrete_model::PNGridapModel, arch::PNArchitecture)
 #     T = base_type(arch)
 
