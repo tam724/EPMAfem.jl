@@ -5,8 +5,8 @@
     number_of_basis_functions::@NamedTuple{nϵ::Int64, nx::@NamedTuple{p::Int64, m::Int64}, nΩ::@NamedTuple{p::Int64, m::Int64}}
 end
 
-function DiscretePNModel(space_model, energy_model, direction_model)
-    @assert SpaceModels.dimensionality(space_model) == SphericalHarmonicsModels.dimensionality(direction_model)
+function DiscretePNModel(space_model, energy_model, direction_model, allow_different_dimensionality=false)
+    if !allow_different_dimensionality @assert SpaceModels.dimensionality(space_model) == SphericalHarmonicsModels.dimensionality(direction_model) end
     n_basis_energy = length(energy_model)
     n_basis_space = SpaceModels.n_basis(space_model)
     n_basis_direction = SphericalHarmonicsModels.n_basis(direction_model)
