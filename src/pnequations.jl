@@ -90,8 +90,17 @@ electron_scattering_kernel_f(eq::PNEquations, e, i) = μ -> electron_scattering_
 
 @concrete struct PNExcitation
     beam_positions
+    beam_position_σ
+
     beam_energies
+    beam_energy_σ
+
     beam_directions
+    beam_direction_κ
+end
+
+function pn_excitation(beam_positions, beam_energies, beam_directions; beam_position_σ=0.05, beam_direction_κ=50.0, beam_energy_σ=0.05)
+    return PNExcitation(beam_positions, beam_position_σ, beam_energies, beam_energy_σ, beam_directions, beam_direction_κ)
 end
 
 number_of_beam_energies(eq::PNExcitation) = length(eq.beam_energies)
@@ -110,18 +119,19 @@ end
 
 function beam_space_distribution(eq::PNExcitation, i, (z, x, y))
     # should not depend on z (well dirac maybe..)
-    return isapprox(0.0, z)*expm2((x, y), (eq.beam_positions[i].x, eq.beam_positions[i].y), (0.1, 0.1))
+    return isapprox(0.0, z, atol=1e-12)*expm2((x, y), (eq.beam_positions[i].x, eq.beam_positions[i].y), (eq.beam_position_σ, eq.beam_position_σ))
 end
 
 function beam_direction_distribution(eq::PNExcitation, i, Ω)
-    return pdf(VonMisesFisher([eq.beam_directions[i]...], 50.0), [Ω...])
+    return pdf(VonMisesFisher([eq.beam_directions[i]...], eq.beam_direction_κ), [Ω...])
 end
 
 function beam_energy_distribution(eq::PNExcitation, i, ϵ)
-    return expm2(ϵ, eq.beam_energies[i], 0.02)
+    # return 0.5+0.5*tanh(-40*(ϵ-0.9)) # 
+    return expm2(ϵ, eq.beam_energies[i], eq.beam_energy_σ)
 end
 
-function compute_influx(eq::PNExcitation, mdl, ϵ_func=ϵ->1)
+function compute_influx(eq::PNExcitation, mdl, ϵ_func=ϵ->1.0)
     influx = zeros(number_of_beam_energies(eq), number_of_beam_positions(eq), number_of_beam_directions(eq))
     quad = SphericalHarmonicsModels.lebedev_quadrature_max()
     n_ = VectorValue(1.0, 0.0, 0.0) #assuming outwards normal

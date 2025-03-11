@@ -44,7 +44,7 @@ function EOSphericalHarmonicsModel(N, ND)
     num_dofs_odd = length(odd_moments)
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    return EOSphericalHarmonicsModel{Int(ND)}(N, num_dofs, moments)
+    return EOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, num_dofs, moments)
 end
 
 function even(model::EOSphericalHarmonicsModel)
@@ -90,7 +90,7 @@ function EEEOSphericalHarmonicsModel(N, ND)
     num_dofs_odd = count(is_odd.(viable_moments))
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    return EEEOSphericalHarmonicsModel{Int(ND)}(N, num_dofs, moments)
+    return EEEOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, num_dofs, moments)
 end
 
 function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND

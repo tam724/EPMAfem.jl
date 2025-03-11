@@ -147,7 +147,7 @@ function discretize_outflux(mdl::DiscretePNModel, arch::PNArchitecture, ϵ_func=
     μϵ = Vector{T}([ϵ_func(ϵ) for ϵ ∈ energy_model(mdl)])
     n = VectorValue(1.0, 0.0, 0.0)
     μΩp = SH.assemble_linear(SH.∫S²_hv(Ω -> abs(dot(Ω, n))), direction_mdl, SH.even(direction_mdl)) |> arch
-    μxp = SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> isapprox(x[1], 0.0)), space_mdl, SM.even(space_mdl)) |> arch
+    μxp = SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> isapprox(x[1], 0.0, atol=1e-12)), space_mdl, SM.even(space_mdl)) |> arch
     return Rank1DiscretePNVector(true, mdl, arch, μϵ, μxp, μΩp)
 end
 

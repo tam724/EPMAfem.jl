@@ -15,16 +15,12 @@ struct _1D <: SpaceDimensionality end
 struct _2D <: SpaceDimensionality end
 struct _3D <: SpaceDimensionality end
 
-Int(::_1D) = 1
-Int(::_2D) = 2
-Int(::_3D) = 3
-
 dimensions(::_1D) = (Z(), )
 dimensions(::_2D) = (Z(), X())
 dimensions(::_3D) = (Z(), X(), Y())
 dimensions() = (Z(), X(), Y())
 
-function dimensionality_type(ND::Int)
+function dimensionality_type(ND::Integer)
     if ND == 1
         return _1D()
     elseif ND == 2
@@ -36,6 +32,11 @@ function dimensionality_type(ND::Int)
     end
 end
 dimensionality_type(ND::SpaceDimensionality) = ND
+
+dimensionality_int(::_1D) = 1
+dimensionality_int(::_2D) = 2
+dimensionality_int(::_3D) = 3
+dimensionality_int(ND::Integer) = ND ∈ (1, 2, 3) ? ND : error("number of dimensions ND=$(ND) must be 1, 2 or 3 (1D, 2D or 3D)")
 
 cartesian_unit_vector(::Z, ::_1D) = VectorValue(1.0)
 

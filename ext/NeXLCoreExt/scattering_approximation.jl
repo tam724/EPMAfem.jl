@@ -27,5 +27,5 @@ function truncate_svd_and_normalize(svd_, rank)
 end
 
 function build_scattering_approximation(E, K, ϵ_model, rank)
-    return [(scale(interpolate(E[:, r], BSpline(Linear())), ϵ_model), EPMAfem.SphericalHarmonicsModels.LegendreBasisExp(K[r, :])) for r in 1:rank]
+    return [(Interpolations.scale(Interpolations.interpolate(E[:, r], BSpline(Linear())), ϵ_model), EPMAfem.SphericalHarmonicsModels.LegendreBasisExp(K[r, :])) for r in 1:rank]
 end

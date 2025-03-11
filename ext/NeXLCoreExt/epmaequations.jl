@@ -3,9 +3,11 @@
     dim_basis
     scattering_approx
     energy_model_dimless
+    elastic_scattering_cross_section
+    bethe_energy_loss
 end
 
-function epma_equations(elements, energy_model_units, PN_N, ϵ_rel=1e-6)
+function epma_equations(elements, energy_model_units, PN_N; elastic_scattering_cross_section=NeXLCore.Liljequist1989, bethe_energy_loss=NeXLCore.JoyLuo, ϵ_rel=1e-6)
     energy_interval = energy_model_units[end] - energy_model_units[1]
     dim_basis = DimBasis(500u"nm", energy_interval, minimum(e.density for e in elements))
 
@@ -17,7 +19,7 @@ function epma_equations(elements, energy_model_units, PN_N, ϵ_rel=1e-6)
         for (i_n, n) in enumerate(0:PN_N)
             for (i_ϵ, ϵ) in enumerate(energy_model_units)
                 ϵ_eV = ϵ / u"eV" |> upreferred
-                As[e][i_ϵ, i_n] = dimless(hquadrature(μ -> NeXLCore.δσδΩ(NeXLCore.ScreenedRutherford, acos(μ), elm, Float64(ϵ_eV))*Pl.(μ, n), -1, 1, maxevals=100000)[1]*u"cm"^2 / elm.atomic_mass, dim_basis)
+                As[e][i_ϵ, i_n] = dimless(hquadrature(μ -> NeXLCore.δσδΩ(elastic_scattering_cross_section, acos(μ), elm, Float64(ϵ_eV))*Pl.(μ, n), -1, 1, maxevals=100000)[1]*u"cm"^2 / elm.atomic_mass, dim_basis)
             end
         end
     end
@@ -29,7 +31,7 @@ function epma_equations(elements, energy_model_units, PN_N, ϵ_rel=1e-6)
     end
     scattering_approx = [build_scattering_approximation(E, K, energy_model_dimless, rank) for (E, K) in EKs]
 
-    return EPMAEquations(elements, dim_basis, scattering_approx, energy_model_dimless)
+    return EPMAEquations(elements, dim_basis, scattering_approx, energy_model_dimless, elastic_scattering_cross_section, bethe_energy_loss)
 end
 
 function EPMAfem.number_of_elements(eq::EPMAEquations)
@@ -42,7 +44,7 @@ end
 
 function stopping_power_units(eq::EPMAEquations, e, ϵ)
     ϵ_eV = ϵ / u"eV" |> upreferred # convert energy to eV
-    s = -NeXLCore.dEds(NeXLCore.Bethe, ϵ_eV, eq.elements[e], 1.0)*u"eV"*u"cm"^2/u"g"
+    s = -NeXLCore.dEds(eq.bethe_energy_loss, ϵ_eV, eq.elements[e], 1.0)*u"eV"*u"cm"^2/u"g"
     return s
 end
 
