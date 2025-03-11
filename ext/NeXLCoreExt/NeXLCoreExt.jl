@@ -1,6 +1,9 @@
 module NeXLCoreExt
 
 using EPMAfem
+using EPMAfem.SpaceModels
+using EPMAfem.SphericalHarmonicsModels
+using EPMAfem.Gridap
 using Dimensionless
 using ConcreteStructs
 using NeXLCore.Unitful
@@ -24,6 +27,7 @@ end
 
 include("scattering_approximation.jl")
 include("epmaequations.jl")
+include("epmamodel.jl")
 
 
 end

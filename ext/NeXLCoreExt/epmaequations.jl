@@ -2,18 +2,19 @@
     elements
     dim_basis
     scattering_approx
+    energy_model_dimless
 end
 
-function epma_equations(elements, energy_model_units, N, ϵ_rel=1e-6)
+function epma_equations(elements, energy_model_units, PN_N, ϵ_rel=1e-6)
     energy_interval = energy_model_units[end] - energy_model_units[1]
     dim_basis = DimBasis(500u"nm", energy_interval, minimum(e.density for e in elements))
 
     energy_model_dimless = dimless(energy_model_units, dim_basis)
     
     ## process scattering cross section
-    As = [zeros(length(energy_model_units), N+1) for e in 1:length(elements)]
+    As = [zeros(length(energy_model_units), PN_N+1) for e in 1:length(elements)]
     for (e, elm) in enumerate(elements)
-        for (i_n, n) in enumerate(0:N)
+        for (i_n, n) in enumerate(0:PN_N)
             for (i_ϵ, ϵ) in enumerate(energy_model_units)
                 ϵ_eV = ϵ / u"eV" |> upreferred
                 As[e][i_ϵ, i_n] = dimless(hquadrature(μ -> NeXLCore.δσδΩ(NeXLCore.ScreenedRutherford, acos(μ), elm, Float64(ϵ_eV))*Pl.(μ, n), -1, 1, maxevals=100000)[1]*u"cm"^2 / elm.atomic_mass, dim_basis)
@@ -28,7 +29,7 @@ function epma_equations(elements, energy_model_units, N, ϵ_rel=1e-6)
     end
     scattering_approx = [build_scattering_approximation(E, K, energy_model_dimless, rank) for (E, K) in EKs]
 
-    return EPMAEquations(elements, dim_basis, scattering_approx)
+    return EPMAEquations(elements, dim_basis, scattering_approx, energy_model_dimless)
 end
 
 function EPMAfem.number_of_elements(eq::EPMAEquations)
