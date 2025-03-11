@@ -36,7 +36,7 @@ function ((; b, cache)::PNVectorIntegrator{<:PNProbe})(idx, ψ)
                 cache.integral.p[:, :, idx.i] .+= ψp 
                 cache.integral.m[:, :, idx.i] .+= ψm
             else
-                bϵ2 = idx.adjoint ? T(Δϵ*0.5) * (bases.bϵ[minus½(idx)] + bases.bϵ[plus½(idx)]) : T(Δϵ)*bases.ϵ[idx]
+                bϵ2 = idx.adjoint ? T(Δϵ*0.5) * (bases.ϵ[minus½(idx)] + bases.ϵ[plus½(idx)]) : T(Δϵ)*bases.ϵ[idx]
                 cache.integral.p[:, :, 1] .+= bϵ2 .* ψp
                 cache.integral.m[:, :, 1] .+= bϵ2 .* ψm
             end
@@ -101,7 +101,7 @@ function finalize_integration((; b, cache)::PNVectorIntegrator{<:PNProbe})
             if isnothing(b.ϵ)
                 return dropdims(cache.integral.p + cache.integral.m; dims=(1, 2)) |> collect
             else
-                return (p=dropdims(cache.integral.p), m=dropdims(cache.integral.m))
+                return only(cache.integral.p |> collect) + only(cache.integral.m |> collect)
             end
         end
     end
@@ -109,6 +109,13 @@ end
 
 function (p::PNProbe)(ψ::AbstractDiscretePNSolution)
     return solve_and_integrate(p, ψ)
+end
+
+function interpolable(p::PNProbe, ψ::AbstractDiscretePNSolution)
+    integral = solve_and_integrate(p, ψ)
+    if isnothing(p.ϵ) @error("Not yet implemented") end
+    if isnothing(p.Ω) && !isnothing(p.x) return SphericalHarmonicsModels.interpolable(integral, direction_model(p.model)) end
+    if isnothing(p.x) && !isnothing(p.Ω) return SpaceModels.interpolable(integral, space_model(p.model)) end
 end
 
 # @concrete terse struct PNBoundaryProbe <: AbstractDiscretePNVector

@@ -44,7 +44,7 @@ function EOSphericalHarmonicsModel(N, ND)
     num_dofs_odd = length(odd_moments)
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    return EOSphericalHarmonicsModel{ND}(N, num_dofs, moments)
+    return EOSphericalHarmonicsModel{Int(ND)}(N, num_dofs, moments)
 end
 
 function even(model::EOSphericalHarmonicsModel)
@@ -90,7 +90,7 @@ function EEEOSphericalHarmonicsModel(N, ND)
     num_dofs_odd = count(is_odd.(viable_moments))
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    return EEEOSphericalHarmonicsModel{ND}(N, num_dofs, moments)
+    return EEEOSphericalHarmonicsModel{Int(ND)}(N, num_dofs, moments)
 end
 
 function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND
@@ -236,13 +236,15 @@ end
 
 function interpolable(b, model)
     function interpolant(Ω)
-        eval_basis_functions!(model, Ω)
         if hasproperty(b, :m) # if not we assume its zero
-            return dot(b.p, model.sh_cache.Y[even(model)]) + dot(b.m, model.sh_cache.Y[odd(model)])
+            Y_even, Y_odd = eval_basis_functions!(model, Ω, even(model), odd(model))
+            return dot(b.p, Y_even) + dot(b.m, Y_odd)
         elseif hasproperty(b, :p) # if not we assume that b = b.p
-            return dot(b.p, model.sh_cache.Y[even(model)])
+            Y_even = eval_basis_functions!(model, Ω, even(model))
+            return dot(b.p, Y_even)
         else
-            return dot(b, model.sh_cache.Y[even(model)])
+            Y_even = eval_basis_functions!(model, Ω, even(model))
+            return dot(b, Y_even)
         end
     end
     return interpolant
