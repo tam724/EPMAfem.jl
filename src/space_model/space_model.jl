@@ -74,7 +74,21 @@ function eval_basis(model, μ::Function)
     return (p=bp, m=bm)
 end
 
+# boundary basis evaluation
+function eval_basis_boundary(model, μ::Function, dim)
+    bp = assemble_linear(∫∂R_ngv{dim}(μ), model, even(model))
+    bm = zeros(num_free_dofs(odd(model)))
+    return (p=bp, m=bm)
+end
+
 function interpolable(vec, model)
+    interp = uncached_interpolable(vec, model)
+    rand_point = cartesian_unit_vector(Z(), dimensionality(model))
+    cache = Gridap.Arrays.return_cache(interp, rand_point)
+    return x -> Gridap.Arrays.evaluate!(cache, interp, x)
+end
+
+function uncached_interpolable(vec, model)
     if hasproperty(vec, :p) && hasproperty(vec, :m)
         p_func = FEFunction(even(model), Float64.(vec.p))
         m_func = FEFunction(odd(model), Float64.(vec.m))
@@ -85,6 +99,6 @@ function interpolable(vec, model)
     else
         p_func = FEFunction(even(model), Float64.(vec))
         return p_func
-    end    
+    end
 end
 

@@ -19,7 +19,8 @@ dimensions(::_1D) = (Z(), )
 dimensions(::_2D) = (Z(), X())
 dimensions(::_3D) = (Z(), X(), Y())
 dimensions() = (Z(), X(), Y())
-function dimensionality_type(ND::Int)
+
+function dimensionality_type(ND::Integer)
     if ND == 1
         return _1D()
     elseif ND == 2
@@ -30,6 +31,12 @@ function dimensionality_type(ND::Int)
         error("number of dimensions ND=$(ND) must be 1, 2 or 3 (1D, 2D or 3D)")
     end
 end
+dimensionality_type(ND::SpaceDimensionality) = ND
+
+dimensionality_int(::_1D) = 1
+dimensionality_int(::_2D) = 2
+dimensionality_int(::_3D) = 3
+dimensionality_int(ND::Integer) = ND ∈ (1, 2, 3) ? ND : error("number of dimensions ND=$(ND) must be 1, 2 or 3 (1D, 2D or 3D)")
 
 cartesian_unit_vector(::Z, ::_1D) = VectorValue(1.0)
 
@@ -47,6 +54,11 @@ extend_3D(x::VectorValue{3}) = x
 Ωz(Ω::VectorValue{3}) = Ω[1]
 Ωx(Ω::VectorValue{3}) = Ω[2]
 Ωy(Ω::VectorValue{3}) = Ω[3]
+
+Ωz(Ω::VectorValue{2}) = Ω[1]
+Ωx(Ω::VectorValue{2}) = Ω[2]
+
+Ωz(Ω::VectorValue{1}) = Ω[1]
 
 to_Ω(z, x, y) = VectorValue(z, x, y)
 from_Ω(Ω) = (; z=Ωz(Ω), x=Ωx(Ω), y=Ωy(Ω))

@@ -36,8 +36,29 @@ int_func(::Val{:∫S²_absΩxuv}, Ω) = abs(Ωx(Ω))
 int_func(::Val{:∫S²_absΩyuv}, Ω) = abs(Ωy(Ω))
 int_func(::Val{:∫S²_absΩzuv}, Ω) = abs(Ωz(Ω))
 
-@concrete struct ∫S²_kuv
-    k
+@concrete struct LegendreBasisExp
+    coeffs
+end
+
+function (f::LegendreBasisExp)(μ)
+    inf_it = LegendrePolynomials.LegendrePolynomialIterator(μ)
+    val = zero(μ)
+    l = 0
+    for (c_l, Pl) in zip(f.coeffs, inf_it)
+        val += (2.0*l+1.0)/2.0*c_l*Pl
+        l+=1
+    end
+    return val
+end
+
+function expand_legendre(f, N, quad=hcubature_quadrature)
+    cache = LegendrePolynomials.OffsetVector{Float64}(undef, 0:N)
+    c = hquadrature(μ -> f(μ).*collectPl!(cache, μ, lmax=N), -1.0, 1.0, rtol=quad.rtol, atol=quad.atol, maxevals=quad.maxevals)[1]
+    return LegendreBasisExp(c)
+end
+
+@concrete struct ∫S²_kuv{F}
+    k::F
 end
 
 const IntFuncIntegral = Union{Val{:∫S²_uv}, ∫S²_μuv, Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv}, Val{:∫S²_Ωyuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}, Val{:∫S²_absΩzuv}}
@@ -98,25 +119,51 @@ end
 function (quad::SphericalQuadrature)(f::Function)
     # evaluate once to compute cache size
     Ω = VectorValue(randn(), randn(), randn())
-    cache = zeros(size(f(Ω)))
+    y = f(Ω)
+    isscalar = !(y isa AbstractArray)
+    cache = zeros(size(y))
     function f!(cache, Ω)
         cache[:] .= f(Ω)
     end
-    return quad(f!, cache)
+    I = quad(f!, cache)
+    if isscalar
+        return I[1]
+    else
+        return I
+    end
 end
     
+
 function assemble_bilinear(integral::∫S²_kuv, model, U, V, quad::hcubature_quadrature)
     N = max_degree(model)
-    Σl = 2*π*hquadrature(μ -> integral.k(μ).*Pl.(μ, 0:N), -1.0, 1.0, rtol=quad.rtol, atol=quad.atol, maxevals=quad.maxevals)[1]
+    Σl = 2*π*hquadrature(μ -> integral.k(μ).*collectPl.(μ, lmax=N), -1.0, 1.0, rtol=quad.rtol, atol=quad.atol, maxevals=quad.maxevals)[1]
     A = zeros(length(V), length(U))
+    for (i, v) in enumerate(V)
+        for (j, u) in enumerate(U)
+            if u == v # isotropic scattering is diagonal (in spherical harmonic basis)
+                l = degree(u) #  == degree(v)
+                A[i, j] = Σl[l]
+            else
+                A[i, j] = 0.0
+            end
+        end
+    end
+    return A
+    # return Diagonal([Σl[l+1] for (l, k) in get_even_moments(N, nd)]), Diagonal([Σl[l+1] for (l, k) in get_odd_moments(N, nd)])
+end
+
+function assemble_bilinear(integral::∫S²_kuv{<:LegendreBasisExp}, model, U, V, quad::hcubature_quadrature)
+    N = max_degree(model)
+    A = zeros(length(V), length(U))
+    all_harmonics = SphericalHarmonics.ML(0:N) |> collect
 
     for (i, v) in enumerate(V)
         for (j, u) in enumerate(U)
             if u == v # isotropic scattering is diagonal (in spherical harmonic basis)
                 l = degree(u) #  == degree(v)
-                A[i, j] = Σl[l+1]
-            else
-                A[i, j] = 0.0
+                # if l in axes(integral.k.coeffs, 1)
+                    A[i, j] = integral.k.coeffs[l+1]
+                # end
             end
         end
     end

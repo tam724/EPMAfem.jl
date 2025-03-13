@@ -44,7 +44,7 @@ function EOSphericalHarmonicsModel(N, ND)
     num_dofs_odd = length(odd_moments)
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    return EOSphericalHarmonicsModel{ND}(N, num_dofs, moments)
+    return EOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, num_dofs, moments)
 end
 
 function even(model::EOSphericalHarmonicsModel)
@@ -90,7 +90,7 @@ function EEEOSphericalHarmonicsModel(N, ND)
     num_dofs_odd = count(is_odd.(viable_moments))
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    return EEEOSphericalHarmonicsModel{ND}(N, num_dofs, moments)
+    return EEEOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, num_dofs, moments)
 end
 
 function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND
@@ -107,7 +107,7 @@ function odd(model::EEEOSphericalHarmonicsModel)
     return @view(model.moments[(:oee, :eoe, :eeo, :ooo)])
 end
 
-function even_in(model::EEEOSphericalHarmonicsModel{ND}, n::VectorValue) where ND
+function even_in(model::AbstractSphericalHarmonicsModel{ND}, n::VectorValue) where ND
     return [m for m in model.moments if is_even_in(m, n)]
     # _XD = dimensionality_type(ND)
     # viable_moments = get_all_viable_harmonics_up_to(model.N, _XD)
@@ -116,7 +116,7 @@ function even_in(model::EEEOSphericalHarmonicsModel{ND}, n::VectorValue) where N
     # return sh_index_even_in
 end 
 
-function odd_in(model::EEEOSphericalHarmonicsModel{ND}, n::VectorValue) where ND
+function odd_in(model::AbstractSphericalHarmonicsModel{ND}, n::VectorValue) where ND
     return [m for m in model.moments if is_odd_in(m, n)]
     # _XD = dimensionality_type(ND)
     # viable_moments = get_all_viable_harmonics_up_to(model.N, _XD)
@@ -236,13 +236,15 @@ end
 
 function interpolable(b, model)
     function interpolant(Ω)
-        eval_basis_functions!(model, Ω)
         if hasproperty(b, :m) # if not we assume its zero
-            return dot(b.p, model.sh_cache.Y[even(model)]) + dot(b.m, model.sh_cache.Y[odd(model)])
+            Y_even, Y_odd = eval_basis_functions!(model, Ω, even(model), odd(model))
+            return dot(b.p, Y_even) + dot(b.m, Y_odd)
         elseif hasproperty(b, :p) # if not we assume that b = b.p
-            return dot(b.p, model.sh_cache.Y[even(model)])
+            Y_even = eval_basis_functions!(model, Ω, even(model))
+            return dot(b.p, Y_even)
         else
-            return dot(b, model.sh_cache.Y[even(model)])
+            Y_even = eval_basis_functions!(model, Ω, even(model))
+            return dot(b, Y_even)
         end
     end
     return interpolant

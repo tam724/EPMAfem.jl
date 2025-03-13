@@ -24,7 +24,7 @@ function IterableDiscretePNSolution(system::AbstractDiscretePNSystem, b::Abstrac
     end
     current_solution = allocate_solution_vector(system)
     b_assembler = initialize_assembly(b)
-    return IterableDiscretePNSolution(system, b_assembler, current_solution, false, nothing)
+    return IterableDiscretePNSolution(system, b_assembler, current_solution, false, initial_solution)
 end
 
 function _is_adjoint_solution(ψ::IterableDiscretePNSolution)
