@@ -16,6 +16,8 @@ function number_of_scatterings(::PNEquations)
 end
 
 function stopping_power(::PNEquations, e, ϵ)
+    # for viz:
+    # return 1.0
     if e == 1
         return exp(-ϵ*0.5)
     elseif e == 2
@@ -43,16 +45,15 @@ function absorption_coefficient(eq::PNEquations, energy_model)
     A = zeros(n_elem, length(energy_model))
     for e in 1:n_elem
         for (i_ϵ, ϵ) in enumerate(energy_model)
-            for i_s = 1:number_of_scatterings(eq)
-                # τ = σ
-                A[e, i_ϵ] += scattering_coefficient(eq, e, i_s, ϵ)
-            end
+            A[e, i_ϵ] += absorption_coefficient(eq, e, ϵ)
         end
     end
     return A
 end
 
 function scattering_coefficient(::PNEquations, e, i, ϵ)
+    # for viz:
+    # return 20.0
     if e == 1
         return 2*exp(-ϵ*0.7)
     elseif e == 2
@@ -79,6 +80,8 @@ function mass_concentrations(::PNEquations, e, x)
     return 1.0
 end
 
+# for viz:
+# scattering_kernel_func(μ) = exp(-100.0*(μ-1.0)^2)
 scattering_kernel_func(μ) = exp(-5.0*(μ-1.0)^2)
 
 function electron_scattering_kernel(eq::PNEquations, e, i, μ)

@@ -13,18 +13,20 @@ using LinearAlgebra
 using Gridap
 #using StaticArrays
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1.5, 1.5), (40, 120)))
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -0.5, 0.5), (100, 100)))
 # direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 3)
-direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
+direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(27, 2)
 
 equations = EPMAfem.PNEquations()
 excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.5, 0.0) |> normalize, VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.5, 0.0) |> normalize])
 extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
 
+model = EPMAfem.DiscretePNModel(space_model, 0.0:0.01:1.0, direction_model)
+
+EPMAfem.compute_influx(excitation, model)
 # SM.dimensionality(space_model)
 # SH.dimensionality(direction_model)
 
-model = EPMAfem.DiscretePNModel(space_model, 0.0:0.05:1.0, direction_model)
 # model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.01:1.0, direction_model, EPMAfem.cuda())
 # model_cuda = EPMAfem.PNGridapModel(space_model, 0.0:0.05:1.0, direction_model, EPMAfem.cuda())
 
@@ -36,10 +38,115 @@ model = EPMAfem.DiscretePNModel(space_model, 0.0:0.05:1.0, direction_model)
 #model = model_cuda
 #discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
 updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda(), updatable=true)
+# updatable_pnproblem.problem.kp[1][1].diag .= 1.0
+# updatable_pnproblem.problem.kp[2][1].diag .= 1.0
+# updatable_pnproblem.problem.km[1][1].diag .= 1.0
+# updatable_pnproblem.problem.km[2][1].diag .= 1.0
+
+updatable_pnproblem.problem.kp[1][1].diag |> collect |> plot
+
 discrete_system = EPMAfem.schurimplicitmidpointsystem(updatable_pnproblem.problem)
 
 discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
 discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda(), updatable=true)
+
+discrete_outflux = EPMAfem.discretize_outflux(model, EPMAfem.cuda())
+
+
+sol = discrete_system * discrete_rhs[1, 35, 2]
+
+@gif for (ϵ, ψ) in sol
+    ψp, ψm = EPMAfem.pmview(ψ, model)
+    func = EPMAfem.SpaceModels.interpolable(ψp[:, 1] |> collect, EPMAfem.space_model(model))
+    p = heatmap(-1.0:0.01:0, -0.5:0.01:0.5, func.interp, swapxy=true, aspect_ratio=:equal)
+    # display(p)
+end
+
+cached_sol = EPMAfem.saveall(sol)
+
+anim = @animate for ϵ in 1.0:-0.03:0.0
+    @show ϵ
+    mean_probe = EPMAfem.PNProbe(model, EPMAfem.cuda(); ϵ = ϵ, Ω = Ω -> 1.0)
+    q_mean = EPMAfem.interpolable(mean_probe, cached_sol)
+
+    zx = [Gridap.Point(z_, x_) for x_ in range(-0.3, 0.3, length=20) for z_ in range(-0.5, -0.01, length=20)]
+    point_probes = [EPMAfem.PNProbe(model, EPMAfem.cuda(), ϵ = ϵ, x = zx_) for zx_ in zx]
+    evals = [EPMAfem.interpolable(pr, cached_sol) for pr in point_probes]
+
+    heatmap(-0.5:0.01:0.0, -0.5:0.01:0.5, q_mean.interp, swapxy=true, aspect_ratio=:equal)
+    for i in 1:length(zx)
+        # circle_lines!(evals[i], zx[i][1], zx[i][2], 0.03/q_mean.interp(zx[i]); color=:white, label=nothing)
+        circle_lines!(evals[i], zx[i][1], zx[i][2], 0.1; color=:white, label=nothing, linewidth=1)
+    end
+    Plots.scatter!(Dimensions.Ωx.(zx), Dimensions.Ωz.(zx), marker=:dot, color=:white, markersize=2, label=nothing)
+    Plots.xlims!(-0.5, 0.5)
+    Plots.ylims!(-0.5, 0.0)
+end
+
+gif(anim, fps=4)
+
+cached_sol = EPMAfem.saveall(sol)
+
+q_mean
+
+@time q_mean(zx[1])
+mean_cache = Gridap.Arrays.return_cache(q_mean, zx[1])
+@time Gridap.Arrays.evaluate!(mean_cache, q_mean, zx[1])
+
+function streamline_plot(sol, ϵ_func)
+    arch = sol.system.problem.arch
+    model = sol.system.problem.model
+    cached_sol = EPMAfem.saveall(sol)
+    zprobe = EPMAfem.PNProbe(model, arch; ϵ = ϵ_func, Ω = Ω -> Dimensions.Ωz(Ω))
+    qz = EPMAfem.interpolable(zprobe, cached_sol)
+    xprobe = EPMAfem.PNProbe(model, arch; ϵ = ϵ_func, Ω = Ω -> Dimensions.Ωx(Ω))
+    qx = EPMAfem.interpolable(xprobe, cached_sol)
+
+    mean_probe = EPMAfem.PNProbe(model, arch; ϵ = ϵ_func, Ω = Ω -> 1.0)
+    q_mean = EPMAfem.interpolable(mean_probe, cached_sol)
+    zx = [Gridap.Point(z, x) for z in -0.7:0.01:0.0, x in -0.5:0.01:0.5]
+    q_mean_eval = q_mean.(zx)
+
+    function f(x_::Point2)
+        z = x_[2]
+        x = x_[1]
+        return Point2(qx(Gridap.Point(z, x)), qz(Gridap.Point(z, x)))
+    end
+
+    fig = Figure()
+    ax = Axis(fig[1, 1], aspect=DataAspect())
+    CairoMakie.contourf!(ax, -0.5:0.01:0.5, -0.7:0.01:0.0, q_mean_eval')
+    splt = CairoMakie.streamplot!(ax, f, -0.5..0.5, -0.7..0.0, color=p -> RGBA(1.0, 1.0, 1.0, norm(p)/0.0025), maxsteps=9)
+    fig
+end
+
+streamline_plot(sol, 0.5)
+
+
+using CairoMakie
+
+
+
+# temp = probe(sol)
+
+xx_probe = EPMAfem.PNProbe(model, EPMAfem.cuda(); ϵ = ϵ -> 1.0, x=Point(-0.1, 0.0))
+hΩ = EPMAfem.interpolable(xx_probe, cached_sol)
+circle_viz(hΩ)
+
+EPMAfem.SphericalHarmonicsModels.eval_basis_functions!(direction_model, Point(-1.0, 0.0, 0.0))
+
+temp_func = EPMAfem.SpaceModels.interpolable(temp.p, EPMAfem.space_model(model))
+plot(-1.5:0.01:1.5, x -> temp_func(Point(0.0, x)))
+plot!(-1.5:0.01:1.5, x -> EPMAfem.beam_space_distribution(excitation, 1, Point(0.0, x, 0.0)))
+
+outflux = 2*discrete_outflux * discrete_system * discrete_rhs + influx
+
+#plot([pos.x for pos in excitation.beam_positions], meas[2, :, 2])
+plot!([pos.x for pos in excitation.beam_positions], outflux[1, :, 2] ./ -influx[1, :, 2])
+#plot!([pos.x for pos in excitation.beam_positions], outflux[2, :, 2] ./ -influx[2, :, 2])
+
+#plot!([pos.x for pos in excitation.beam_positions], )
+
 
 prob = EPMAfem.EPMAProblem(updatable_pnproblem, discrete_rhs, discrete_ext)
 EPMAfem.update_standard_intensities!(prob)
@@ -51,15 +158,21 @@ plot!(prob.standard_intensities[2, 1, :, 2])
 plot!(prob.standard_intensities[1, 1, :, 3])
 plot!(prob.standard_intensities[2, 1, :, 3])
 
-function mass_concentrations(e, x)
-    if x[2] < -0.1 || x[2] > 0.1
-        return e==1 ? 1.0 : 0.0
-    else
-        return e==1 ? 0.0 : 1.0
-    end
-end
 
+function mass_concentrations(e, x)
+    # homogeneous material
+    return e == 1 ? 0.0 : 3.0
+    # return 0.5
+
+    # if x[2] < 0.0 #|| x[2] > 0.1
+    #     return e==1 ? 3.0 : 0.0
+    # else
+    #     return e==1 ? 0.0 : 2.0
+    # end
+end
 ρs = EPMAfem.discretize_mass_concentrations([x -> mass_concentrations(e, x) for e in 1:2], model)
+EPMAfem.update_problem!(updatable_pnproblem, ρs)
+
 
 meas = prob(ρs)
 # CUDA.@profile meas = prob(ρs)

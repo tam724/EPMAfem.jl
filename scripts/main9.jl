@@ -146,12 +146,9 @@ space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel(space_
 energy_model = dimless(ϵ_range, eq.dim_basis)
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(PN_N, 2)
 
-
 model = EPMAfem.DiscretePNModel(space_model, energy_model, direction_model)
 pnproblem = EPMAfem.discretize_problem(eq, model, EPMAfem.cuda(), updatable=false)
-
 discrete_system = EPMAfem.schurimplicitmidpointsystem(pnproblem)
-
 
 excitation = EPMAfem.PNExcitation([(x=0.0, y=0.0)], [energy_model[end-10]], [VectorValue(-1.0, 0.0, 0.0)])
 discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
@@ -169,13 +166,26 @@ heatmap(-0.4:0.01:0, -2:0.01:1, func, swapxy=true, aspect_ratio=:equal)
 ## 1D
 include("plot_overloads.jl")
 
-PN_N = 21
+PN_N = 23
 mat = [n"Cu"]
-ϵ_range = range(5.0u"keV", 20.0u"keV", length=80)
-eq = NExt.epma_equations(mat, ϵ_range, PN_N, 5);
+ϵ_range = range(10u"eV", 20.0u"keV", length=200)
+eq = NExt.epma_equations(mat, ϵ_range, PN_N)
+ϵ_range_dimless = NExt.dimless(ϵ_range, eq.dim_basis)
+
+
+plot(ϵ_range, ϵ -> NExt.σₜ_recon(eq, 1, dimless(ϵ, eq.dim_basis)))
+plot!(ϵ_range, ϵ -> dimless(NeXLCore.σₜ(NeXLCore.ScreenedRutherford, mat[1], ϵ / u"eV" |> upreferred)u"cm"^2 / mat[1].atomic_mass, eq.dim_basis))
+
+plot_range = range(5u"keV", 20.0u"keV", length=200)
+plot()
+for i in 1:length(mat)
+    plot!(plot_range, ϵ -> NExt.σₜ_recon(eq, i, dimless(ϵ, eq.dim_basis)))
+    plot!(plot_range, ϵ -> dimless(NeXLCore.σₜ(NeXLCore.ScreenedRutherford, mat[i], ϵ / u"eV" |> upreferred)u"cm"^2 / mat[i].atomic_mass, eq.dim_basis))
+end
+plot!()
 
 space_extensions_dimless = dimless.((-700u"nm", 0u"nm"), eq.dim_basis)
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel(space_extensions_dimless, (100)))
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel(space_extensions_dimless, (200)))
 energy_model = dimless(ϵ_range, eq.dim_basis)
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(PN_N, 1)
 
@@ -185,7 +195,20 @@ pnproblem = EPMAfem.discretize_problem(eq, model, EPMAfem.cuda(), updatable=fals
 discrete_system = EPMAfem.schurimplicitmidpointsystem(pnproblem)
 
 excitation = EPMAfem.PNExcitation([(x=0.0, y=0.0)], [dimless(15.0u"keV", eq.dim_basis)], [VectorValue(-1.0, 0.0, 0.0)])
+influx = EPMAfem.compute_influx(excitation, model)
+influx_weighted = EPMAfem.compute_influx(excitation, model, ϵ -> 1e15*dimless(ionizationcrosssection(n"Cu K", dimful(ϵ, u"eV", eq.dim_basis) / u"eV" |> upreferred)u"cm"^2, eq.dim_basis))
+
 discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
+discrete_outflux = EPMAfem.discretize_outflux(model, EPMAfem.cuda())
+discrete_outflux_weighted = EPMAfem.discretize_outflux(model, EPMAfem.cuda(), ϵ -> 1e15*dimless(ionizationcrosssection(n"Cu K", dimful(ϵ, u"eV", eq.dim_basis) / u"eV" |> upreferred)u"cm"^2, eq.dim_basis))
+
+outflux = 2*discrete_outflux * discrete_system * discrete_rhs[1] + influx[1]
+outflux_weighted = 2*discrete_outflux_weighted * discrete_system * discrete_rhs[1] + influx_weighted[1]
+
+η_BS = outflux / -influx[1]
+
+phi0 = 1.0 + outflux_weighted / -influx_weighted[1]
+
 
 probe = EPMAfem.PNProbe(model, EPMAfem.cuda(); Ω=Ω->1.0, ϵ=ϵ -> dimless(ionizationcrosssection(n"Cu K", dimful(ϵ, u"eV", eq.dim_basis) / u"eV" |> upreferred)u"cm"^2, eq.dim_basis))
 
@@ -202,13 +225,19 @@ z_dimless = dimless(z, eq.dim_basis)
 #     plot(-1:0.01:0, func)
 #     ylims!(-0.1, 0.9)
 # end
+using NeXLMatrixCorrection
+alg_xpp = NeXLMatrixCorrection.XPP(Material("", Dict(n"Cu"=>1.0)), n"Cu K", dimful(excitation.beam_energies[1], u"eV", eq.dim_basis) / u"eV" |> upreferred)
+alg_cit = NeXLMatrixCorrection.CitZAF(Material("", Dict(n"Cu"=>1.0)), n"Cu K", dimful(excitation.beam_energies[1], u"eV", eq.dim_basis) / u"eV" |> upreferred)
+alg_xphi = NeXLMatrixCorrection.XPhi(Material("", Dict(n"Cu"=>1.0)), n"Cu K", dimful(excitation.beam_energies[1], u"eV", eq.dim_basis) / u"eV" |> upreferred)
 
-alg = NeXLMatrixCorrection.XPP(Material("", Dict(n"Cu"=>1.0)), n"Cu K", dimful(excitation.beam_energies[1], u"eV", eq.dim_basis) / u"eV" |> upreferred)
 function phi_rho_z(alg, z)
     ρz = n"Cu".density * z * (u"cm"^2 / u"g") |> upreferred
-    @show ρz
+    @show -ρz
     ϕ(alg, -ρz)
 end
 
-plot(z, func.(Point.(z_dimless))/2.047990649409106e-14)
-plot!(z, x -> phi_rho_z(alg, x))
+plot(z, func.(Point.(z_dimless)) / func(Point(0.0)) * phi0, label="pn")
+plot!(z, x -> phi_rho_z(alg_xpp, x), label="phi-rho-z_xpp")
+plot!(z, x -> phi_rho_z(alg_cit, x), label="phi-rho-z_cit")
+plot!(z, x -> phi_rho_z(alg_xphi, x), label="phi-rho-z_xphi")
+
