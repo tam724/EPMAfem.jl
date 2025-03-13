@@ -44,9 +44,9 @@ end
 true_ρs = EPMAfem.discretize_mass_concentrations([x -> mass_concentrations(e, x) for e in 1:2], model)
 true_meas = prob(true_ρs)
 
-plt1 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal)
-plt2 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal)
-display(plot(plt1, plt2))
+# plt1 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal)
+# plt2 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal)
+# display(plot(plt1, plt2))
 
 # plots of forward problem
 let
