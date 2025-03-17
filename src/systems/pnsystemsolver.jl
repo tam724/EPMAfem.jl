@@ -85,6 +85,11 @@ end
     err_vec
 end
 
+cuview(A::Array, slice) = uview(A, slice)
+cuview(A::SubArray, slice) = uview(A, slice)
+cuview(A::CuArray, slice) = view(A, slice)
+
+
 symmetrize_blockmat(::PNKrylovMinresSolver) = true
 
 function PNKrylovMinresSolver(VT, (m, n)::Tuple{<:Int, <:Int}; tol=nothing, window=5)
