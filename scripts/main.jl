@@ -70,7 +70,7 @@ begin
 
     C_ass = Diagonal(zeros(10*11))
 
-    EPMAfem.assemble_diag(C_ass, Z)
+    # EPMAfem.assemble_diag(C_ass, Z)
 
     x = rand(10*11)
     y = zeros(10*11)
@@ -178,6 +178,20 @@ begin
     @show maximum(abs.(A*x .- b))
     @show maximum(abs.(A*x2 .- b))
     @show maximum(abs.(A*x3 .- b))
+
+    ## transpose system
+    EPMAfem.pn_linsolve!(solver, x, transpose(M), b)
+    EPMAfem.pn_linsolve!(direct_solver, x2, transpose(M), b)
+    EPMAfem.pn_linsolve!(schur_solver, x3, transpose(M), b)
+
+    @show x
+
+    @show maximum(abs.(x .- x2))
+    @show maximum(abs.(x .- x3))
+    AT = transpose(A)
+    @show maximum(abs.(AT*x .- b))
+    @show maximum(abs.(AT*x2 .- b))
+    @show maximum(abs.(AT*x3 .- b))
 end
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), 100))
@@ -204,7 +218,7 @@ EPMAfem.compute_influx(excitation, model)
 
 #model = model_cuda
 #discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
-updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu(), updatable=true)
+updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda(), updatable=true)
 # updatable_pnproblem.problem.kp[1][1].diag .= 1.0
 # updatable_pnproblem.problem.kp[2][1].diag .= 1.0
 # updatable_pnproblem.problem.km[1][1].diag .= 1.0
@@ -214,19 +228,28 @@ discrete_system = EPMAfem.fullimplicitmidpointsystem(updatable_pnproblem.problem
 discrete_system1 = EPMAfem.implicit_midpoint(updatable_pnproblem.problem, EPMAfem.PNKrylovMinresSolver)
 discrete_system2 = EPMAfem.implicit_midpoint(updatable_pnproblem.problem, EPMAfem.PNSchurSolver; solver=EPMAfem.PNKrylovMinresSolver)
 
-discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cpu())
-discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cpu(), updatable=true)
+discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
+discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda(), updatable=true)
 
-discrete_outflux = EPMAfem.discretize_outflux(model, EPMAfem.cpu())
+discrete_outflux = EPMAfem.discretize_outflux(model, EPMAfem.cuda())
 
 @time sol = discrete_ext[1].vector * (discrete_system  * discrete_rhs[1, 35, 2])
 @time sol = discrete_ext[1].vector * (discrete_system1 * discrete_rhs[1, 35, 2])
 @time sol = discrete_ext[1].vector * (discrete_system2 * discrete_rhs[1, 35, 2])
 
-@time sol = discrete_ext[1].vector * (discrete_system3 * discrete_rhs[1, 35, 2])
-@time sol = discrete_ext[1].vector * (discrete_system4 * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system  * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system1 * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system2 * discrete_rhs[1, 35, 2])
+
+# @time sol = discrete_ext[1].vector * (discrete_system3 * discrete_rhs[1, 35, 2])
+# @time sol = discrete_ext[1].vector * (discrete_system4 * discrete_rhs[1, 35, 2])
 
 @time sol = (discrete_ext[1].vector * discrete_system)  * discrete_rhs[1, 35, 2]
+@time sol = (discrete_ext[1].vector * discrete_system1) * discrete_rhs[1, 35, 2]
+@time sol = (discrete_ext[1].vector * discrete_system2) * discrete_rhs[1, 35, 2]
+
+@time sol = (discrete_ext[1].vector * discrete_system)  * discrete_rhs[1, 35, 2]
+@time sol = (discrete_ext[1].vector * discrete_system1) * discrete_rhs[1, 35, 2]
 @time sol = (discrete_ext[1].vector * discrete_system2) * discrete_rhs[1, 35, 2]
 
 @profview sol = discrete_ext[1].vector * (discrete_system * discrete_rhs[1, 35, 2])

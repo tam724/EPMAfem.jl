@@ -4,7 +4,9 @@ abstract type AbstractPNSystemSolver end
 # cuview(A::CuArray, slice) = view(A, slice)
 
 @concrete struct PNSchurSolver <: AbstractPNSystemSolver
-    N
+    C_ass
+    cache
+
     b_schur
     lin_solver
 end
@@ -18,11 +20,11 @@ function PNSchurSolver(VT, A::BlockMat2{T}; solver=PNKrylovMinresSolver, solver_
     # allocate cache for the diagonal
     C_ass = Diagonal(VT(undef, n_C))
     cache = VT(undef, n_C)
-    N = SchurBlockMat2{T}(A, C_ass, cache)
-    b_schur = VT(undef, size(N)[1])
+    # N = SchurBlockMat2{T}(A, C_ass, cache)
+    b_schur = VT(undef, size(A.A)[1])
 
-    lin_solver = solver(VT, N; solver_kwargs...)
-    PNSchurSolver(N, b_schur, lin_solver)
+    lin_solver = solver(VT, size(A.A); solver_kwargs...)
+    PNSchurSolver(C_ass, cache, b_schur, lin_solver)
 end
 
 function pn_linsolve!(S::PNSchurSolver, x, A, b)
@@ -31,19 +33,19 @@ function pn_linsolve!(S::PNSchurSolver, x, A, b)
     # x_ = zeros(size(A)[2])
     # pn_linsolve!(solver, x_, A, b)
 
+    N = SchurBlockMat2{eltype(A)}(A, S.C_ass, S.cache)
 
-    @assert S.N.M == A
-    update_cache!(S.N)
+    update_cache!(N)
 
-    x1 = @view(x[1:S.N.M.n1])
+    n1, _ = block_size(A)
 
-    schur_rhs!(S.b_schur, b, S.N)
-    pn_linsolve!(S.lin_solver, x1, S.N, S.b_schur)
-    schur_sol!(x, b, S.N)
+    x1 = @view(x[1:n1])
+
+    schur_rhs!(S.b_schur, b, N)
+    pn_linsolve!(S.lin_solver, x1, N, S.b_schur)
+    schur_sol!(x, b, N)
 
     # @show maximum(abs.(x_ .- x))
-
-
 end
 
 ## DIRECT SOLVER
@@ -54,7 +56,7 @@ end
 symmetrize_blockmat(::PNDirectSolver) = false
 
 
-function PNDirectSolver(VT, A)
+function PNDirectSolver(_, _)
     return PNDirectSolver()
 end
 
@@ -85,7 +87,35 @@ end
 
 symmetrize_blockmat(::PNKrylovMinresSolver) = true
 
-function PNKrylovMinresSolver(VT, A; tol=nothing, window=5)
+function PNKrylovMinresSolver(VT, (m, n)::Tuple{<:Int, <:Int}; tol=nothing, window=5)
+    @assert m == n
+    T = eltype(VT)
+
+    atol = T(0)
+    if isnothing(tol)
+        rtol = T(sqrt(eps(Float64)))
+    else
+        rtol = T(tol)
+    end
+
+    return PNKrylovMinresSolver(
+        atol,
+        rtol,
+
+        m,
+        n,
+        VT,
+        VT(undef, 0),
+        VT(undef, n),
+        VT(undef, n),
+        VT(undef, n),
+        VT(undef, n),
+        VT(undef, n),
+        VT(undef, 0),
+        zeros(T, window))
+end
+
+function PNKrylovMinresSolver(VT, A::BlockMat2; tol=nothing, window=5)
     m, n = size(A)
     @assert m == n
     T = eltype(VT)
