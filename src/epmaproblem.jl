@@ -8,7 +8,7 @@
 end
 
 function EPMAProblem(problem::UpdatableDiscretePNProblem, excitations::Array{<:Rank1DiscretePNVector}, extractions::Array{<:UpdatableRank1DiscretePNVector})
-    system = schurimplicitmidpointsystem(problem.problem)
+    system = implicit_midpoint(problem.problem, PNSchurSolver)
     standard_intensities = ones(size(extractions)..., size(excitations)...)
     return EPMAProblem(problem, system, excitations, extractions, standard_intensities)
 end

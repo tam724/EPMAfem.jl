@@ -173,8 +173,8 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
     Λp⁻½, Λm⁻½ = pmview(b.cached_solution[minus½(idx)], problem.model)
     Λp⁺½, Λm⁺½ = pmview(b.cached_solution[plus½(idx)], problem.model)
 
-    mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁺½[:]), Δ, β)
-    mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁺½[:]), γ*Δ, β)
+    mul!(@view(rhsp[:]), ZMatrix2(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁺½[:]), Δ, β)
+    mul!(@view(rhsm[:]), ZMatrix2(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁺½[:]), γ*Δ, β)
 
     for ie in 1:ne
         cache.a[ie] = -problem.s[ie, idx]/Δϵ + problem.τ[ie, idx]*0.5
@@ -182,8 +182,8 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
             cache.c[ie][iσ] = -problem.σ[ie, iσ, idx]*0.5
         end
     end
-    mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁻½[:]), Δ, true)
-    mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁻½[:]), γ*Δ, true)
+    mul!(@view(rhsp[:]), ZMatrix2(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁻½[:]), Δ, true)
+    mul!(@view(rhsm[:]), ZMatrix2(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁻½[:]), γ*Δ, true)
 end
 
 ## NOW VECTOR

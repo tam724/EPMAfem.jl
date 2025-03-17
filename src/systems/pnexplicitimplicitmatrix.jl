@@ -57,6 +57,22 @@ computes
     W2 # CACHE: matrix of size nB1 x nB2
 end
 
+# constructor that figues out the matrix sizes:
+function ZMatrix2(A, B, C, γ, δ, W1, W2)
+    nA1, nA2 = size(first(A))
+    nB1, nB2 = size(B)
+    T = eltype(first(A))
+
+    I = length(A)
+    J = length(first(C))
+
+    mat = ZMatrix2{T}(A, B, C, γ, δ, nA1, nA2, nB1, nB2, I, J, W1, W2)
+    size_check(mat)
+    return mat
+end
+    
+
+
 function Base.size(M::ZMatrix2)
     return (M.nA1*M.nB2, M.nA2*M.nB1)
 end
