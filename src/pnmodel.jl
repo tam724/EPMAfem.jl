@@ -1,4 +1,4 @@
-@concrete struct DiscretePNModel <: AbstractPNModel
+@concrete struct DiscretePNModel
     space_mdl
     energy_mdl
     direction_mdl
@@ -58,8 +58,6 @@ function energy_eval_basis(energy_model, f::Function)
     return f.(energy_model)
 end
 
-
-
 function direction_model(model::DiscretePNModel)
     return model.direction_mdl
 end
@@ -87,19 +85,19 @@ function n_basis(model::DiscretePNModel)
     return model.number_of_basis_functions
 end
 
-function pview(v::AbstractVector, model::AbstractPNModel)
+function pview(v::AbstractVector, model::DiscretePNModel)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     @assert length(v) == nxp*nΩp + nxm*nΩm
     return reshape(@view(v[1:nxp*nΩp]), (nxp, nΩp))
 end
 
-function mview(v::AbstractVector, model::AbstractPNModel)
+function mview(v::AbstractVector, model::DiscretePNModel)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     @assert length(v) == nxp*nΩp + nxm*nΩm
     return reshape(@view(v[nxp*nΩp+1:nxp*nΩp + nxm*nΩm]), (nxm, nΩm))
 end
 
-function pmview(v::AbstractVector, model::AbstractPNModel)
+function pmview(v::AbstractVector, model::DiscretePNModel)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     @assert length(v) == nxp*nΩp + nxm*nΩm
     pview = reshape(@view(v[1:nxp*nΩp]), (nxp, nΩp))

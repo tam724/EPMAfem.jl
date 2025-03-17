@@ -6,6 +6,351 @@ include("../redefine_rmul.jl")
 ## Naming Convention: lowercase: vector values, uppercase: matrix valued
 ##
 
+"""
+computes
+    Y = α*(∑I A_i * X + (γ_i B + ∑J δ_ij C_ij)) + β*Y
+"""
+@concrete struct ZMatrix2{T}
+    A # AbstractVector (size I) of matrices of size nA1 x nA2
+    B # Matrix of size nB1 x nB2
+    C # AbstractVector of Vector (size I of J) of matrices of size nB1 x nB2
+
+    γ # AbstractVector (size I) of scalars
+    δ # AbstractVector of Vector (size I of J) of scalars
+
+    # matrix sizes
+    nA1
+    nA2
+    nB1
+    nB2
+
+    # iteration sizes
+    I
+    J
+
+    W1 # CACHE: matrix of size nA1 x nB1
+    W2 # CACHE: matrix of size nB1 x nB2
+end
+
+function Base.size(M::ZMatrix2)
+    return (M.nA1*M.nB2, M.nA2*M.nB1)
+end
+
+function LinearAlgebra.isdiag(M::ZMatrix2)
+    return all((isdiag(Ai) for Ai in M.A)) && isdiag(M.B) && all((isdiag(Cij) for Ci in M.C for Cij in Ci))
+end
+
+function assemble_diag(M_ass::Diagonal, M::ZMatrix2)
+    @assert isdiag(M)
+    # and square
+    @assert M.nA1 == M.nA2
+    @assert M.nB1 == M.nB2
+
+    for i in 1:M.I
+        cache_W2!(M.W2, M, i)
+        if i == 1
+            mul!(reshape(M_ass.diag, (M.nA1, M.nB1)), reshape(M.A[i].diag, (M.nA1, 1)), reshape(M.W2.diag, (1, M.nB1)), true, false)
+        else
+            mul!(reshape(M_ass.diag, (M.nA1, M.nB1)), reshape(M.A[i].diag, (M.nA1, 1)), reshape(M.W2.diag, (1, M.nB1)), true, true)
+        end
+    end
+    return nothing
+end
+
+function assemble_diag(M_ass::Diagonal, M::Diagonal)
+    M_ass.diag .= M.diag
+    return nothing
+end
+
+function size_check(M::ZMatrix2)
+    @assert length(M.A) == M.I
+    @assert length(M.C) == M.I
+    @assert all((length(Ci) == M.J) for Ci in M.C)
+    @assert length(M.γ) == M.I
+    @assert length(M.δ) == M.I
+    @assert all((length(δi) == M.J for δi in M.δ))
+
+    @assert all((size(Ai) == (M.nA1, M.nA2) for Ai in M.A))
+    @assert size(M.B) == (M.nB1, M.nB2)
+    @assert all((size(Cij) == (M.nB1, M.nB2) for Ci in M.C for Cij in Ci))
+
+    @assert size(M.W1) == (M.nA1, M.nB1)
+    @assert size(M.W2) == (M.nB1, M.nB2)
+end
+
+function cache_W2!(W2::AbstractArray, M::ZMatrix2, i)
+    axpby!(M.γ[i], M.B, false, W2)
+    for j in 1:M.J
+        axpy!(M.δ[i][j], M.C[i][j], W2)
+    end
+
+    # W2 .= M.γ[i] .* M.B
+    # for j in 1:M.J
+    #     W2 .+= M.δ[i][j] .* M.C[i][j]
+    # end
+end
+
+function cache_W2!(W2::Diagonal, M::ZMatrix2, i)
+    axpby!(M.γ[i], M.B.diag, false, W2.diag)
+    for j in 1:M.J
+        axpy!(M.δ[i][j], M.C[i][j].diag, W2.diag)
+    end
+    
+    # W2.diag .= M.γ[i] .* M.B.diag
+    # for j in 1:M.J
+    #     W2.diag .+= M.δ[i][j] .* M.C[i][j].diag
+    # end
+end
+
+function LinearAlgebra.mul!(y::AbstractVector, M::ZMatrix2, x::AbstractVector, α::Number, β::Number)
+    X = reshape(x, M.nA2, M.nB1)
+    Y = reshape(y, M.nA1, M.nB2)
+
+    for i in 1:M.I
+        mul!(M.W1, M.A[i], X)
+
+        cache_W2!(M.W2, M, i)
+
+        if i == 1
+            mul!(Y, M.W1, M.W2, α, β)
+        else
+            mul!(Y, M.W1, M.W2, α, true)
+        end
+    end
+    return nothing
+end
+
+function LinearAlgebra.transpose(M::ZMatrix2{T}) where T
+    return Transpose{T, typeof(M)}(M)
+end
+
+function LinearAlgebra.mul!(y::AbstractVector, MT::Transpose{<:Any, <:ZMatrix2}, x::AbstractVector, α::Number, β::Number)
+    M = MT.parent
+    X = reshape(x, M.nA1, M.nB2)
+    Y = reshape(y, M.nA2, M.nB1)
+
+    for i in 1:M.I
+
+        cache_W2!(M.W2, M, i)
+
+        mul!(M.W1, X, transpose(M.W2))
+
+        if i == 1
+            mul!(Y, transpose(M.A[i]), M.W1, α, β)
+        else
+            mul!(Y, transpose(M.A[i]), M.W1, α, true)
+        end
+    end
+    return nothing
+end
+
+
+"""
+computes
+    Y = α*(∑I A_i * X * B_i) + β*Y
+"""
+@concrete struct DMatrix2{T}
+    A # AbstractVector (size I) of matrices of size nA1 x nA2
+    B # AbstractVector (size I) of matrices of size nB1 x nB2
+
+    # matrix sizes
+    nA1
+    nA2
+    nB1
+    nB2
+
+    # iteration sizes
+    I
+
+    W1 # CACHE: matrix of size nA1 x nB1
+end
+
+function Base.size(M::DMatrix2)
+    return (M.nA1*M.nB2, M.nA2*M.nB1)
+end
+
+function LinearAlgebra.mul!(y::AbstractVector, M::DMatrix2, x::AbstractVector, α::Number, β::Number)
+    X = reshape(x, M.nA2, M.nB1)
+    Y = reshape(y, M.nA1, M.nB2)
+
+    for i in 1:M.I
+        mul!(M.W1, M.A[i], X)
+        if i == 1
+            mul!(Y, M.W1, M.B[i], α, β)
+        else
+            mul!(Y, M.W1, M.B[i], α, true)
+        end
+    end
+    return nothing
+end
+
+function LinearAlgebra.transpose(M::DMatrix2{T}) where T
+    return Transpose{T, typeof(M)}(M)
+end
+
+function LinearAlgebra.mul!(y::AbstractVector, MT::Transpose{<:Any, <:DMatrix2}, x::AbstractVector, α::Number, β::Number)
+    M = MT.parent
+    X = reshape(x, M.nA1, M.nB2)
+    Y = reshape(y, M.nA2, M.nB1)
+
+    for i in 1:M.I
+        mul!(M.W1, X, transpose(M.B[i]))
+        if i == 1
+            mul!(Y, transpose(M.A[i]), M.W1, α, β)
+        else
+            mul!(Y, transpose(M.A[i]), M.W1, α, true)
+        end
+    end
+    return nothing
+end
+
+"""
+computes
+    Y1 = α*Δ( [A + γ*D]*X1        + [δ*B]*X2 ) + β*Y1
+    Y2 = α*Δ( [δT * transp(B)]*X1 + [C]*X2   ) + β*Y2
+
+if `sym`
+    Y2 =-α*Δ( [δT * transp(B)]*X1 + [C]*X2   ) + β*Y2
+"""
+@concrete struct BlockMat2{T}
+    A # matrix of size n1 x n1
+    B # matrix of size n1 x n2
+    C # matrix of size n2 x n2
+    D # matrix of size n1 x n1
+
+    # matrix sizes
+    n1
+    n2
+
+    # coefficients (Ref values!)
+    γ
+    δ
+    δT
+
+    # scales the whole matrix (Ref value!)
+    Δ
+
+    # symmetrizes the lower part of the matrix (Ref value!)
+    sym
+end
+
+Base.size(M::BlockMat2) = (M.n1+M.n2, M.n1+M.n2)
+Base.size(M::BlockMat2, i) = size(M)[i]
+Base.eltype(::BlockMat2{T}) where T = T
+
+function LinearAlgebra.mul!(y::AbstractVector, M::BlockMat2, x::AbstractVector, α::Number, β::Number)
+    x1 = @view(x[1:M.n1])
+    x2 = @view(x[M.n1+1:M.n1+M.n2])
+
+    y1 = @view(y[1:M.n1])
+    y2 = @view(y[M.n1+1:M.n1+M.n2])
+
+    # pp
+    mul!(y1, M.A, x1, M.Δ[]*α, β)
+    mul!(y1, M.D, x1, M.Δ[]*M.γ[]*α, true)
+
+    # # mp
+    mul!(y1, M.B, x2, M.Δ[]*M.δ[]*α, true)
+
+    # *(-1) for the lower part of the matrix if symmetrized
+    s = M.sym[] ? -1 : 1
+
+    # mm
+    mul!(y2, M.C, x2, s*M.Δ[]*α, β)
+
+    # pm
+    mul!(y2, transpose(M.B), x1, s*M.Δ[]*M.δT[]*α, true)
+    return nothing
+end
+
+function LinearAlgebra.transpose(M::BlockMat2{T}) where T
+    return Transpose{T, typeof(M)}(M)
+end
+
+function LinearAlgebra.mul!(y::AbstractVector, MT::Transpose{<:Any, <:BlockMat2}, x::AbstractVector, α::Number, β::Number)
+    M = MT.parent
+
+    x1 = @view(x[1:M.n1])
+    x2 = @view(x[M.n1+1:M.n1+M.n2])
+
+    y1 = @view(y[1:M.n1])
+    y2 = @view(y[M.n1+1:M.n1+M.n2])
+
+    # pp
+    mul!(y1, transpose(M.A), x1, M.Δ[]*α, β)
+    mul!(y1, transpose(M.D), x1, M.Δ[]*M.γ[]*α, true)
+
+    # # mp
+    mul!(y1, M.B, x2, M.Δ[]*M.δT[]*α, true)
+
+    # *(-1) for the lower part of the matrix if symmetrized
+    s = M.sym[] ? -1 : 1
+
+    # mm
+    mul!(y2, transpose(M.C), x2, s*M.Δ[]*α, β)
+
+    # pm
+    mul!(y2, transpose(M.B), x1, s*M.Δ[]*M.δ[]*α, true)
+    return nothing
+end
+
+@concrete struct SchurBlockMat2{T}
+    M # the full matrix this schur matrix is derived from: BlockMat2
+    C_ass # the assembled cache of the lower right block (Diagonal n1 x n1)
+
+    # cache 
+    w1 # vector of size n1
+end
+
+Base.size(N::SchurBlockMat2) = (N.M.n1, N.M.n1)
+Base.size(N::SchurBlockMat2, i) = size(N)[i]
+Base.eltype(::SchurBlockMat2{T}) where T = T
+
+function update_cache!(N::SchurBlockMat2)
+    assemble_diag(N.C_ass, N.M.C)
+end
+
+function LinearAlgebra.mul!(y::AbstractVector, N::SchurBlockMat2, x::AbstractVector, α::Number, β::Number)
+    M = N.M
+
+    mul!(N.w1, transpose(M.B), x, M.δT[], false)
+    ldiv!(N.C_ass, N.w1)
+    mul!(y, M.B, N.w1, -M.Δ[]*M.δ[]*α, β)
+
+    mul!(y, M.A, x, M.Δ[]*α, true)
+    mul!(y, M.D, x, M.Δ[]*M.γ[]*α, true)
+end
+
+function schur_rhs!(b_schur, b, N::SchurBlockMat2)
+    M = N.M
+
+    b1 = @view(b[1:M.n1])
+    b2 = @view(b[M.n1+1:M.n1+M.n2])
+    b_schur .= b1
+    ldiv!(N.w1, N.C_ass, b2)
+    s = M.sym[] ? -1 : 1
+    mul!(b_schur, M.B, N.w1, -s*M.δ[], true)
+    return nothing
+end
+
+function schur_sol!(x, b, N::SchurBlockMat2)
+    M = N.M
+
+    b1 = @view(b[1:M.n1])
+    b2 = @view(b[M.n1+1:M.n1+M.n2])
+
+    x1 = @view(x[1:M.n1])
+    x2 = @view(x[M.n1+1:M.n1+M.n2])
+
+    s = M.sym[] ? -1 : 1
+    x2 .= (s/M.Δ[]) .* b2
+    mul!(x2, transpose(M.B), x1, -M.δT[], true)
+    ldiv!(N.C_ass, x2)
+    return nothing
+end
+
+########### LEGACY
+
 @concrete struct ZMatrix
     ρ
     i

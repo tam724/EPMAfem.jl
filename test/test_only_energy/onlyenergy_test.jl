@@ -3,7 +3,7 @@ module OnlyEnergyTests
 
 using EPMAfem
 
-using EPMAfem: AbstractPNModel, PNArchitecture, energy_model, mass_concentrations, stopping_power, absorption_coefficient, scattering_coefficient, number_of_scatterings, number_of_elements, base_type
+using EPMAfem: PNArchitecture, energy_model, mass_concentrations, stopping_power, absorption_coefficient, scattering_coefficient, number_of_scatterings, number_of_elements, base_type
 using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, schurimplicitmidpointsystem, fullimplicitmidpointsystem
 
 using SpecialFunctions

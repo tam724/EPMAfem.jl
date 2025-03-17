@@ -1,4 +1,4 @@
-@concrete struct DiscretePNProblem <: AbstractDiscretePNProblem
+@concrete struct DiscretePNProblem
     model
     arch
 
@@ -23,9 +23,9 @@
     Ωpm
 end
 
-architecture(pnproblem::DiscretePNProblem) = pnproblem.arch
-n_basis(pnproblem::DiscretePNProblem) = n_basis(pnproblem.model)
-n_sums(pnproblem::DiscretePNProblem) = (nd = length(pnproblem.∇pm), ne = size(pnproblem.s, 1), nσ = size(pnproblem.σ, 2))
+architecture(problem::DiscretePNProblem) = problem.arch
+n_basis(problem::DiscretePNProblem) = n_basis(problem.model)
+n_sums(problem::DiscretePNProblem) = (nd = length(dimensions(problem.model)), ne = size(problem.s, 1), nσ = size(problem.σ, 2))
 
 Base.show(io::IO, p::DiscretePNProblem) = print(io, "PNProblem [$(n_basis(p)) and $(n_sums(p))]")
 Base.show(io::IO, ::MIME"text/plain", p::DiscretePNProblem) = show(io, p)

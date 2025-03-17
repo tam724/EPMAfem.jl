@@ -13,12 +13,179 @@ using LinearAlgebra
 using Gridap
 #using StaticArrays
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -0.5, 0.5), (100, 100)))
+begin
+    # test for DMatrix2 (and its transpose)
+    D = EPMAfem.DMatrix2{Float64}([rand(10, 11) for i in 1:2], [rand(12, 13) for i in 1:2], 10, 11, 12, 13, 2, zeros(10, 12))
+    A = kron(transpose(D.B[1]), D.A[1]) + kron(transpose(D.B[2]), D.A[2])
+
+    x = rand(11*12)
+    y = zeros(10*13)
+    y2 = zeros(10*13)
+
+    mul!(y, D, x, true, false)
+    y2 = A*x
+    @show maximum(abs.(y .- y2))
+
+    x = rand(10*13)
+    y = zeros(11*12)
+    y2 = zeros(11*12)
+
+    DT = transpose(D);
+    AT = transpose(A);
+    mul!(y, DT, x, true, false)
+    y2 = AT*x
+    @show maximum(abs.(y .- y2))
+end
+
+begin
+    # test for ZMatrix2 (and its transpose)
+    Z = EPMAfem.ZMatrix2{Float64}([rand(10, 11) for i in 1:2], rand(12, 13), [[rand(12, 13) for j in 1:3] for i in 1:2], rand(2), [rand(3) for i in 1:2], 10, 11, 12, 13, 2, 3, zeros(10, 12), zeros(12, 13))
+    EPMAfem.size_check(Z)
+    A = sum(kron(transpose(γ_i * Z.B + sum((δ_ij * C_ij for (δ_ij, C_ij) in zip(δ_i, C_i)))), A_i) for (γ_i, δ_i, C_i, A_i) in zip(Z.γ, Z.δ, Z.C, Z.A))
+
+    x = rand(11*12)
+    y = zeros(10*13)
+    y2 = zeros(10*13)
+
+    mul!(y, Z, x, true, false)
+    mul!(y2, A, x, true, false)
+    @show maximum(abs.(y .- y2))
+
+    x = rand(10*13)
+    y = zeros(11*12)
+    y2 = zeros(11*12)
+
+    ZT = transpose(Z);
+    AT = transpose(A);
+    mul!(y, ZT, x, true, false)
+    y2 = AT*x
+    @show maximum(abs.(y .- y2))
+
+end
+
+begin
+    # test ZMatrix2 (diagonal assembly)
+    Z = EPMAfem.ZMatrix2{Float64}([Diagonal(rand(10)) for i in 1:2], Diagonal(rand(11)), [[Diagonal(rand(11)) for j in 1:3] for i in 1:2], rand(2), [rand(3) for i in 1:2], 10, 10, 11, 11, 2, 3, zeros(10, 11), Diagonal(zeros(11)))
+    EPMAfem.size_check(Z)
+
+    C_ass = Diagonal(zeros(10*11))
+
+    EPMAfem.assemble_diag(C_ass, Z)
+
+    x = rand(10*11)
+    y = zeros(10*11)
+    y2 = zeros(10*11)
+
+    mul!(y, Z, x, true, false)
+    mul!(y2, Z, x, true, false)
+
+    @show maximum(abs.(y .- y2))
+end
+
+# test for BlockMat2 (and its transpose)
+begin
+    n1 = 10
+    n2 = 11
+    B = EPMAfem.BlockMat2{Float64}(rand(n1, n1), rand(n1, n2), rand(n2, n2), rand(n1, n1), n1, n2, Ref(rand()), Ref(rand()), Ref(rand()), Ref(rand()), false)
+    B_sym = EPMAfem.BlockMat2{Float64}(B.A, B.B, B.C, B.D, B.n1, B.n2, B.γ, B.δ, B.δT, B.Δ, true)
+    A = B.Δ[]*[B.A + B.γ[]*B.D B.δ[]*B.B
+        B.δT[]*transpose(B.B) B.C]
+    A_sym = B.Δ[]*[B.A + B.γ[]*B.D B.δ[]*B.B
+        -B.δT[]*transpose(B.B) -B.C]
+
+    x = rand(n1 + n2)
+    y = rand(n1 + n2)
+    y2 = rand(n1 + n2)
+
+    mul!(y, B, x, true, false)
+    mul!(y2, A, x, true, false)
+    @show maximum(abs.(y .- y2))
+
+    mul!(y, B_sym, x, true, false)
+    mul!(y2, A_sym, x, true, false)
+    @show maximum(abs.(y .- y2))
+
+    BT = transpose(B);
+    AT = transpose(A)
+    x = rand(n1 + n2)
+    y = rand(n1 + n2)
+    y2 = rand(n1 + n2)
+
+    mul!(y, BT, x, true, false)
+    mul!(y2, AT, x, true, false)
+    @show maximum(abs.(y .- y2))
+end
+
+## test for schur matrix
+begin
+    n1 = 10
+    n2 = 11
+    A = rand(n1, n1)
+    B = rand(n1, n2)
+    C = Diagonal(rand(n2))
+    D = rand(n1, n1)
+
+    M = EPMAfem.BlockMat2{Float64}(A, B, C, D, n1, n2, Ref(rand()), Ref(rand()), Ref(rand()), Ref(rand()), Ref(true))
+    N = EPMAfem.SchurBlockMat2{Float64}(M, Diagonal(zeros(n2)), zeros(n2))
+
+    M_full = EPMAfem.assemble_from_op(M)
+    UL = M_full[1:10, 1:10]
+    UR = M_full[1:10, 11:21]
+    LL = M_full[11:21, 1:10]
+    LR = M_full[11:21, 11:21]
+
+    temp = UL .- UR * inv(Diagonal(diag(LR))) * LL
+
+    EPMAfem.update_cache!(N)
+
+    N_full = EPMAfem.assemble_from_op(N)
+    N_full .- temp
+end
+
+begin
+    ## test solving of block mat and schur mat
+    n1 = 10
+    n2 = 11
+    A__ = randn(n1, n1)
+    A = (A__ + transpose(A__)) / 2
+    B = randn(n1, n2)
+    C = Diagonal(randn(n2))
+    D = Diagonal(randn(n1))
+
+    δ = randn()
+    M = EPMAfem.BlockMat2{Float64}(A, B, C, D, n1, n2, Ref(randn()), Ref(δ), Ref(-δ), Ref(0.1), Ref(true))
+
+    solver = EPMAfem.PNKrylovMinresSolver(Vector{Float64}, M)
+    direct_solver = EPMAfem.PNDirectSolver(Vector{Float64}, M)
+    schur_solver = EPMAfem.PNSchurSolver(Vector{Float64}, M)
+
+    b = rand(n1+n2)
+    x = zeros(n1+n2)
+    x2 = zeros(n1+n2)
+    x3 = zeros(n1+n2)
+
+    EPMAfem.pn_linsolve!(solver, x, M, b)
+    EPMAfem.pn_linsolve!(direct_solver, x2, M, b)
+    EPMAfem.pn_linsolve!(schur_solver, x3, M, b)
+
+    @show x
+
+    @show maximum(abs.(x .- x2))
+    @show maximum(abs.(x .- x3))
+
+    A = EPMAfem.assemble_from_op(M)
+
+    @show maximum(abs.(A*x .- b))
+    @show maximum(abs.(A*x2 .- b))
+    @show maximum(abs.(A*x3 .- b))
+end
+
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), 100))
 # direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 3)
-direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(27, 2)
+direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(13, 1)
 
 equations = EPMAfem.PNEquations()
-excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.5, 0.0) |> normalize, VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.5, 0.0) |> normalize])
+excitation = EPMAfem.pn_excitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.5, 0.0) |> normalize, VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.5, 0.0) |> normalize])
 extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
 
 model = EPMAfem.DiscretePNModel(space_model, 0.0:0.01:1.0, direction_model)
@@ -37,23 +204,66 @@ EPMAfem.compute_influx(excitation, model)
 
 #model = model_cuda
 #discrete_problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
-updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda(), updatable=true)
+updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu(), updatable=true)
 # updatable_pnproblem.problem.kp[1][1].diag .= 1.0
 # updatable_pnproblem.problem.kp[2][1].diag .= 1.0
 # updatable_pnproblem.problem.km[1][1].diag .= 1.0
 # updatable_pnproblem.problem.km[2][1].diag .= 1.0
 
-updatable_pnproblem.problem.kp[1][1].diag |> collect |> plot
+discrete_system = EPMAfem.fullimplicitmidpointsystem(updatable_pnproblem.problem)
+discrete_system1 = EPMAfem.implicit_midpoint(updatable_pnproblem.problem, EPMAfem.PNKrylovMinresSolver)
+discrete_system2 = EPMAfem.implicit_midpoint(updatable_pnproblem.problem, EPMAfem.PNSchurSolver; solver=EPMAfem.PNKrylovMinresSolver)
 
-discrete_system = EPMAfem.schurimplicitmidpointsystem(updatable_pnproblem.problem)
+discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cpu())
+discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cpu(), updatable=true)
 
-discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
-discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda(), updatable=true)
+discrete_outflux = EPMAfem.discretize_outflux(model, EPMAfem.cpu())
 
-discrete_outflux = EPMAfem.discretize_outflux(model, EPMAfem.cuda())
+@time sol = discrete_ext[1].vector * (discrete_system  * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system1 * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system2 * discrete_rhs[1, 35, 2])
+
+@time sol = discrete_ext[1].vector * (discrete_system3 * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system4 * discrete_rhs[1, 35, 2])
+
+@time sol = (discrete_ext[1].vector * discrete_system)  * discrete_rhs[1, 35, 2]
+@time sol = (discrete_ext[1].vector * discrete_system2) * discrete_rhs[1, 35, 2]
+
+@profview sol = discrete_ext[1].vector * (discrete_system * discrete_rhs[1, 35, 2])
+@profview sol = discrete_ext[1].vector * (discrete_system2 * discrete_rhs[1, 35, 2])
 
 
-sol = discrete_system * discrete_rhs[1, 35, 2]
+
+
+problem = updatable_pnproblem.problem
+Δϵ = step(EPMAfem.energy_model(model))
+b1 = 0.5*Δϵ
+b2 = -0.5*Δϵ
+d = 0.5*Δϵ
+b = (b1, b2, d)
+BM1 = EPMAfem.FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, discrete_system.a, b, discrete_system.c, discrete_system.tmp, discrete_system.tmp2, true)
+
+rand_x = rand(5628) |> cu
+rand_y = CUDA.zeros(5628)
+
+LinearAlgebra.mul!(rand_y, BM1, rand_x, true, false)
+
+nb = EPMAfem.n_basis(model)
+ns = EPMAfem.n_sums(problem)
+cache = CUDA.zeros(max(nb.nx.p, nb.nx.m)*max(nb.nΩ.p, nb.nΩ.m))
+cache2 = CUDA.zeros(max(nb.nΩ.p, nb.nΩ.m))
+
+A = EPMAfem.ZMatrix2{Float64}(problem.ρp, problem.Ip, problem.kp, discrete_system.a, discrete_system.c, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.ne, ns.nσ, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.p), Diagonal(@view(cache2[1:nb.nΩ.p])))
+B = EPMAfem.DMatrix2{Float64}(problem.∇pm, problem.Ωpm, nb.nx.p, nb.nx.m, nb.nΩ.m, nb.nΩ.p, ns.nd, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.m))
+C = EPMAfem.ZMatrix2{Float64}(problem.ρm, problem.Im, problem.km, discrete_system.a, discrete_system.c, nb.nx.m, nb.nx.m, nb.nΩ.m, nb.nΩ.m, ns.ne, ns.nσ, EPMAfem.mat_view(cache, nb.nx.m, nb.nΩ.m), Diagonal(@view(cache2[1:nb.nΩ.m])))
+D = EPMAfem.DMatrix2{Float64}(problem.∂p, problem.absΩp, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.nd, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.p))
+
+BM2 = EPMAfem.BlockMat2(A, B, C, D, nb.nx.p*nb.nΩ.p, nb.nx.m*nb.nΩ.m, d, b1, b2, true)
+
+rand_y2 = CUDA.zeros(5628)
+LinearAlgebra.mul!(rand_y2, BM2, rand_x, true, false)
+
+rand_y2 .- rand_y
 
 @gif for (ϵ, ψ) in sol
     ψp, ψm = EPMAfem.pmview(ψ, model)

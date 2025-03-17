@@ -1,13 +1,16 @@
+function discretize_mass_concentrations(mass_concentrations::AbstractVector{<:Function}, space_mdl::SpaceModels.AbstractSpaceModel)
+    SM = EPMAfem.SpaceModels
+    return vcat((SM.L2_projection(x -> mass_concentrations[e](x), space_mdl)' for e in 1:length(mass_concentrations))...)
+end
+
 function discretize_mass_concentrations(pn_eq::AbstractPNEquations, mdl::DiscretePNModel)
     space_mdl = space_model(mdl)
-    SM = EPMAfem.SpaceModels
-    return vcat((SM.L2_projection(x -> mass_concentrations(pn_eq, e, x), space_mdl)' for e in 1:number_of_elements(pn_eq))...)
+    discretize_mass_concentrations([x -> mass_concentrations(pn_eq, e, x) for e in 1:number_of_elements(pn_eq)], space_mdl)
 end
 
 function discretize_mass_concentrations(mass_concentrations::AbstractVector{<:Function}, mdl::DiscretePNModel)
     space_mdl = space_model(mdl)
-    SM = EPMAfem.SpaceModels
-    return vcat((SM.L2_projection(x -> mass_concentrations[e](x), space_mdl)' for e in 1:length(mass_concentrations))...)
+    discretize_mass_concentrations(mass_concentrations, space_mdl)
 end
 
 function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, arch::PNArchitecture; updatable=false)
@@ -39,24 +42,23 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, ar
         ρm = [similar(ρm_tens.skeleton) |> arch for _ in 1:n_elem]
 
         ρs = discretize_mass_concentrations(pn_eq, mdl)
-        for i in 1:number_of_elements(pn_eq)
+        for i in 1:n_elem
             Sparse3Tensor.project!(ρp_tens, @view(ρs[i, :]))
             nonzeros(ρp[i]) .= nonzeros(ρp_tens.skeleton) |> arch
             Sparse3Tensor.project!(ρm_tens, @view(ρs[i, :]))
             nonzeros(ρm[i]) .= nonzeros(ρm_tens.skeleton) |> arch
         end
     else
-        ρp = [SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.even(space_mdl), SM.even(space_mdl)) |> arch for e in 1:number_of_elements(pn_eq)]
-        ρm = [Diagonal(Vector(diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.odd(space_mdl), SM.odd(space_mdl))))) |> arch for e in 1:number_of_elements(pn_eq)]
+        ρp = [SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.even(space_mdl), SM.even(space_mdl)) |> arch for e in 1:n_elem]
+        ρm = [Diagonal(Vector(diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.odd(space_mdl), SM.odd(space_mdl))))) |> arch for e in 1:n_elem]
     end
 
     ∂p = [dropzeros!(SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl))) for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(mdl))] |> arch
     ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) for ∫ ∈ SM.∫R_u_∂v(dimensionality(mdl))] |> arch
 
     ## assemble all the direction matrices
-    # Kpp, Kmm = assemble_scattering_matrices(max_degree(discrete_model), _electron_scattering_kernel(pn_eq, 1, 1), nd(discrete_model))
-    kp = [[to_diag(SH.assemble_bilinear(SH.∫S²_kuv(electron_scattering_kernel_f(pn_eq, e, i)), direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> arch
-    km = [[to_diag(SH.assemble_bilinear(SH.∫S²_kuv(electron_scattering_kernel_f(pn_eq, e, i)), direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> arch
+    kp = [[to_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> arch
+    km = [[to_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> arch
 
     Ip = to_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.exact_quadrature())) |> arch
     Im = to_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature())) |> arch
@@ -69,7 +71,7 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, ar
     # Ωpm = Ωpm_full |> arch
     problem = DiscretePNProblem(mdl, arch, s, τ, σ, ρp, ρm, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
     if updatable
-        n_parameters = (number_of_elements(pn_eq), n_basis(mdl).nx.m)
+        n_parameters = (n_elem, n_basis(mdl).nx.m)
         return UpdatableDiscretePNProblem(problem, ρp_tens, ρm_tens, n_parameters)
     else
         return problem

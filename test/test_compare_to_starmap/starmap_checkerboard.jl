@@ -8,7 +8,7 @@ EPMAfem.number_of_scatterings(::CheckerboardEquations) = 1
 EPMAfem.stopping_power(::CheckerboardEquations, e, ϵ) = 1.0
 EPMAfem.absorption_coefficient(::CheckerboardEquations, e, ϵ) = e == 1 ? 10.0 : 1.0
 EPMAfem.scattering_coefficient(::CheckerboardEquations, e, i, ϵ) = e == 1 ? 0.0 : 1.0
-EPMAfem.electron_scattering_kernel(eq::CheckerboardEquations, e, i, μ) = 1.0/4π
+EPMAfem.scattering_kernel(eq::CheckerboardEquations, e, i) = μ -> 1.0/4π
 lattice((x, y)) = (ceil(Int, x), ceil(Int, y))
 function EPMAfem.mass_concentrations(::CheckerboardEquations, e, (x, y))
     if lattice((x, y)) in [   (2, 6),                         (6, 6),

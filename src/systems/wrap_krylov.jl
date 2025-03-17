@@ -15,6 +15,7 @@ function allocate_minres_krylov_buf(VT, m, n; window::Int=5)
 end
 
 cuview(A::Array, slice) = uview(A, slice)
+cuview(A::SubArray, slice) = uview(A, slice)
 cuview(A::CuArray, slice) = view(A, slice)
 
 function solver_from_buf(x, buf)

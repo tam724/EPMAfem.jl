@@ -41,5 +41,7 @@ include("pndiscretization.jl")
 include("systems/pnsystems.jl")
 include("epmaproblem.jl")
 
+include("monochrom_pn/monochrom_pn.jl")
+
 
 end # module EPMAfem
