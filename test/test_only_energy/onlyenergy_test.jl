@@ -4,7 +4,7 @@ module OnlyEnergyTests
 using EPMAfem
 
 using EPMAfem: PNArchitecture, energy_model, mass_concentrations, stopping_power, absorption_coefficient, scattering_coefficient, number_of_scatterings, number_of_elements, base_type
-using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, schurimplicitmidpointsystem, fullimplicitmidpointsystem
+using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, implicit_midpoint
 
 using SpecialFunctions
 using Plots
@@ -22,9 +22,9 @@ function compute(N, eq, solver, use_adjoint, arch)
     model = OnlyEnergyModel(range(0.0, 1.0, length=N))
     discrete_problem = discretize_problem(eq, model, arch)
     if solver == "schur"
-        discrete_system = schurimplicitmidpointsystem(discrete_problem)
+        discrete_system = implicit_midpoint(discrete_problem, EPMAfem.PNSchurSolver)
     elseif solver == "full"
-        discrete_system = fullimplicitmidpointsystem(discrete_problem)
+        discrete_system = implicit_midpoint(discrete_problem, EPMAfem.PNKrylovMinresSolver)
     else
         throw(ArgumentError("solver must be 'schur' or 'full'"))
     end

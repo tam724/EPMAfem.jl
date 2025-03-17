@@ -165,7 +165,15 @@ function get_solver(x::UnsafeArray, S::PNKrylovMinresSolver)
     return MinresSolver{T,T,UnsafeArray{T, 1}}(S.m, S.n, uview(S.Δx, 1:0), x, uview(S.r1, 1:S.n), uview(S.r2, 1:S.n), uview(S.w1, 1:S.n), uview(S.w2, 1:S.n), uview(S.y, 1:S.n), uview(S.v, 1:0), S.err_vec, false, stats)
 end
 
+function pn_linsolve!(S::PNKrylovMinresSolver, x, A::BlockMat2, b)
+    @assert A isa Transpose ? A.parent.sym[] : A.sym[]
+    
+    solver = get_solver(cuview(x, :), S)
+    Krylov.solve!(solver, A, cuview(b, :), rtol=S.rtol, atol=S.atol)
+end
+
 function pn_linsolve!(S::PNKrylovMinresSolver, x, A, b)
     solver = get_solver(cuview(x, :), S)
     Krylov.solve!(solver, A, cuview(b, :), rtol=S.rtol, atol=S.atol)
 end
+
