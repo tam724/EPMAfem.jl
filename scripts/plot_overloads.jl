@@ -1,4 +1,5 @@
 using Plots
+using GLMakie
 using Gridap
 include("../src/space_dimensions.jl")
 # Plots overloads (for fast plotting of FE functions)
