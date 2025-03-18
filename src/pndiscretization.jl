@@ -1,4 +1,4 @@
-function discretize_mass_concentrations(mass_concentrations::AbstractVector{<:Function}, space_mdl::SpaceModels.AbstractSpaceModel)
+function discretize_mass_concentrations(mass_concentrations::AbstractVector{<:Function}, space_mdl::SpaceModels.GridapSpaceModel)
     SM = EPMAfem.SpaceModels
     return vcat((SM.L2_projection(x -> mass_concentrations[e](x), space_mdl)' for e in 1:length(mass_concentrations))...)
 end
@@ -89,6 +89,7 @@ function discretize_rhs(pn_ex::PNExcitation, mdl::DiscretePNModel, arch::PNArchi
     ## assemble excitation 
     gϵs = [Vector{T}([beam_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(mdl)]) for i in 1:number_of_beam_energies(pn_ex)]
     gxps = [SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> beam_space_distribution(pn_ex, i, Dimensions.extend_3D(x))), space_mdl, SM.even(space_mdl)) for i in 1:number_of_beam_positions(pn_ex)] |> arch
+    
     nz = Dimensions.cartesian_unit_vector(Dimensions.Z(), dimensionality(mdl))
     nz3D = Dimensions.extend_3D(nz)
     gΩps = [SH.assemble_linear(SH.∫S²_nΩgv(nz3D, Ω -> beam_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.even(direction_mdl), SH.lebedev_quadrature_max()) for i in 1:number_of_beam_directions(pn_ex)] |> arch

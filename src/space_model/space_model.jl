@@ -1,5 +1,4 @@
-abstract type AbstractSpaceModel{ND} end
-@concrete struct GridapSpaceModel{ND} <: AbstractSpaceModel{ND}
+@concrete struct GridapSpaceModel{ND}
     discrete_model
     even_fe_space
     odd_fe_space

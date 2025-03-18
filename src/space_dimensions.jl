@@ -9,11 +9,14 @@ struct X <: SpaceDimension end
 struct Y <: SpaceDimension end
 # dimension(D::Int) = (D in (1, 2, 3)) ? Val(D) : error("dimension D = $(D) must be 1, 2 or 3 (x, y or z)")
 
-# we use minus here to indicate that we refer to the number of dimensions
 abstract type SpaceDimensionality end
 struct _1D <: SpaceDimensionality end
 struct _2D <: SpaceDimensionality end
 struct _3D <: SpaceDimensionality end
+
+abstract type SpaceBoundary end
+struct LeftBoundary <: SpaceBoundary end
+struct RightBoundary <: SpaceBoundary end
 
 dimensions(::_1D) = (Z(), )
 dimensions(::_2D) = (Z(), X())
@@ -47,18 +50,39 @@ cartesian_unit_vector(::Z, ::_3D) = VectorValue(1.0, 0.0, 0.0)
 cartesian_unit_vector(::X, ::_3D) = VectorValue(0.0, 1.0, 0.0)
 cartesian_unit_vector(::Y, ::_3D) = VectorValue(0.0, 0.0, 1.0)
 
+outwards_normal(dim::SpaceDimension, ::RightBoundary, dims::SpaceDimensionality) = cartesian_unit_vector(dim, dims)
+outwards_normal(dim::SpaceDimension, ::LeftBoundary, dims::SpaceDimensionality) = -cartesian_unit_vector(dim, dims)
+
 extend_3D(x::VectorValue{1}) = VectorValue(x[1], 0.0, 0.0)
 extend_3D(x::VectorValue{2}) = VectorValue(x[1], x[2], 0.0)
 extend_3D(x::VectorValue{3}) = x
 
-Ωz(Ω::VectorValue{3}) = Ω[1]
-Ωx(Ω::VectorValue{3}) = Ω[2]
-Ωy(Ω::VectorValue{3}) = Ω[3]
+select(x::VectorValue{3}, ::Z) = x[1]
+select(x::VectorValue{3}, ::X) = x[2]
+select(x::VectorValue{3}, ::Y) = x[3]
 
-Ωz(Ω::VectorValue{2}) = Ω[1]
-Ωx(Ω::VectorValue{2}) = Ω[2]
+select(x::VectorValue{2}, ::Z) = x[1]
+select(x::VectorValue{2}, ::X) = x[2]
 
-Ωz(Ω::VectorValue{1}) = Ω[1]
+select(x::VectorValue{1}, ::Z) = x[1]
+
+Ωz(Ω::VectorValue{3}) = select(Ω, Z())
+Ωx(Ω::VectorValue{3}) = select(Ω, X())
+Ωy(Ω::VectorValue{3}) = select(Ω, Y())
+
+Ωz(Ω::VectorValue{2}) = select(Ω, Z())
+Ωx(Ω::VectorValue{2}) = select(Ω, X())
+
+Ωz(Ω::VectorValue{1}) = select(Ω, Z())
+
+omit(x::VectorValue{3}, ::Z) = (; x=select(x, X()), y=select(x, Y()))
+omit(x::VectorValue{3}, ::X) = (; z=select(x, Z()), y=select(x, Y()))
+omit(x::VectorValue{3}, ::Y) = (; z=select(x, Z()), x=select(x, X()))
+
+omit(x::VectorValue{2}, ::Z) = (; x=select(x, X()))
+omit(x::VectorValue{2}, ::X) = (; z=select(x, Z()))
+
+omit(::VectorValue{1}, ::Z) = (; )
 
 to_Ω(z, x, y) = VectorValue(z, x, y)
 from_Ω(Ω) = (; z=Ωz(Ω), x=Ωx(Ω), y=Ωy(Ω))

@@ -36,7 +36,7 @@ end
 
 architecture(problem::DiscreteMonochromPNProblem) = problem.arch
 n_basis(problem::DiscreteMonochromPNProblem) = n_basis(problem.model)
-n_sums(problem::DiscreteMonochromPNProblem) = (nd = length(dimensions(problem.model)), ne = size(problem.τ, 1))
+n_sums(problem::DiscreteMonochromPNProblem) = (nd = length(dimensions(problem.model)), nσ = 1, ne = size(problem.τ, 1))
 
 Base.show(io::IO, p::DiscreteMonochromPNProblem) = print(io, "MonochromPNProblem [$(n_basis(p)) and $(n_sums(p))]")
 Base.show(io::IO, ::MIME"text/plain", p::DiscreteMonochromPNProblem) = show(io, p)
