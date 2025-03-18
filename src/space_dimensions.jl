@@ -53,10 +53,6 @@ cartesian_unit_vector(::Y, ::_3D) = VectorValue(0.0, 0.0, 1.0)
 outwards_normal(dim::SpaceDimension, ::RightBoundary, dims::SpaceDimensionality) = cartesian_unit_vector(dim, dims)
 outwards_normal(dim::SpaceDimension, ::LeftBoundary, dims::SpaceDimensionality) = -cartesian_unit_vector(dim, dims)
 
-extend_3D(x::VectorValue{1}) = VectorValue(x[1], 0.0, 0.0)
-extend_3D(x::VectorValue{2}) = VectorValue(x[1], x[2], 0.0)
-extend_3D(x::VectorValue{3}) = x
-
 select(x::VectorValue{3}, ::Z) = x[1]
 select(x::VectorValue{3}, ::X) = x[2]
 select(x::VectorValue{3}, ::Y) = x[3]
@@ -83,6 +79,14 @@ omit(x::VectorValue{2}, ::Z) = (; x=select(x, X()))
 omit(x::VectorValue{2}, ::X) = (; z=select(x, Z()))
 
 omit(::VectorValue{1}, ::Z) = (; )
+
+extend_3D(x::VectorValue{1}) = VectorValue(select(x, Z()), 0.0, 0.0)
+extend_3D(x::VectorValue{2}) = VectorValue(select(x, Z()), select(x, X()), 0.0)
+extend_3D(x::VectorValue{3}) = x
+
+constrain(x::VectorValue{3}, ::_1D) = VectorValue(select(x, Z()))
+constrain(x::VectorValue{3}, ::_2D) = VectorValue(select(x, Z()), select(x, X()))
+constrain(x::VectorValue{3}, ::_3D) = x
 
 to_Ω(z, x, y) = VectorValue(z, x, y)
 from_Ω(Ω) = (; z=Ωz(Ω), x=Ωx(Ω), y=Ωy(Ω))

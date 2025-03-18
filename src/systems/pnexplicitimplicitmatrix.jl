@@ -70,8 +70,6 @@ function ZMatrix2(A, B, C, γ, δ, W1, W2)
     size_check(mat)
     return mat
 end
-    
-
 
 function Base.size(M::ZMatrix2)
     return (M.nA1*M.nB2, M.nA2*M.nB1)

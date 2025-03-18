@@ -3,71 +3,98 @@ using EPMAfem
 using Gridap
 using LinearAlgebra
 using Plots
+using Distributions
+Makie.inline!(false)
 include("plot_overloads.jl")
 
+heatmap(-0.5:0.01:0.5, -0.5:0.01:0.5, (x, z) -> EPMAfem.mass_concentrations(eq, 1, Gridap.Point(z, x)))
+plot(-1:0.01:1, μ -> EPMAfem.monochrom_scattering_kernel_func(eq, μ))
 
-eq = EPMAfem.MonochromPNEquations()
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((0, 1, 0, 1), (50, 50)))
-# direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(13, 1)
-
-function f((; z))
-    # @show x
-    return exp(-100*(z-0.5)^2)
+function scat_coeff(x)
+    return sum(EPMAfem.mass_concentrations(eq, e, x)*EPMAfem.scattering_coefficient(eq, e) for e in 1:EPMAfem.number_of_elements(eq))
 end
-
-bc = EPMAfem.PNSpaceBoundaryCondition(EPMAfem.Dimensions.X(), EPMAfem.Dimensions.RightBoundary(), f)
-bc_disc = EPMAfem.discretize(bc, space_model, EPMAfem.cpu())
-
-func = FEFunction(EPMAfem.SpaceModels.even(space_model), bc_disc)
-surface(0:0.01:1, 0:0.01:1, func)
-xlabel!("z")
-ylabel!("x")
-
-plot!()
-
 
 
 eq = EPMAfem.MonochromPNEquations()
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.0, 0.0), 50))
-direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(13, 1)
-
-function f(_)
-    return 1
-end
-
-bc = EPMAfem.PNSpaceBoundaryCondition(EPMAfem.Dimensions.Z(), EPMAfem.Dimensions.RightBoundary(), f)
-EPMAfem.discretize(bc, space_model, EPMAfem.cpu())
-
-
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5, 0.5, -0.5, 0.5), (200, 200)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(27, 2)
 model = EPMAfem.DiscreteMonochromPNModel(space_model, direction_model)
-problem = EPMAfem.discretize_problem(eq, model, EPMAfem.cpu())
 
-nb = EPMAfem.n_basis(problem)
-ns = EPMAfem.n_sums(problem)
+function fx((; z))
+    return exp(-200*(z)^2)
+end
+function fΩ_left(Ω)
+    return pdf(VonMisesFisher([0.0, 1.0, 0.0] |> normalize, 50.0), Ω)
+end
+function fΩ_right(Ω)
+    return pdf(VonMisesFisher([0.0, -1.0, 0.0] |> normalize, 50.0), Ω)
+end
+bc_left = EPMAfem.PNXΩBoundaryCondition(EPMAfem.Dimensions.X(), EPMAfem.Dimensions.LeftBoundary(), fx, fΩ_left)
+bc_right = EPMAfem.PNXΩBoundaryCondition(EPMAfem.Dimensions.X(), EPMAfem.Dimensions.RightBoundary(), fx, fΩ_right)
 
-arch = EPMAfem.architecture(problem)
-T = EPMAfem.base_type(arch)
 
-cache = EPMAfem.allocate_vec(arch, max(nb.nx.p, nb.nx.m)*max(nb.nΩ.p, nb.nΩ.m))
-cache2 = EPMAfem.allocate_vec(arch, max(nb.nΩ.p, nb.nΩ.m))
+problem = EPMAfem.discretize_problem(eq, model, EPMAfem.cuda())
+rhs_left = EPMAfem.discretize_rhs(bc_left, model, EPMAfem.cuda())
+rhs_right = EPMAfem.discretize_rhs(bc_right, model, EPMAfem.cuda())
 
-coeffs = (a = problem.τ, c = [[T(problem.σ[i])] for i in 1:ns.ne])
+system = EPMAfem.system(problem, EPMAfem.PNSchurSolver)
+x_left = EPMAfem.allocate_solution_vector(system)
+x_right = EPMAfem.allocate_solution_vector(system)
+EPMAfem.solve(x_left, system, rhs_left)
+EPMAfem.solve(x_right, system, rhs_right)
 
-A = EPMAfem.ZMatrix2{T}(problem.space_discretization.ρp, problem.direction_discretization.Ip, problem.direction_discretization.kp, coeffs.a, coeffs.c, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.ne, ns.nσ, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.p), Diagonal(@view(cache2[1:nb.nΩ.p])))
-B = EPMAfem.DMatrix2{T}(problem.space_discretization.∇pm, problem.direction_discretization.Ωpm, nb.nx.p, nb.nx.m, nb.nΩ.m, nb.nΩ.p, ns.nd, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.m))
-C = EPMAfem.ZMatrix2{T}(problem.space_discretization.ρm, problem.direction_discretization.Im, problem.direction_discretization.km, coeffs.a, coeffs.c, nb.nx.m, nb.nx.m, nb.nΩ.m, nb.nΩ.m, ns.ne, ns.nσ, EPMAfem.mat_view(cache, nb.nx.m, nb.nΩ.m), Diagonal(@view(cache2[1:nb.nΩ.m])))
-D = EPMAfem.DMatrix2{T}(problem.space_discretization.∂p, problem.direction_discretization.absΩp, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.nd, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.p))
+Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> arch
 
-BM = EPMAfem.BlockMat2{T}(A, B, C, D, nb.nx.p*nb.nΩ.p, nb.nx.m*nb.nΩ.m, Ref(1.0), Ref(-1.0), Ref(1.0), Ref(1.0), Ref(false))
-lin_solver = EPMAfem.PNSchurSolver(EPMAfem.vec_type(arch), BM)
-x = zeros(2828)
-b = zeros(2828)
-bp, bm = EPMAfem.pmview(b, model)
-init(x) = exp(-150*(x-0.5)^2)
-plot(range(0, 1, length=51), init)
+xp_left, xm_left = EPMAfem.pmview(x_left, model)
+xp_right, xm_right = EPMAfem.pmview(x_right, model)
+func_left = EPMAfem.SpaceModels.interpolable((p=xp_left*Ωp|> collect, m=xm_left*Ωm |> collect), space_model)
+func_right = EPMAfem.SpaceModels.interpolable((p=xp_right*Ωp|> collect, m=xm_right*Ωm |> collect), space_model)
+    
+p1 = Plots.contourf(-0.5:0.001:0.5, -0.5:0.001:0.5, (z, x) -> func_left(VectorValue(x, z)), cmap=:grays, aspect_ratio=:equal)
+p2 = Plots.contourf(-0.5:0.001:0.5, -0.5:0.001:0.5, (z, x) -> func_right(VectorValue(x, z)), cmap=:grays, aspect_ratio=:equal)
+plot(p1, p2, size=(1500, 1000))
 
-bp[:, 1] .= init.(range(0, 1, length=51))
-bm[:, 1] .= 1.0.*init.(range(0, 1, length=50))
-EPMAfem.pn_linsolve!(lin_solver, x, BM, b)
-xp, xm = EPMAfem.pmview(x, model)
-plot!(range(0, 1, length=51), xp[:, 1])
+
+
+# 1D
+eq = EPMAfem.MonochromPNEquations()
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5, 0.5), (50)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(7, 1)
+model = EPMAfem.DiscreteMonochromPNModel(space_model, direction_model)
+
+function fx((; ))
+    return 1.0
+end
+function fΩ_left(Ω)
+    return 1.0 # pdf(VonMisesFisher([0.0, 1.0, 0.0] |> normalize, 50.0), Ω)
+end
+function fΩ_right(Ω)
+    return 1.0  #pdf(VonMisesFisher([0.0, -1.0, 0.0] |> normalize, 50.0), Ω)
+end
+bc_left = EPMAfem.PNXΩBoundaryCondition(EPMAfem.Dimensions.Z(), EPMAfem.Dimensions.LeftBoundary(), fx, fΩ_left)
+bc_right = EPMAfem.PNXΩBoundaryCondition(EPMAfem.Dimensions.Z(), EPMAfem.Dimensions.RightBoundary(), fx, fΩ_right)
+
+problem = EPMAfem.discretize_problem(eq, model, EPMAfem.cpu(Float64))
+rhs_left = EPMAfem.discretize_rhs(bc_left, model, EPMAfem.cpu(Float64))
+rhs_right = EPMAfem.discretize_rhs(bc_right, model, EPMAfem.cpu(Float64))
+
+system = EPMAfem.system(problem, EPMAfem.PNSchurSolver)
+# system = EPMAfem.system(problem, EPMAfem.PNKrylovMinresSolver)
+x_left = EPMAfem.allocate_solution_vector(system)
+x_right = EPMAfem.allocate_solution_vector(system)
+EPMAfem.solve(x_left, system, rhs_left)
+EPMAfem.solve(x_right, system, rhs_right)
+
+Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> problem.arch
+
+xp_left, xm_left = EPMAfem.pmview(x_left, model)
+xp_right, xm_right = EPMAfem.pmview(x_right, model)
+func_left = EPMAfem.SpaceModels.interpolable((p=xp_left*Ωp|> collect, m=xm_left*Ωm |> collect), space_model)
+func_right = EPMAfem.SpaceModels.interpolable((p=xp_right*Ωp|> collect, m=xm_right*Ωm |> collect), space_model)
+    
+p1 = Plots.plot(-0.5:0.001:0.5, (z) -> func_left(VectorValue(z)))
+p2 = Plots.plot(-0.5:0.001:0.5, (z) -> func_right(VectorValue(z)))
+plot(p1, p2, size=(1500, 1000))
+
+
+mat = EPMAfem.assemble_from_op(system.A)

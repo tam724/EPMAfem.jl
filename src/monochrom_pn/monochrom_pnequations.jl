@@ -3,7 +3,7 @@
     scattering_norm_factor
 end
 
-monochrom_scattering_kernel_func(::MonochromPNEquations, μ) = exp(-5.0*(μ-1.0)^2)
+monochrom_scattering_kernel_func(::MonochromPNEquations, μ) = exp(-10.0*(μ-1.0)^2)
 
 function MonochromPNEquations()
     dummy_eq = MonochromPNEquations(1.0)
@@ -16,16 +16,23 @@ function number_of_elements(eq::MonochromPNEquations)
 end
 
 function scattering_coefficient(eq::MonochromPNEquations, e)
-    return 1.0
+    return 0.0
+    # return e == 1 ? 0.5 : 0.1
 end
 
 function absorption_coefficient(eq::MonochromPNEquations, e)
     # make it a balance
-    return scattering_coefficient(eq, e)
+    return e == 1 ? 0.01 : 1.0
+    # return scattering_coefficient(eq, e)
 end
 
 function mass_concentrations(eq::MonochromPNEquations, e, x)
-    return 1.0
+    if x[1] < 0.0
+    # if x[1] - x[2] < 0
+        return e == 1 ? 1.0 : 0.0
+    else
+        return e == 1 ? 0.0 : 1.0
+    end
 end
 
 function scattering_kernel(eq::MonochromPNEquations, e)

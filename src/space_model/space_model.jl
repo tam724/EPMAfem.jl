@@ -14,14 +14,33 @@ end
 
 dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality_type(ND)
 
+boundary_tags(::Dimensions._1D) = (1, 2)
+boundary_tag(::Dimensions.Z, ::Dimensions.LeftBoundary, ::Dimensions._1D) = 1
+boundary_tag(::Dimensions.Z, ::Dimensions.RightBoundary, ::Dimensions._1D) = 2
+
+boundary_tags(::Dimensions._2D) = (5, 6, 7, 8)
+boundary_tag(::Dimensions.Z, ::Dimensions.LeftBoundary, ::Dimensions._2D) = 7
+boundary_tag(::Dimensions.Z, ::Dimensions.RightBoundary, ::Dimensions._2D) = 8
+boundary_tag(::Dimensions.X, ::Dimensions.LeftBoundary, ::Dimensions._2D) = 5
+boundary_tag(::Dimensions.X, ::Dimensions.RightBoundary, ::Dimensions._2D) = 6
+
+boundary_tags(::Dimensions._3D) = (21, 22, 23, 24, 25, 26)
+boundary_tag(::Dimensions.Z, ::Dimensions.LeftBoundary, ::Dimensions._3D) = 25
+boundary_tag(::Dimensions.Z, ::Dimensions.RightBoundary, ::Dimensions._3D) = 26
+boundary_tag(::Dimensions.X, ::Dimensions.LeftBoundary, ::Dimensions._3D) = 23
+boundary_tag(::Dimensions.X, ::Dimensions.RightBoundary, ::Dimensions._3D) = 24
+boundary_tag(::Dimensions.Y, ::Dimensions.LeftBoundary, ::Dimensions._3D) = 21
+boundary_tag(::Dimensions.Y, ::Dimensions.RightBoundary, ::Dimensions._3D) = 22
+
 function get_args(model::GridapSpaceModel)
     dims = dimensionality(model)
     R = Triangulation(model.discrete_model)
     Γ = BoundaryTriangulation(model.discrete_model)
     dx = Measure(R, 6)
     dΓ = Measure(Γ, 6)
+    dΓi = Dict((tag => Measure(BoundaryTriangulation(model.discrete_model; tags=tag), 6)) for tag in boundary_tags(dimensionality(model)))
     n = get_normal_vector(Γ)
-    return (dims, R, dx, Γ, dΓ, n)
+    return (dims, dx, dΓ, dΓi, n)
 end
 
 function even(model::GridapSpaceModel)
@@ -41,20 +60,20 @@ function n_basis(model::GridapSpaceModel)
     return (p=num_free_dofs(even(model)), m=num_free_dofs(odd(model)))
 end
 
-function L2_projection(f, model)
-    (dims, R, dx, Γ, dΓ, n) = get_args(model)
-    V = material(model)
-    U = TrialFESpace(V)
-    op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, V)
-    return Gridap.solve(op).free_values
-end
-
-function projection(f, model, space)
-    (dims, R, dx, Γ, dΓ, n) = get_args(model)
+function projection_fefunc(f, model, space)
+    (dims, dx, dΓ, dΓi, n) = get_args(model)
     V = space
     U = TrialFESpace(V)
     op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, V)
-    return Gridap.solve(op).free_values
+    return Gridap.solve(op)
+end
+
+function projection(f, model, space)
+    return projection_fefunc(f, model, space).free_values
+end
+
+function L2_projection(f, model)
+    projection(f, model, material(model))
 end
 
 # dirac basis evaluation

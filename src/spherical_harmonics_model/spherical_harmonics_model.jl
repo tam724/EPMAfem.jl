@@ -236,6 +236,7 @@ end
 
 function interpolable(b, model)
     function interpolant(Ω)
+        # Ωx = Dimensions.constrain(Ω, dimensionality(model))
         if hasproperty(b, :m) # if not we assume its zero
             Y_even, Y_odd = eval_basis_functions!(model, Ω, even(model), odd(model))
             return dot(b.p, Y_even) + dot(b.m, Y_odd)

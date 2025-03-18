@@ -130,8 +130,7 @@ function step_adjoint!(x, system::DiscreteImplicitMidpointPNSystem, rhs_ass::PNV
 end
 
 function allocate_solution_vector(system::DiscreteImplicitMidpointPNSystem)
-    (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
+    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
     arch = architecture(system.problem)
-    T = base_type(arch)
     allocate_vec(arch, nxp*nΩp + nxm*nΩm)
 end

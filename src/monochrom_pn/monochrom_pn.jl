@@ -63,4 +63,5 @@ end
 
 include("monochrom_pnequations.jl")
 include("monochrom_pnproblem.jl")
+include("monochrom_pnvector.jl")
 include("monochrom_pndiscretization.jl")
