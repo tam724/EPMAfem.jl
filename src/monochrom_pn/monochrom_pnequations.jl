@@ -41,9 +41,3 @@ function scattering_kernel(eq::MonochromPNEquations, e)
     # for now we ignore e
     return μ -> monochrom_scattering_kernel_func(eq, μ) / eq.scattering_norm_factor
 end
-
-@concrete struct MonochromPNExcitation
-end
-
-function monochrom_bc()
-end

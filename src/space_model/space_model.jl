@@ -4,11 +4,11 @@
     odd_fe_space
 end
 
-function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}) where ND
-    reffe1 = ReferenceFE(lagrangian, Float64, 1)
-    even_fe_space = TestFESpace(discrete_model, reffe1, conformity=:H1)
-    reffe0 = ReferenceFE(lagrangian, Float64, 0)
-    odd_fe_space = TestFESpace(discrete_model, reffe0, conformity=:L2)
+function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2)) where ND
+    reffe1 = ReferenceFE(lagrangian, Float64, even.order)
+    even_fe_space = TestFESpace(discrete_model, reffe1, conformity=even.conformity)
+    reffe0 = ReferenceFE(lagrangian, Float64, odd.order)
+    odd_fe_space = TestFESpace(discrete_model, reffe0, conformity=odd.conformity)
     return GridapSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space)
 end
 

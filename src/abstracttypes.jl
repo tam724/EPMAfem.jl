@@ -1,4 +1,6 @@
 abstract type AbstractPNEquations end
+abstract type AbstractMonochromPNEquations end
+abstract type AbstractDegeneratePNEquations end
 
 # a "solvable" PNProblem, it holds the problem and defines the solver
 abstract type AbstractDiscretePNSystem end

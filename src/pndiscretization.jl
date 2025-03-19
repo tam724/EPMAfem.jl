@@ -49,19 +49,19 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, ar
             nonzeros(ρm[i]) .= nonzeros(ρm_tens.skeleton) |> arch
         end
     else
-        ρp = [SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.even(space_mdl), SM.even(space_mdl)) |> arch for e in 1:n_elem]
-        ρm = [Diagonal(Vector(diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.odd(space_mdl), SM.odd(space_mdl))))) |> arch for e in 1:n_elem]
+        ρp = [diag_if_diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.even(space_mdl), SM.even(space_mdl))) |> arch for e in 1:n_elem]
+        ρm = [diag_if_diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.odd(space_mdl), SM.odd(space_mdl))) |> arch for e in 1:n_elem]
     end
 
     ∂p = [dropzeros!(SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl))) for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(mdl))] |> arch
     ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) for ∫ ∈ SM.∫R_u_∂v(dimensionality(mdl))] |> arch
 
     ## assemble all the direction matrices
-    kp = [[to_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> arch
-    km = [[to_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> arch
+    kp = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> arch
+    km = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) for i in 1:n_scat] for e in 1:n_elem] |> arch
 
-    Ip = to_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.exact_quadrature())) |> arch
-    Im = to_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature())) |> arch
+    Ip = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.exact_quadrature())) |> arch
+    Im = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature())) |> arch
 
     absΩp_full = [SH.assemble_bilinear(∫, direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(mdl))]
     absΩp = [BlockedMatrices.blocked_from_mat(absΩp_full[i], SH.get_indices_∫S²absΩuv(direction_mdl)) for (i, dim) in enumerate(dimensions(mdl))] |> arch

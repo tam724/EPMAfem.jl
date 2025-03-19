@@ -1,8 +1,5 @@
 # This basically mirrors the types from the large pn-system, but without energy dependence
 # will try to reuse as much of the functionality from the large system ..
-
-abstract type AbstractMonochromPNEquations end
-
 @concrete struct DiscreteMonochromPNModel
     space_mdl
     direction_mdl

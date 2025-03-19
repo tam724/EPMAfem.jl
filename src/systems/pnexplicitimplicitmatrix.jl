@@ -198,6 +198,26 @@ function Base.size(M::DMatrix2)
     return (M.nA1*M.nB2, M.nA2*M.nB1)
 end
 
+function LinearAlgebra.isdiag(M::DMatrix2)
+    return all((isdiag(Ai) for Ai in M.A)) && all((isdiag(Bi) for Bi in M.B))
+end
+
+function assemble_diag(M_ass::Diagonal, M::DMatrix2, α::Number)
+    @assert isdiag(M)
+    # and square
+    @assert M.nA1 == M.nA2
+    @assert M.nB1 == M.nB2
+
+    for i in 1:M.I
+        if i == 1
+            mul!(reshape(M_ass.diag, (M.nA1, M.nB1)), reshape(M.A[i].diag, (M.nA1, 1)), reshape(M.B[i].diag, (1, M.nB1)), α, false)
+        else
+            mul!(reshape(M_ass.diag, (M.nA1, M.nB1)), reshape(M.A[i].diag, (M.nA1, 1)), reshape(M.B[i].diag, (1, M.nB1)), α, true)
+        end
+    end
+    return nothing
+end
+
 function LinearAlgebra.mul!(y::AbstractVector, M::DMatrix2, x::AbstractVector, α::Number, β::Number)
     X = reshape(x, M.nA2, M.nB1)
     Y = reshape(y, M.nA1, M.nB2)

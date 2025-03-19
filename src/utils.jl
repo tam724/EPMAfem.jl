@@ -5,14 +5,17 @@ function CUSPARSE.CuSparseMatrixCSC{T, Ti}(A::SparseMatrixCSC) where {T, Ti}
     )
 end
 
-function to_diag(A::Matrix)
-    @assert isdiag(A)
-    return Diagonal(diag(A))
+function LinearAlgebra.isdiag(A::SparseArrays.SparseMatrixCSC)
+    return all(rv == cp for (rv, cp) ∈ zip(A.rowval, @view(A.colptr[1:end-1])))
 end
 
-function to_diag(A::Diagonal)
-    @assert isdiag(A)
-    return Diagonal(A.diag)
+diag_if_diag(A::Diagonal) = A
+function diag_if_diag(A::AbstractMatrix)
+    if isdiag(A)
+        return Diagonal(Vector(diag(A)))
+    else
+        return A
+    end
 end
 
 function dot_buf(x::AbstractVector, A::AbstractMatrix, y::AbstractVector, buf::AbstractVector)
