@@ -122,11 +122,6 @@ function cache_W2!(W2::AbstractArray, M::ZMatrix2, i)
     for j in 1:M.J
         axpy!(M.δ[i][j], M.C[i][j], W2)
     end
-
-    # W2 .= M.γ[i] .* M.B
-    # for j in 1:M.J
-    #     W2 .+= M.δ[i][j] .* M.C[i][j]
-    # end
 end
 
 function cache_W2!(W2::Diagonal, M::ZMatrix2, i)
@@ -134,11 +129,6 @@ function cache_W2!(W2::Diagonal, M::ZMatrix2, i)
     for j in 1:M.J
         axpy!(M.δ[i][j], M.C[i][j].diag, W2.diag)
     end
-    
-    # W2.diag .= M.γ[i] .* M.B.diag
-    # for j in 1:M.J
-    #     W2.diag .+= M.δ[i][j] .* M.C[i][j].diag
-    # end
 end
 
 function LinearAlgebra.mul!(y::AbstractVector, M::ZMatrix2, x::AbstractVector, α::Number, β::Number)

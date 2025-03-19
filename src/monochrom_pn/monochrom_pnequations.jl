@@ -17,13 +17,15 @@ end
 
 function scattering_coefficient(eq::MonochromPNEquations, e)
     return 0.0
-    # return e == 1 ? 0.5 : 0.1
+    return e == 1 ? 0.5 : 0.1
 end
 
 function absorption_coefficient(eq::MonochromPNEquations, e)
     # make it a balance
-    return e == 1 ? 0.01 : 1.0
-    # return scattering_coefficient(eq, e)
+    return 1.0
+    # return e == 1 ? 1.0 : 1.0
+    # return e == 1 ? 0.01 : 1.0
+    return scattering_coefficient(eq, e)
 end
 
 function mass_concentrations(eq::MonochromPNEquations, e, x)
