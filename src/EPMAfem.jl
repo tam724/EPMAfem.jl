@@ -31,7 +31,7 @@ include("pnequations.jl")
 include("pnarchitecture.jl")
 include("pnmodel.jl")
 include("pnproblem.jl")
-include("pnboundary.jl")
+include("pnsource_pnboundary.jl")
 
 include("pnindex.jl")
 include("pniterators.jl")
