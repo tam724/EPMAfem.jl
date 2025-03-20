@@ -8,8 +8,8 @@ using LinearAlgebra
 using ComponentArrays
 using LaTeXStrings
 
-include("../scripts/plot_overloads.jl")
-figpath = mkpath(joinpath(pwd(), "figures"))
+include("plot_overloads.jl")
+figpath = mkpath(joinpath(dirname(@__FILE__), "figures"))
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1.5, 1.5), (40, 120)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
@@ -17,7 +17,7 @@ model = EPMAfem.DiscretePNModel(space_model, 0.0:0.05:1.0, direction_model)
 
 equations = EPMAfem.PNEquations()
 # excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.7, 0.6], normalize.([VectorValue(-1.0, 0.75, 0.0), VectorValue(-1.0, 0.5, 0.0), VectorValue(-1.0, 0.25, 0.0), VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.25, 0.0), VectorValue(-1.0, -0.5, 0.0), VectorValue(-1.0, -0.75, 0.0)]))
-excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.6], normalize.([VectorValue(-1.0, 0.5, 0.0), VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.5, 0.0)]))
+excitation = EPMAfem.pn_excitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.6], normalize.([VectorValue(-1.0, 0.5, 0.0), VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.5, 0.0)]))
 extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
 
 updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda(), updatable=true)
@@ -54,8 +54,8 @@ let
 
     averaged_sol = probe(discrete_system * discrete_rhs[1, 36, 2])
     averaged_sol2 = probe(discrete_system * discrete_rhs[1, 36, 1])
-    func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
-    func2 = EPMAfem.SpaceModels.interpolable(averaged_sol2, space_model)
+    func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
+    func2 = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol2, space_model)
     plot(fontfamily="Computer Modern")
     for i in 36:1:40
         plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, i, Point(0.0, x, 0.0)) * 0.2, color=:gray, ls=:dash, label=nothing)
@@ -70,7 +70,8 @@ let
     xlabel!(L"x")
     ylabel!(L"z")
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm)
-    savefig(joinpath(figpath, "epma_forward_main.png"))
+    fig = savefig(joinpath(figpath, "epma_forward_main.png"))
+    println("Saved $(fig)")
     # savefig("figures/")
 end
 
@@ -79,7 +80,7 @@ let
     probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω->1.0, ϵ=ϵ->1.0)
 
     averaged_sol = probe(discrete_ext[1].vector * discrete_system)
-    func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
+    func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
     extr_func = FEFunction(EPMAfem.SpaceModels.material(space_model), true_ρs[1, :])
     contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=:roma)
     contour!(range(-1, 0, 100), range(-0.8, 0.8, 200), -extr_func, swapxy=true, aspect_ratio=:equal, linewidth=1, color=:black, levels=[-0.5])
@@ -88,7 +89,8 @@ let
     xlabel!(L"x")
     ylabel!(L"z")
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_forward_adjoint.png"))
+    fig = savefig(joinpath(figpath, "epma_forward_adjoint.png"))
+    println("Saved $(fig)")
 
 end
 
@@ -102,7 +104,7 @@ let
     boundary_evals = zeros(length(x), length(EPMAfem.energy_model(model)))
     for i in 1:length(EPMAfem.energy_model(model))
         # b_func = interpret()
-        boundary_evals[:, i] = EPMAfem.SpaceModels.interpolable(averaged_sol2.p[:, i], space_model)(Point.(0.0, x))
+        boundary_evals[:, i] = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol2.p[:, i], space_model)(Point.(0.0, x))
     end
 
     contourf(x, EPMAfem.energy_model(model), -boundary_evals', cmap=reverse(cgrad(:roma)), aspect_ratio=:equal, linewidth=0)
@@ -130,7 +132,8 @@ let
     xlabel!(L"x")
     ylabel!(L"\epsilon")
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_riesz_forward.png"))
+    fig = savefig(joinpath(figpath, "epma_riesz_forward.png"))
+    println("Saved $(fig)")
 
 end
 
@@ -153,12 +156,14 @@ let
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     xlabel!("beam position")
     ylabel!("k-ratio")
-    savefig(joinpath(figpath, "epma_measurements.png"))
+    fig = savefig(joinpath(figpath, "epma_measurements.png"))
+    println("Saved $(fig)")
 
 end
 
 ## taylor remainder
 let
+    println("Computing taylor remainder...")
     function finite_difference_grad(f, p, h)
         val = f(p)
         grad = similar(p)
@@ -233,7 +238,9 @@ let
     xlabel!(L"h")
     ylabel!("Taylor remainder")
     plot!(size=(400, 300), dpi=1000, legend=:bottomright, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_taylor_remainder.png"))
+    fig = savefig(joinpath(figpath, "epma_taylor_remainder.png"))
+    println("Saved $(fig)")
+
 end
 
 # plots of derivative of adjoint forward
@@ -245,14 +252,15 @@ let
     probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> EPMAfem.beam_energy_distribution(excitation, 1, ϵ))
     averaged_sol = probe((EPMAfem.tangent(updatable_pnproblem, λ)[1, 2465]) * discrete_system)
     # averaged_sol = probe(((EPMAfem.tangent(updatable_pnproblem, λ)[1, 2465]) + EPMAfem.tangent(discrete_ext[1])[1, 2465]) * discrete_system)
-    func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
+    func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
     contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
     xlabel!(L"x")
     ylabel!(L"z")
     xlims!(-0.82, 0.82)
 
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_tangent_nonadjoint.png"))
+    fig = savefig(joinpath(figpath, "epma_tangent_nonadjoint.png"))
+    println("Saved $(fig)")
 
 end
 
@@ -265,14 +273,15 @@ let
     augmented_primal = EPMAfem.weighted(Σ_bar, discrete_rhs)
     probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> 1.0)
     averaged_sol = probe(discrete_system * augmented_primal)
-    func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
+    func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
     contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
     xlabel!(L"x")
     ylabel!(L"z")
     xlims!(-0.82, 0.82)
 
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_tangent_adjoint.png"))
+    fig = savefig(joinpath(figpath, "epma_tangent_adjoint.png"))
+    println("Saved $(fig)")
 
 end
 
@@ -288,7 +297,8 @@ let
     ylabel!(L"z")
     xlims!(-0.82, 0.82)
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_gradient1.png"))
+    fig = savefig(joinpath(figpath, "epma_gradient1.png"))
+    println("Saved $(fig)")
 
 
     grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][2, :] * 1e3)
@@ -297,7 +307,8 @@ let
     ylabel!(L"z")
     xlims!(-0.82, 0.82)
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_gradient2.png"))
+    fig = savefig(joinpath(figpath, "epma_gradient2.png"))
+    println("Saved $(fig)")
 
 end
 
@@ -326,13 +337,14 @@ lux_model = Chain(Dense(2, 30, relu), Dense(30, 30, relu), Dense(30, 2), Lux.sof
 ps, st = Lux.setup(Lux.Random.default_rng(), lux_model)
 p0 = ComponentArray(ps)
 ρs = Lux.apply(lux_model, xy, p0, st)[1]
-plt1 = heatmap(reshape(ρs[1, :], (40, 120)), aspect_ratio=:equal)
-plt2 = heatmap(reshape(ρs[2, :], (40, 120)), aspect_ratio=:equal)
-display(plot(plt1, plt2))
 
-plt1 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal)
-plt2 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal)
-display(plot(plt1, plt2))
+# plt1 = heatmap(reshape(ρs[1, :], (40, 120)), aspect_ratio=:equal)
+# plt2 = heatmap(reshape(ρs[2, :], (40, 120)), aspect_ratio=:equal)
+# display(plot(plt1, plt2))
+
+# plt1 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal)
+# plt2 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal)
+# display(plot(plt1, plt2))
 
 cached_intensities = zeros(size(true_meas))
 # function objective_function2(p)
@@ -395,43 +407,48 @@ Serialization.serialize(joinpath(figpath, "opti_trace.jls"), (res, int_store))
 p = res.trace[1].metadata["x"]
 ρs = Lux.apply(lux_model, xy, p, st)[1]
 
-# plot final iteration
-ρs = Lux.apply(lux_model, xy, res.minimizer, st)[1]
-for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti_material_true")]
-    mat_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs_[1, :])
-    mat_func_true = FEFunction(EPMAfem.SpaceModels.odd(space_model), true_ρs[1, :])
+let
+    # plot final iteration
+    ρs = Lux.apply(lux_model, xy, res.minimizer, st)[1]
+    for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti_material_true")]
+        mat_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs_[1, :])
+        mat_func_true = FEFunction(EPMAfem.SpaceModels.odd(space_model), true_ρs[1, :])
 
-    plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(0, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]))
-    plt1 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func_true, linewidth=1, swapxy=true, aspect_ratio=:equal, clim=(0, 1), color=:lightgray, levels=1)
-    scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
-    xlabel!(L"x")
-    ylabel!(L"z")
-    xlims!(-0.82, 0.82)
+        plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(0, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]))
+        plt1 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func_true, linewidth=1, swapxy=true, aspect_ratio=:equal, clim=(0, 1), color=:lightgray, levels=1)
+        scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
+        xlabel!(L"x")
+        ylabel!(L"z")
+        xlims!(-0.82, 0.82)
 
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "$figname.png"))
+        plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+        fig = savefig(joinpath(figpath, "$figname.png"))
+        println("Saved $(fig)")
 
+    end
 end
-
 
 # plot final measurements
-plot()
-color_i = 1
-for i in 1:2, j in 1:2, k in 1:3
-    plot!([pos.x for pos in excitation.beam_positions], noisy_meas[i, j, :, k], color=color_i, legend=false, ls=:solid)
-    scatter!([pos.x for pos in excitation.beam_positions], int_store[end][i, j, :, k], color=color_i, markersize=1)
-    color_i += 1
+let
+    plot()
+    color_i = 1
+    for i in 1:2, j in 1:2, k in 1:3
+        plot!([pos.x for pos in excitation.beam_positions], noisy_meas[i, j, :, k], color=color_i, legend=false, ls=:solid)
+        scatter!([pos.x for pos in excitation.beam_positions], int_store[end][i, j, :, k], color=color_i, markersize=1)
+        color_i += 1
+    end
+    xlabel!(L"beam center $x$")
+    ylabel!(L"observations $\mathcal{Y}^{(ji)}$")
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    fig = savefig(joinpath(figpath, "epma_opti_measurements.png"))
+    println("Saved $(fig)")
 end
-xlabel!(L"beam center $x$")
-ylabel!(L"observations $\mathcal{Y}^{(ji)}$")
-plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-savefig(joinpath(figpath, "epma_opti_measurements.png"))
 
 
 # plot animated results
 probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> EPMAfem.extraction_energy_distribution(extraction, 1, ϵ))
 averaged_sol = probe(discrete_system * discrete_rhs[1, 36, 2])
-func = EPMAfem.SpaceModels.interpolable(averaged_sol, space_model)
+func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
 
 anim = @animate for (s_i, state) in enumerate(res.trace)
     p = state.metadata["x"]
@@ -453,8 +470,10 @@ anim = @animate for (s_i, state) in enumerate(res.trace)
 
 end fps = 5
 
-gif(anim, joinpath(figpath, "epma_opti_material_noisy.mp4"))
+fig = gif(anim, joinpath(figpath, "epma_opti_material_noisy.mp4"))
+println("Saved $(fig.filename)")
 gif(anim, joinpath(figpath, "epma_opti_material_noisy.gif"))
+println("Saved $(fig.filename)")
 
 using Printf
 
@@ -470,8 +489,11 @@ anim2 = @animate for (s_i, state) in enumerate(res.trace)
     plot!(size=(400, 300))
 end fps = 5
 
-gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.mp4"))
-gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.gif"))
+fig = gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.mp4"))
+println("Saved $(fig.filename)")
+
+fig = gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.gif"))
+println("Saved $(fig.filename)")
 
 anim3 = @animate for (s_i, state) in enumerate(res.trace)
     p = state.metadata["x"]
@@ -507,5 +529,8 @@ anim3 = @animate for (s_i, state) in enumerate(res.trace)
 
 end fps = 5
 
-gif(anim3, joinpath(figpath, "epma_opti_all_noisy.mp4"))
-gif(anim3, joinpath(figpath, "epma_opti_all_noisy.gif"))
+fig = gif(anim3, joinpath(figpath, "epma_opti_all_noisy.mp4"))
+println("Saved $(fig.filename)")
+
+fig = gif(anim3, joinpath(figpath, "epma_opti_all_noisy.gif"))
+println("Saved $(fig.filename)")

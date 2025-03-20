@@ -102,7 +102,7 @@ end
     beam_direction_κ
 end
 
-function pn_excitation(beam_positions, beam_energies, beam_directions; beam_position_σ=0.05, beam_direction_κ=50.0, beam_energy_σ=0.05)
+function pn_excitation(beam_positions, beam_energies, beam_directions; beam_position_σ=0.1, beam_direction_κ=10.0, beam_energy_σ=0.1)
     return PNExcitation(beam_positions, beam_position_σ, beam_energies, beam_energy_σ, beam_directions, beam_direction_κ)
 end
 

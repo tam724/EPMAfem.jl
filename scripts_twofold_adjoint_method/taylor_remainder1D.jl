@@ -7,14 +7,15 @@ using Zygote
 using LinearAlgebra
 using ComponentArrays
 using LaTeXStrings
-include("../scripts/plot_overloads.jl")
+include("plot_overloads.jl")
+figpath = mkpath(joinpath(dirname(@__FILE__), "figures"))
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), (30)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(5, 1)
 model = EPMAfem.DiscretePNModel(space_model, 0.0:0.1:1.0, direction_model)
 
 equations = EPMAfem.PNEquations()
-excitation = EPMAfem.PNExcitation([(x=0.0, y=0.0)], [0.8, 0.7, 0.6], normalize.([VectorValue(-1.0, 0.0, 0.0)]))
+excitation = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [0.8, 0.7, 0.6], normalize.([VectorValue(-1.0, 0.0, 0.0)]))
 extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
 
 updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu(), updatable=true)
@@ -32,13 +33,12 @@ function mass_concentrations(e, x)
     return e==1 ? 0.4 : 0.6
 end
 true_ρs = EPMAfem.discretize_mass_concentrations([x -> mass_concentrations(e, x) for e in 1:2], model)
-@time true_meas = prob(true_ρs)
+true_meas = prob(true_ρs)
 
 function finite_difference_grad(f, p, h)
     val = f(p)
     grad = similar(p)
     for i in eachindex(p)
-        @show i, length(p)
         p[i] += h
         grad[i] = (f(p) - val)/h
         p[i] -= h
@@ -68,7 +68,6 @@ C = objective_function(ρs)
 for n in 1:Nδs
     δρs = randn(size(ρs)...) |> normalize
     for (i, h) in enumerate(hs)
-        @show n, i
         Cδρs = objective_function(ρs + h*δρs)
         taylor_1st[i, n] = abs(Cδρs - C)
         taylor_2nd_ad[i, n] = abs(Cδρs - C - h*dot(grad[1], δρs))
@@ -90,4 +89,6 @@ plot!(hs, 2e-4*hs.^2, xaxis=:log, yaxis=:log, color=:gray, ls=:dashdot, label="2
 plot!(size=(400, 300), dpi=1000, legend=:bottomright, fontfamily="Computer Modern")
 xlabel!(L"h")
 ylabel!("Taylor remainder")
-savefig("figures/epma_taylor_remainder_direct_1D.png")
+fig = savefig(joinpath(figpath, "epma_taylor_remainder_direct_1D.png"))
+
+println("Saved $(fig)")
