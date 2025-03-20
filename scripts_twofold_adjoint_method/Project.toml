@@ -8,4 +8,4 @@ Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [sources]
-EPMAfem = {url = "https://github.com/tam724/EPMAfem.jl", rev="v.0.1.0"}
+EPMAfem = {url = "https://github.com/tam724/EPMAfem.jl", rev="v0.2.0"}

@@ -24,7 +24,10 @@ Questions? Feel free to contact:
     pkg> activate scripts_twofold_adjoint_method/
     pkg> instantiate
 
-    # run the script
+    # run the main script (requires a CUDA GPU)
     julia> include("scripts_twofold_adjoint_method/main.jl")
+
+    # for the reduced taylor remainder
+    julia> include("scripts_twofold_adjoint_method/taylor_remainder1D.jl")
 ```
-(Instantiation will load the version `EPMAfem.jl#v.0.1.0`)
+(Instantiation will load the version `EPMAfem.jl#v0.2.0`)

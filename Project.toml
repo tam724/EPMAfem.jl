@@ -1,7 +1,7 @@
 name = "EPMAfem"
 uuid = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
 authors = ["Tamme Claus <claus@acom.rwth-aachen.de>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
