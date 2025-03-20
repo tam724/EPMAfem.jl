@@ -28,11 +28,6 @@ function PNSchurSolver(VT, A::BlockMat2{T}; solver=PNKrylovMinresSolver, solver_
 end
 
 function pn_linsolve!(S::PNSchurSolver, x, A, b)
-
-    # solver = PNDirectSolver()
-    # x_ = zeros(size(A)[2])
-    # pn_linsolve!(solver, x_, A, b)
-
     N = SchurBlockMat2{eltype(A)}(A, S.C_ass, S.cache)
 
     update_cache!(N)
@@ -44,8 +39,6 @@ function pn_linsolve!(S::PNSchurSolver, x, A, b)
     schur_rhs!(S.b_schur, b, N)
     pn_linsolve!(S.lin_solver, x1, N, S.b_schur)
     schur_sol!(x, b, N)
-
-    # @show maximum(abs.(x_ .- x))
 end
 
 ## DIRECT SOLVER
@@ -66,7 +59,6 @@ function pn_linsolve!(::PNDirectSolver, x, A, b)
 end
 
 ## Krylov GMRES Solver
-
 @concrete struct PNKrylovGMRESSolver <: AbstractPNSystemSolver
 end
 
@@ -82,7 +74,6 @@ function pn_linsolve!(::PNKrylovGMRESSolver, x, A, b)
     x .= x_
     @show stats
     if !stats.solved @warn("iterative solver $S not converged") end
-
     return nothing
 end
 
@@ -225,14 +216,12 @@ function pn_linsolve!(S::PNKrylovMinresSolver, x, A::BlockMat2, b)
     
     solver = get_solver(cuview(x, :), S)
     Krylov.solve!(solver, A, cuview(b, :), rtol=S.rtol, atol=S.atol)
-    @show solver.stats
     if !solver.stats.solved @warn("iterative solver $(typeof(S)) not converged") end
 end
 
 function pn_linsolve!(S::PNKrylovMinresSolver, x, A, b)
     solver = get_solver(cuview(x, :), S)
     Krylov.solve!(solver, A, cuview(b, :), rtol=S.rtol, atol=S.atol)
-    @show solver.stats
     if !solver.stats.solved @warn("iterative solver $(typeof(S)) not converged") end
 end
 
