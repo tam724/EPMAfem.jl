@@ -407,39 +407,42 @@ Serialization.serialize(joinpath(figpath, "opti_trace.jls"), (res, int_store))
 p = res.trace[1].metadata["x"]
 ρs = Lux.apply(lux_model, xy, p, st)[1]
 
-# plot final iteration
-ρs = Lux.apply(lux_model, xy, res.minimizer, st)[1]
-for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti_material_true")]
-    mat_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs_[1, :])
-    mat_func_true = FEFunction(EPMAfem.SpaceModels.odd(space_model), true_ρs[1, :])
+let
+    # plot final iteration
+    ρs = Lux.apply(lux_model, xy, res.minimizer, st)[1]
+    for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti_material_true")]
+        mat_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs_[1, :])
+        mat_func_true = FEFunction(EPMAfem.SpaceModels.odd(space_model), true_ρs[1, :])
 
-    plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(0, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]))
-    plt1 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func_true, linewidth=1, swapxy=true, aspect_ratio=:equal, clim=(0, 1), color=:lightgray, levels=1)
-    scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
-    xlabel!(L"x")
-    ylabel!(L"z")
-    xlims!(-0.82, 0.82)
+        plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(0, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]))
+        plt1 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func_true, linewidth=1, swapxy=true, aspect_ratio=:equal, clim=(0, 1), color=:lightgray, levels=1)
+        scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
+        xlabel!(L"x")
+        ylabel!(L"z")
+        xlims!(-0.82, 0.82)
 
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    fig = savefig(joinpath(figpath, "$figname.png"))
-    println("Saved $(fig)")
+        plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+        fig = savefig(joinpath(figpath, "$figname.png"))
+        println("Saved $(fig)")
 
+    end
 end
-
 
 # plot final measurements
-plot()
-color_i = 1
-for i in 1:2, j in 1:2, k in 1:3
-    plot!([pos.x for pos in excitation.beam_positions], noisy_meas[i, j, :, k], color=color_i, legend=false, ls=:solid)
-    scatter!([pos.x for pos in excitation.beam_positions], int_store[end][i, j, :, k], color=color_i, markersize=1)
-    color_i += 1
+let
+    plot()
+    color_i = 1
+    for i in 1:2, j in 1:2, k in 1:3
+        plot!([pos.x for pos in excitation.beam_positions], noisy_meas[i, j, :, k], color=color_i, legend=false, ls=:solid)
+        scatter!([pos.x for pos in excitation.beam_positions], int_store[end][i, j, :, k], color=color_i, markersize=1)
+        color_i += 1
+    end
+    xlabel!(L"beam center $x$")
+    ylabel!(L"observations $\mathcal{Y}^{(ji)}$")
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    fig = savefig(joinpath(figpath, "epma_opti_measurements.png"))
+    println("Saved $(fig)")
 end
-xlabel!(L"beam center $x$")
-ylabel!(L"observations $\mathcal{Y}^{(ji)}$")
-plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-fig = savefig(joinpath(figpath, "epma_opti_measurements.png"))
-println("Saved $(fig)")
 
 
 # plot animated results
