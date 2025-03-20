@@ -12,7 +12,7 @@ function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}; even=(order=1, 
     return GridapSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space)
 end
 
-dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality_type(ND)
+Dimensions.dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality(ND)
 
 boundary_tags(::Dimensions._1D) = (1, 2)
 boundary_tag(::Dimensions.Z, ::Dimensions.LeftBoundary, ::Dimensions._1D) = 1

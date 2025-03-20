@@ -20,7 +20,7 @@ end
 
 function discretize(pn_Ω_bc::PNDirectionBoundaryCondition, direction_mdl::SphericalHarmonicsModels.AbstractSphericalHarmonicsModel, arch::PNArchitecture)
     SH = EPMAfem.SphericalHarmonicsModels
-    n = EPMAfem.Dimensions.outwards_normal(pn_Ω_bc.space_dimension, pn_Ω_bc.space_boundary, SH.dimensionality(direction_mdl))
+    n = EPMAfem.Dimensions.outwards_normal(pn_Ω_bc.space_dimension, pn_Ω_bc.space_boundary, dimensionality(direction_mdl))
     @show n
     n3D = Dimensions.extend_3D(n)
     bΩp = 2 .* SH.assemble_linear(SH.∫S²_nΩgv(n3D, Ω -> pn_Ω_bc.f([Ω...])), direction_mdl, SH.even(direction_mdl), SH.lebedev_quadrature_max()) |> arch

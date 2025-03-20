@@ -23,18 +23,18 @@ dimensions(::_2D) = (Z(), X())
 dimensions(::_3D) = (Z(), X(), Y())
 dimensions() = (Z(), X(), Y())
 
-function dimensionality_type(ND::Integer)
-    if ND == 1
+dimensionality(dim::SpaceDimensionality) = dim
+function dimensionality(dim_int::Integer)
+    if dim_int == 1
         return _1D()
-    elseif ND == 2
+    elseif dim_int == 2
         return _2D()
-    elseif ND == 3
+    elseif dim_int == 3
         return _3D()
     else
-        error("number of dimensions ND=$(ND) must be 1, 2 or 3 (1D, 2D or 3D)")
+        error("number of dimensions dim_int=$(dim_int) must be 1, 2 or 3 (1D, 2D or 3D)")
     end
 end
-dimensionality_type(ND::SpaceDimensionality) = ND
 
 dimensionality_int(::_1D) = 1
 dimensionality_int(::_2D) = 2
@@ -113,7 +113,7 @@ function unitsphere_spherical_to_cartesian((θ, ϕ))
 end
 
 export SpaceDimension, X, Y, Z
-export SpaceDimensionality, _1D, _2D, _3D, dimensions, dimensionality_type
+export SpaceDimensionality, _1D, _2D, _3D, dimensions, dimensionality
 export cartesian_unit_vector, extend_3D, Ωx, Ωy, Ωz, to_Ω, from_Ω
 export unitsphere_spherical_to_cartesian, unitsphere_cartesian_to_spherical
 

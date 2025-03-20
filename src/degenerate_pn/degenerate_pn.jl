@@ -19,7 +19,7 @@ function n_basis(problem::DiscreteDegeneratePNProblem)
     return (nx=nx, nΩ=nΩ)
 end
 
-n_sums(problem::DiscreteDegeneratePNProblem) = (nd = length(Dimensions.dimensions(SpaceModels.dimensionality(problem.model))), nσ = 1, ne = size(problem.τ, 1))
+n_sums(problem::DiscreteDegeneratePNProblem) = (nd = length(dimensions(dimensionality(problem.model))), nσ = 1, ne = size(problem.τ, 1))
 
 
 Base.@kwdef @concrete struct DiscreteDegeneratePNSystem

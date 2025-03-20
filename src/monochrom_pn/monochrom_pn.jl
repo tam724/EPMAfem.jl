@@ -7,7 +7,7 @@
 end
 
 function DiscreteMonochromPNModel(space_model, direction_model, allow_different_dimensionality=false)
-    if !allow_different_dimensionality @assert SpaceModels.dimensionality(space_model) == SphericalHarmonicsModels.dimensionality(direction_model) end
+    if !allow_different_dimensionality @assert dimensionality(space_model) == dimensionality(direction_model) end
     n_basis_space = SpaceModels.n_basis(space_model)
     n_basis_direction = SphericalHarmonicsModels.n_basis(direction_model)
 
@@ -33,8 +33,8 @@ function direction_model(model::DiscreteMonochromPNModel)
     return model.direction_mdl
 end
 
-dimensionality(model::DiscreteMonochromPNModel) = SpaceModels.dimensionality(space_model(model))
-dimensions(model::DiscreteMonochromPNModel) = Dimensions.dimensions(dimensionality(model))
+Dimensions.dimensionality(model::DiscreteMonochromPNModel) = dimensionality(space_model(model))
+Dimensions.dimensions(model::DiscreteMonochromPNModel) = dimensions(dimensionality(model))
 
 n_basis(model::DiscreteMonochromPNModel) = model.number_of_basis_functions
 

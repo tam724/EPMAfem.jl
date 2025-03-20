@@ -6,7 +6,7 @@
 end
 
 function DiscretePNModel(space_model, energy_model, direction_model, allow_different_dimensionality=false)
-    if !allow_different_dimensionality @assert SpaceModels.dimensionality(space_model) == SphericalHarmonicsModels.dimensionality(direction_model) end
+    if !allow_different_dimensionality @assert dimensionality(space_model) == dimensionality(direction_model) end
     n_basis_energy = length(energy_model)
     n_basis_space = SpaceModels.n_basis(space_model)
     n_basis_direction = SphericalHarmonicsModels.n_basis(direction_model)
@@ -62,8 +62,8 @@ function direction_model(model::DiscretePNModel)
     return model.direction_mdl
 end
 
-dimensionality(model::DiscretePNModel) = SpaceModels.dimensionality(space_model(model))
-dimensions(model::DiscretePNModel) = Dimensions.dimensions(dimensionality(model))
+Dimensions.dimensionality(model::DiscretePNModel) = dimensionality(space_model(model))
+Dimensions.dimensions(model::DiscretePNModel) = dimensions(dimensionality(model))
 
 # max_degree(model::PNGridapModel) = model.direction_model
 # space_directions(model::PNGridapModel) = space_directions(space_model(model))

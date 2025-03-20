@@ -8,7 +8,7 @@ function OnlyEnergyModel(energy_model)
     )
 end
 
-EPMAfem.SpaceModels.dimensionality(::Nothing) = EPMAfem.Dimensions._1D()
+EPMAfem.Dimensions.dimensionality(::Nothing) = EPMAfem.Dimensions._1D()
 
 @concrete struct OnlyEnergyEquations <: EPMAfem.AbstractPNEquations
     params

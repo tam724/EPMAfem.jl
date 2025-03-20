@@ -16,7 +16,7 @@ function get_all_viable_harmonics_up_to(N, ND)
 end
 
 abstract type AbstractSphericalHarmonicsModel{ND} end
-dimensionality(::AbstractSphericalHarmonicsModel{ND}) where {ND} = dimensionality_type(ND)
+Dimensions.dimensionality(::AbstractSphericalHarmonicsModel{ND}) where {ND} = dimensionality(ND)
 
 function findSHML_index(m, N)
     return findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only
@@ -29,7 +29,7 @@ end
 end
 
 function EOSphericalHarmonicsModel(N, ND)
-    _XD = dimensionality_type(ND)
+    _XD = dimensionality(ND)
     viable_moments = get_all_viable_harmonics_up_to(N, _XD)
     sort!(viable_moments, lt=isless_evenodd)
 
@@ -56,7 +56,7 @@ function odd(model::EOSphericalHarmonicsModel)
 end
 
 function get_basis_harmonics(model::EOSphericalHarmonicsModel{ND}) where ND
-    # viable_moments = get_all_viable_harmonics_up_to(max_degree(model), dimensionality_type(ND))
+    # viable_moments = get_all_viable_harmonics_up_to(max_degree(model), dimensionality(ND))
     # sort!(viable_moments, lt=isless_evenodd)
     return model.moments
 end
@@ -68,7 +68,7 @@ end
 end
 
 function EEEOSphericalHarmonicsModel(N, ND)
-    _XD = dimensionality_type(ND)
+    _XD = dimensionality(ND)
     viable_moments = get_all_viable_harmonics_up_to(N, _XD)
     sort!(viable_moments, lt=isless_eeevenodd)
 
@@ -109,7 +109,7 @@ end
 
 function even_in(model::AbstractSphericalHarmonicsModel{ND}, n::VectorValue) where ND
     return [m for m in model.moments if is_even_in(m, n)]
-    # _XD = dimensionality_type(ND)
+    # _XD = dimensionality(ND)
     # viable_moments = get_all_viable_harmonics_up_to(model.N, _XD)
     # sort!(viable_moments, lt=isless_eeevenodd)
     # sh_index_even_in = [findSHML_index(m, model.N) for m in viable_moments if is_even_in(m, n)]
@@ -118,7 +118,7 @@ end
 
 function odd_in(model::AbstractSphericalHarmonicsModel{ND}, n::VectorValue) where ND
     return [m for m in model.moments if is_odd_in(m, n)]
-    # _XD = dimensionality_type(ND)
+    # _XD = dimensionality(ND)
     # viable_moments = get_all_viable_harmonics_up_to(model.N, _XD)
     # sort!(viable_moments, lt=isless_eeevenodd)
     # sh_index_even_in = [findSHML_index(m, model.N) for m in viable_moments if is_odd_in(m, n)]
