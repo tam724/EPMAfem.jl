@@ -46,8 +46,8 @@ bc_source = EPMAfem.PNXΩSource(qx, qΩ)
 rhs_source = EPMAfem.discretize_rhs(bc_source, model, EPMAfem.cpu())
 
 problem = EPMAfem.discretize_problem(eq, model, EPMAfem.cpu())
-rhs_left = EPMAfem.discretize_rhs(bc_left, model, EPMAfem.cuda())
-rhs_right = EPMAfem.discretize_rhs(bc_right, model, EPMAfem.cuda())
+rhs_left = EPMAfem.discretize_rhs(bc_left, model, EPMAfem.cpu())
+rhs_right = EPMAfem.discretize_rhs(bc_right, model, EPMAfem.cpu())
 
 system = EPMAfem.system(problem, EPMAfem.PNSchurSolver)
 x_left = EPMAfem.allocate_solution_vector(system)
@@ -55,9 +55,9 @@ x_right = EPMAfem.allocate_solution_vector(system)
 x_source = EPMAfem.allocate_solution_vector(system)
 EPMAfem.solve(x_left, system, rhs_left)
 EPMAfem.solve(x_right, system, rhs_right)
-@profview EPMAfem.solve(x_source, system, rhs_source)
+EPMAfem.solve(x_source, system, rhs_source)
 
-Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> Ω[2]) |> problem.arch
+Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> problem.arch
 
 xp_left, xm_left = EPMAfem.pmview(x_left, model)
 xp_right, xm_right = EPMAfem.pmview(x_right, model)
