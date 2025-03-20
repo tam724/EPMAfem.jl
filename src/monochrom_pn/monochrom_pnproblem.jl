@@ -1,26 +1,3 @@
-@concrete struct SpaceDiscretization
-    space_model
-    arch
-
-    ρp
-    ρm
-
-    ∂p
-    ∇pm
-end
-
-@concrete struct DirectionDiscretization
-    direction_model
-    arch
-
-    Ip
-    Im
-    kp
-    km
-    absΩp
-    Ωpm
-end
-
 @concrete struct DiscreteMonochromPNProblem
     model
     arch

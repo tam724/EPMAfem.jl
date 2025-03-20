@@ -1,3 +1,7 @@
+# so we can use the DirectionDiscretization with multiple scattering
+number_of_scatterings(::AbstractMonochromPNEquations) = 1
+scattering_coefficient(eq::AbstractMonochromPNEquations, e, i) = begin @assert i == 1; scattering_coefficient(eq, e) end
+scattering_kernel(eq::AbstractMonochromPNEquations, e, i) = begin @assert i == 1; scattering_kernel(eq, e) end
 
 @concrete struct MonochromPNEquations <: AbstractMonochromPNEquations
     scattering_norm_factor
@@ -14,6 +18,7 @@ end
 function number_of_elements(eq::MonochromPNEquations)
     return 2
 end
+
 
 function scattering_coefficient(eq::MonochromPNEquations, e)
     return 0.0
