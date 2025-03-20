@@ -8,7 +8,7 @@ using LinearAlgebra
 using ComponentArrays
 using LaTeXStrings
 
-include("../scripts/plot_overloads.jl")
+include("plot_overloads.jl")
 figpath = mkpath(joinpath(pwd(), "figures"))
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1.5, 1.5), (40, 120)))
