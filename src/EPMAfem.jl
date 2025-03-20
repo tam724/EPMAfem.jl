@@ -3,6 +3,7 @@ module EPMAfem
 using ConcreteStructs
 using Gridap
 using CUDA
+using KernelAbstractions
 using SparseArrays
 using LinearAlgebra
 using HCubature

@@ -149,7 +149,7 @@ function discretize_rhs(pn_ex::PNExcitation, mdl::DiscretePNModel, arch::PNArchi
     direction_mdl = direction_model(mdl)
     ## assemble excitation 
     gϵs = [Vector{T}([beam_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(mdl)]) for i in 1:number_of_beam_energies(pn_ex)]
-    gxps = [SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> beam_space_distribution(pn_ex, i, Dimensions.extend_3D(x))), space_mdl, SM.even(space_mdl)) for i in 1:number_of_beam_positions(pn_ex)] |> arch
+    gxps = [sparse(SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> beam_space_distribution(pn_ex, i, Dimensions.extend_3D(x))), space_mdl, SM.even(space_mdl))) for i in 1:number_of_beam_positions(pn_ex)] |> arch
     
     nz = Dimensions.cartesian_unit_vector(Dimensions.Z(), dimensionality(mdl))
     nz3D = Dimensions.extend_3D(nz)

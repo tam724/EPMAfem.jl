@@ -1,8 +1,3 @@
-# import LinearAlgebra: mul!
-
-# somehow try to unify the use of rmul (thats how I mainly use it here)
-include("../redefine_rmul.jl")
-
 ## Naming Convention: lowercase: vector values, uppercase: matrix valued
 ##
 
