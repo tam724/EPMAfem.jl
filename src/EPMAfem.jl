@@ -12,12 +12,12 @@ using UnsafeArrays
 using ChainRulesCore
 
 include("special_matrices/sparse3tensor.jl")
-import EPMAfem.Sparse3Tensor
+using EPMAfem.Sparse3Tensor
 include("special_matrices/blockedmatrices.jl")
-import EPMAfem.BlockedMatrices
+using EPMAfem.BlockedMatrices
 
 include("space_dimensions.jl")
-import EPMAfem.Dimensions
+using EPMAfem.Dimensions
 
 include("spherical_harmonics_model/spherical_harmonics.jl")
 using EPMAfem.SphericalHarmonicsModels
@@ -25,8 +25,10 @@ using EPMAfem.SphericalHarmonicsModels
 include("space_model/space.jl")
 using EPMAfem.SpaceModels
 
-include("abstracttypes.jl")
+include("redefine_rmul.jl")
 include("utils.jl")
+
+include("abstracttypes.jl")
 include("pnequations.jl")
 include("pnarchitecture.jl")
 include("pnmodel.jl")
