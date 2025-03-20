@@ -67,21 +67,21 @@ let
     averaged_sol2 = probe(discrete_system * discrete_rhs[1, 36, 1])
     func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
     func2 = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol2, space_model)
-    plot(fontfamily="Computer Modern")
+    Plots.plot(fontfamily="Computer Modern")
     for i in 36:1:40
-        plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, i, Point(0.0, x, 0.0)) * 0.2, color=:gray, ls=:dash, label=nothing)
+        Plots.plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, i, VectorValue(0.0, x, 0.0)) * 0.2, color=:gray, ls=:dash, label=nothing)
     end
-    plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, 36, Point(0.0, x, 0.0)) * 0.2, color=:black, ls=:dash, label=nothing)
-    contourf!(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
-    contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), func2, swapxy=true, aspect_ratio=:equal, color=:white)
-    scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], zeros(length(excitation.beam_positions)), color=:white, label=nothing, markersize=2)
-    scatter!([excitation.beam_positions[36].x], [0.0], color=:black, label=nothing, markersize=2)
-    xlims!(-0.82, 0.82)
-    ylims!(-1.02, 0.2)
-    xlabel!(L"x")
-    ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm)
-    savefig(joinpath(figpath, "epma_forward_main.png"))
+    Plots.plot!(-0.8:0.01:0.8, x -> EPMAfem.beam_space_distribution(excitation, 36, VectorValue(0.0, x, 0.0)) * 0.2, color=:black, ls=:dash, label=nothing)
+    Plots.contourf!(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
+    Plots.contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), func2, swapxy=true, aspect_ratio=:equal, color=:white)
+    Plots.scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], zeros(length(excitation.beam_positions)), color=:white, label=nothing, markersize=2)
+    Plots.scatter!([excitation.beam_positions[36].x], [0.0], color=:black, label=nothing, markersize=2)
+    Plots.xlims!(-0.82, 0.82)
+    Plots.ylims!(-1.02, 0.2)
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"z")
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm)
+    Plots.savefig(joinpath(figpath, "epma_forward_main.png"))
     # savefig("figures/")
 end
 
@@ -92,14 +92,14 @@ let
     averaged_sol = probe(discrete_ext[1].vector * discrete_system)
     func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
     extr_func = FEFunction(EPMAfem.SpaceModels.material(space_model), true_ρs[1, :])
-    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=:roma)
-    contour!(range(-1, 0, 100), range(-0.8, 0.8, 200), -extr_func, swapxy=true, aspect_ratio=:equal, linewidth=1, color=:black, levels=[-0.5])
-    xlims!(-0.82, 0.82)
-    ylims!(-1.02, 0.2)
-    xlabel!(L"x")
-    ylabel!(L"z")
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_forward_adjoint.png"))
+    Plots.contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=:roma)
+    Plots.contour!(range(-1, 0, 100), range(-0.8, 0.8, 200), -extr_func, swapxy=true, aspect_ratio=:equal, linewidth=1, color=:black, levels=[-0.5])
+    Plots.xlims!(-0.82, 0.82)
+    Plots.ylims!(-1.02, 0.2)
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"z")
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    Plots.savefig(joinpath(figpath, "epma_forward_adjoint.png"))
 end
 
 # plots of riesz representation forward
@@ -112,35 +112,35 @@ let
     boundary_evals = zeros(length(x), length(EPMAfem.energy_model(model)))
     for i in 1:length(EPMAfem.energy_model(model))
         # b_func = interpret()
-        boundary_evals[:, i] = EPMAfem.SpaceModels.interpolable(averaged_sol2.p[:, i], space_model)(Point.(0.0, x))
+        boundary_evals[:, i] = EPMAfem.SpaceModels.interpolable(averaged_sol2.p[:, i], space_model)(VectorValue.(0.0, x))
     end
 
-    contourf(x, EPMAfem.energy_model(model), -boundary_evals', cmap=reverse(cgrad(:roma)), aspect_ratio=:equal, linewidth=0)
+    Plots.contourf(x, EPMAfem.energy_model(model), -boundary_evals', cmap=reverse(cgrad(:roma)), aspect_ratio=:equal, linewidth=0)
     # the 0.12 is only for visualization
-    contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> 0.12 * EPMAfem.beam_space_distribution(excitation, 36, Point(0.0, x, 0.0)) * EPMAfem.beam_energy_distribution(excitation, 1, ϵ), color=:black, levels=range(0, 0.12, 10), colorbar_entry=false)
+    Plots.contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> 0.12 * EPMAfem.beam_space_distribution(excitation, 36, VectorValue(0.0, x, 0.0)) * EPMAfem.beam_energy_distribution(excitation, 1, ϵ), color=:black, levels=range(0, 0.12, 10), colorbar_entry=false)
 
-    scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
+    Plots.scatter!([pos.x for (i, pos) in enumerate(excitation.beam_positions) if i != 36], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
 
-    scatter!([pos.x for pos in excitation.beam_positions[1:35]], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
-    scatter!([excitation.beam_positions[36].x], [excitation.beam_energies[1]], color=:black, label=nothing, markersize=2)
-    scatter!([pos.x for pos in excitation.beam_positions[37:end]], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
+    Plots.scatter!([pos.x for pos in excitation.beam_positions[1:35]], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
+    Plots.scatter!([excitation.beam_positions[36].x], [excitation.beam_energies[1]], color=:black, label=nothing, markersize=2)
+    Plots.scatter!([pos.x for pos in excitation.beam_positions[37:end]], [excitation.beam_energies[1]], color=:white, label=nothing, markersize=2)
 
-    scatter!([pos.x for pos in excitation.beam_positions], [excitation.beam_energies[2]], color=:white, label=nothing, markersize=2)
+    Plots.scatter!([pos.x for pos in excitation.beam_positions], [excitation.beam_energies[2]], color=:white, label=nothing, markersize=2)
 
 
     # for j in 10:5:36
-    #     contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> EPMAfem.beam_space_distribution(excitation, j, Point(0.0, x, 0.0))*EPMAfem.beam_energy_distribution(excitation, 1, ϵ), color=:gray, ls=:dash)
+    #     contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> EPMAfem.beam_space_distribution(excitation, j, VectorValue(0.0, x, 0.0))*EPMAfem.beam_energy_distribution(excitation, 1, ϵ), color=:gray, ls=:dash)
     # end
     # for i in 2:3
-    #     contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> EPMAfem.beam_space_distribution(excitation, 36, Point(0.0, x, 0.0))*EPMAfem.beam_energy_distribution(excitation, i, ϵ), color=:gray, ls=:dash)
+    #     contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> EPMAfem.beam_space_distribution(excitation, 36, VectorValue(0.0, x, 0.0))*EPMAfem.beam_energy_distribution(excitation, i, ϵ), color=:gray, ls=:dash)
     # end
-    xlims!(-0.82, 0.82)
+    Plots.xlims!(-0.82, 0.82)
 
-    plot!()
-    xlabel!(L"x")
-    ylabel!(L"\epsilon")
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_riesz_forward.png"))
+    Plots.plot!()
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"\epsilon")
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    Plots.savefig(joinpath(figpath, "epma_riesz_forward.png"))
 
 end
 
@@ -256,13 +256,13 @@ let
     averaged_sol = probe((EPMAfem.tangent(updatable_pnproblem, λ)[1, 2465]) * discrete_system)
     # averaged_sol = probe(((EPMAfem.tangent(updatable_pnproblem, λ)[1, 2465]) + EPMAfem.tangent(discrete_ext[1])[1, 2465]) * discrete_system)
     func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
-    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
-    xlabel!(L"x")
-    ylabel!(L"z")
-    xlims!(-0.82, 0.82)
+    Plots.contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"z")
+    Plots.xlims!(-0.82, 0.82)
 
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_tangent_nonadjoint.png"))
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    Plots.savefig(joinpath(figpath, "epma_tangent_nonadjoint.png"))
 end
 
 # plots of adjoint derivative of adjoint forward
@@ -275,14 +275,13 @@ let
     probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω=Ω -> 1.0, ϵ=ϵ -> 1.0)
     averaged_sol = probe(discrete_system * augmented_primal)
     func = EPMAfem.SpaceModels.uncached_interpolable(averaged_sol, space_model)
-    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
-    xlabel!(L"x")
-    ylabel!(L"z")
-    xlims!(-0.82, 0.82)
+    Plots.contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), func, swapxy=true, aspect_ratio=:equal, linewidth=0, cmap=reverse(cgrad(:roma)))
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"z")
+    Plots.xlims!(-0.82, 0.82)
 
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_tangent_adjoint.png"))
-
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    Plots.savefig(joinpath(figpath, "epma_tangent_adjoint.png"))
 end
 
 # plots of gradient
@@ -292,21 +291,21 @@ let
     objective_function(ρs) = sum((true_meas .- prob(ρs)) .^ 2) / length(true_meas)
     grad = Zygote.gradient(objective_function, ρs)
     grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][1, :] * 1e3)
-    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
-    xlabel!(L"x")
-    ylabel!(L"z")
-    xlims!(-0.82, 0.82)
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_gradient1.png"))
+    Plots.contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"z")
+    Plots.xlims!(-0.82, 0.82)
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    Plots.savefig(joinpath(figpath, "epma_gradient1.png"))
 
 
     grad_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), grad[1][2, :] * 1e3)
-    contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
-    xlabel!(L"x")
-    ylabel!(L"z")
-    xlims!(-0.82, 0.82)
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_gradient2.png"))
+    Plots.contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), grad_func, swapxy=true, cmap=:roma, linewidth=0, aspect_ratio=:equal)
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"z")
+    Plots.xlims!(-0.82, 0.82)
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    Plots.savefig(joinpath(figpath, "epma_gradient2.png"))
 
 end
 
