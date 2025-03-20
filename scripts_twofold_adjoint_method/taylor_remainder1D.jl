@@ -39,7 +39,6 @@ function finite_difference_grad(f, p, h)
     val = f(p)
     grad = similar(p)
     for i in eachindex(p)
-        @show i, length(p)
         p[i] += h
         grad[i] = (f(p) - val)/h
         p[i] -= h
