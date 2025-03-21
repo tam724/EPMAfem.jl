@@ -21,10 +21,13 @@ function implicit_midpoint(pbl::DiscretePNProblem, solver; solver_kwargs...)
 
     coeffs = (a = Vector{T}(undef, ns.ne), c = [Vector{T}(undef, ns.nσ) for _ in 1:ns.ne])
 
-    A = ZMatrix2{T}(pbl.ρp, pbl.Ip, pbl.kp, coeffs.a, coeffs.c, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.ne, ns.nσ, mat_view(cache, nb.nx.p, nb.nΩ.p), Diagonal(@view(cache2[1:nb.nΩ.p])))
-    B = DMatrix2{T}(pbl.∇pm, pbl.Ωpm, nb.nx.p, nb.nx.m, nb.nΩ.m, nb.nΩ.p, ns.nd, mat_view(cache, nb.nx.p, nb.nΩ.m))
-    C = ZMatrix2{T}(pbl.ρm, pbl.Im, pbl.km, coeffs.a, coeffs.c, nb.nx.m, nb.nx.m, nb.nΩ.m, nb.nΩ.m, ns.ne, ns.nσ, mat_view(cache, nb.nx.m, nb.nΩ.m), Diagonal(@view(cache2[1:nb.nΩ.m])))
-    D = DMatrix2{T}(pbl.∂p, pbl.absΩp, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.nd, mat_view(cache, nb.nx.p, nb.nΩ.p))
+    ρp, ρm, ∂p, ∇pm = space_matrices(pbl)
+    Ip, Im, kp, km, absΩp, Ωpm = direction_matrices(pbl)
+
+    A = ZMatrix2{T}(ρp, Ip, kp, coeffs.a, coeffs.c, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.ne, ns.nσ, mat_view(cache, nb.nx.p, nb.nΩ.p), Diagonal(@view(cache2[1:nb.nΩ.p])))
+    B = DMatrix2{T}(∇pm, Ωpm, nb.nx.p, nb.nx.m, nb.nΩ.m, nb.nΩ.p, ns.nd, mat_view(cache, nb.nx.p, nb.nΩ.m))
+    C = ZMatrix2{T}(ρm, Im, km, coeffs.a, coeffs.c, nb.nx.m, nb.nx.m, nb.nΩ.m, nb.nΩ.m, ns.ne, ns.nσ, mat_view(cache, nb.nx.m, nb.nΩ.m), Diagonal(@view(cache2[1:nb.nΩ.m])))
+    D = DMatrix2{T}(∂p, absΩp, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.nd, mat_view(cache, nb.nx.p, nb.nΩ.p))
 
     Δϵ = step(energy_model(pbl.model))
     BM = BlockMat2{T}(A, B, C, D, nb.nx.p*nb.nΩ.p, nb.nx.m*nb.nΩ.m, Ref(0.5), Ref(-0.5), Ref(0.5), Ref(Δϵ), Ref(false))

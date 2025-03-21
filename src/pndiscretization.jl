@@ -114,7 +114,7 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, ar
     direction_mdl = direction_model(mdl)
     direction_discretization = discretize_direction(pn_eq, direction_mdl, arch)
 
-    problem = DiscretePNProblem(mdl, arch, s, τ, σ, space_discretization.ρp, space_discretization.ρm, space_discretization.∂p, space_discretization.∇pm, direction_discretization.Ip, direction_discretization.Im, direction_discretization.kp, direction_discretization.km, direction_discretization.absΩp, direction_discretization.Ωpm)
+    problem = DiscretePNProblem(mdl, arch, s, τ, σ, space_discretization, direction_discretization)
     if updatable
         n_parameters = (number_of_elements(pn_eq), n_basis(mdl).nx.m)
         upd_problem = UpdatableDiscretePNProblem(problem, ρp_tens, ρm_tens, n_parameters)
