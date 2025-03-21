@@ -9,7 +9,7 @@ using ComponentArrays
 using LaTeXStrings
 
 include("../scripts/plot_overloads.jl")
-figpath = mkpath(joinpath(pwd(), "figures"))
+figpath = mkpath(joinpath(dirname(@__FILE__), "figures"))
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1.5, 1.5), (40, 120)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 2)
@@ -44,17 +44,6 @@ end
 true_ρs = EPMAfem.discretize_mass_concentrations([x -> mass_concentrations(e, x) for e in 1:2], model)
 true_meas = prob(true_ρs)
 
-temp = FEFunction(EPMAfem.SpaceModels.odd(space_model), Float64.(discrete_system.problem.ρm[1].diag |> collect))
-heatmap(-1.0:0.1:0.0, -1.5:0.1:1.5, temp)
-
-temp = FEFunction(EPMAfem.SpaceModels.odd(space_model), Float64.(prob.upd_problem.problem.ρm[1].diag |> collect))
-heatmap(-1.0:0.1:0.0, -1.5:0.1:1.5, temp)
-
-temp = FEFunction(EPMAfem.SpaceModels.odd(space_model), Float64.(prob.system.problem.ρm[1].diag |> collect))
-heatmap(-1.0:0.01:0.0, -1.5:0.01:1.5, temp, aspect_ratio=:equal, swapxy=true)
-
-temp = FEFunction(EPMAfem.SpaceModels.odd(space_model), Float64.(prob.system.A.C.A[1].diag |> collect))
-heatmap(-1.0:0.01:0.0, -1.5:0.01:1.5, temp, aspect_ratio=:equal, swapxy=true)
 # plt1 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal)
 # plt2 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal)
 # display(plot(plt1, plt2))
@@ -169,6 +158,7 @@ end
 
 ## taylor remainder
 let
+    println("Computing taylor remainder...")
     function finite_difference_grad(f, p, h)
         val = f(p)
         grad = similar(p)
@@ -243,7 +233,9 @@ let
     xlabel!(L"h")
     ylabel!("Taylor remainder")
     plot!(size=(400, 300), dpi=1000, legend=:bottomright, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "epma_taylor_remainder.png"))
+    fig = savefig(joinpath(figpath, "epma_taylor_remainder.png"))
+    println("Saved $(fig)")
+
 end
 
 # plots of derivative of adjoint forward
@@ -262,7 +254,9 @@ let
     Plots.xlims!(-0.82, 0.82)
 
     Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    Plots.savefig(joinpath(figpath, "epma_tangent_nonadjoint.png"))
+    fig = Plots.savefig(joinpath(figpath, "epma_tangent_nonadjoint.png"))
+    println("Saved $(fig)")
+
 end
 
 # plots of adjoint derivative of adjoint forward
@@ -334,13 +328,14 @@ lux_model = Chain(Dense(2, 30, relu), Dense(30, 30, relu), Dense(30, 2), Lux.sof
 ps, st = Lux.setup(Lux.Random.default_rng(), lux_model)
 p0 = ComponentArray(ps)
 ρs = Lux.apply(lux_model, xy, p0, st)[1]
-plt1 = heatmap(reshape(ρs[1, :], (40, 120)), aspect_ratio=:equal)
-plt2 = heatmap(reshape(ρs[2, :], (40, 120)), aspect_ratio=:equal)
-display(plot(plt1, plt2))
 
-plt1 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal)
-plt2 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal)
-display(plot(plt1, plt2))
+# plt1 = heatmap(reshape(ρs[1, :], (40, 120)), aspect_ratio=:equal)
+# plt2 = heatmap(reshape(ρs[2, :], (40, 120)), aspect_ratio=:equal)
+# display(plot(plt1, plt2))
+
+# plt1 = heatmap(reshape(true_ρs[1, :], (40, 120)), aspect_ratio=:equal)
+# plt2 = heatmap(reshape(true_ρs[2, :], (40, 120)), aspect_ratio=:equal)
+# display(plot(plt1, plt2))
 
 cached_intensities = zeros(size(true_meas))
 # function objective_function2(p)
@@ -461,8 +456,10 @@ anim = @animate for (s_i, state) in enumerate(res.trace)
 
 end fps = 5
 
-gif(anim, joinpath(figpath, "epma_opti_material_noisy.mp4"))
+fig = gif(anim, joinpath(figpath, "epma_opti_material_noisy.mp4"))
+println("Saved $(fig.filename)")
 gif(anim, joinpath(figpath, "epma_opti_material_noisy.gif"))
+println("Saved $(fig.filename)")
 
 using Printf
 
@@ -478,8 +475,11 @@ anim2 = @animate for (s_i, state) in enumerate(res.trace)
     plot!(size=(400, 300))
 end fps = 5
 
-gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.mp4"))
-gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.gif"))
+fig = gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.mp4"))
+println("Saved $(fig.filename)")
+
+fig = gif(anim2, joinpath(figpath, "epma_opti_measurements_noisy.gif"))
+println("Saved $(fig.filename)")
 
 anim3 = @animate for (s_i, state) in enumerate(res.trace)
     p = state.metadata["x"]
@@ -515,5 +515,8 @@ anim3 = @animate for (s_i, state) in enumerate(res.trace)
 
 end fps = 5
 
-gif(anim3, joinpath(figpath, "epma_opti_all_noisy.mp4"))
-gif(anim3, joinpath(figpath, "epma_opti_all_noisy.gif"))
+fig = gif(anim3, joinpath(figpath, "epma_opti_all_noisy.mp4"))
+println("Saved $(fig.filename)")
+
+fig = gif(anim3, joinpath(figpath, "epma_opti_all_noisy.gif"))
+println("Saved $(fig.filename)")
