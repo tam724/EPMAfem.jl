@@ -135,24 +135,24 @@ end
 
 let
     beam_pos = [pos.x for (i, pos) in enumerate(excitation.beam_positions)]
-    plot(beam_pos, true_meas[1, 1, :, 2], color=cgrad(:tab20)[1], label="A, high energy")
-    plot!(beam_pos, true_meas[1, 2, :, 2], color=cgrad(:tab20)[2], label="A, low energy")
-    plot!(beam_pos, true_meas[2, 1, :, 2], color=cgrad(:tab20)[3], label="B, high energy")
-    plot!(beam_pos, true_meas[2, 2, :, 2], color=cgrad(:tab20)[4], label="B, low energy")
+    Plots.plot(beam_pos, true_meas[1, 1, :, 2], color=cgrad(:tab20)[1], label="A, high energy")
+    Plots.plot!(beam_pos, true_meas[1, 2, :, 2], color=cgrad(:tab20)[2], label="A, low energy")
+    Plots.plot!(beam_pos, true_meas[2, 1, :, 2], color=cgrad(:tab20)[3], label="B, high energy")
+    Plots.plot!(beam_pos, true_meas[2, 2, :, 2], color=cgrad(:tab20)[4], label="B, low energy")
 
-    plot!(beam_pos, true_meas[1, 1, :, 3], color=cgrad(:tab20)[1], ls=:dash, label=nothing)
-    plot!(beam_pos, true_meas[1, 2, :, 3], color=cgrad(:tab20)[2], ls=:dash, label=nothing)
-    plot!(beam_pos, true_meas[2, 1, :, 3], color=cgrad(:tab20)[3], ls=:dash, label=nothing)
-    plot!(beam_pos, true_meas[2, 2, :, 3], color=cgrad(:tab20)[4], ls=:dash, label=nothing)
-    plot!([], [], ls=:dash, color=:gray, label="tilted beam")
+    Plots.plot!(beam_pos, true_meas[1, 1, :, 3], color=cgrad(:tab20)[1], ls=:dash, label=nothing)
+    Plots.plot!(beam_pos, true_meas[1, 2, :, 3], color=cgrad(:tab20)[2], ls=:dash, label=nothing)
+    Plots.plot!(beam_pos, true_meas[2, 1, :, 3], color=cgrad(:tab20)[3], ls=:dash, label=nothing)
+    Plots.plot!(beam_pos, true_meas[2, 2, :, 3], color=cgrad(:tab20)[4], ls=:dash, label=nothing)
+    Plots.plot!([], [], ls=:dash, color=:gray, label="tilted beam")
 
     i_beam = 36
-    scatter!(fill(beam_pos[i_beam], 8), [true_meas[i, j, i_beam, k] for i in 1:2 for j in 1:2 for k in 2:3], color=:gray, label=nothing, alpha=0.5)
-    plot!(legend=:left)
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    xlabel!("beam position")
-    ylabel!("k-ratio")
-    savefig(joinpath(figpath, "epma_measurements.png"))
+    Plots.scatter!(fill(beam_pos[i_beam], 8), [true_meas[i, j, i_beam, k] for i in 1:2 for j in 1:2 for k in 2:3], color=:gray, label=nothing, alpha=0.5)
+    Plots.plot!(legend=:left)
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    Plots.xlabel!("beam position")
+    Plots.ylabel!("k-ratio")
+    Plots.savefig(joinpath(figpath, "epma_measurements.png"))
 
 end
 
