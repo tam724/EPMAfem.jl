@@ -13,12 +13,16 @@ using LinearAlgebra
 using Gridap
 #using StaticArrays
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -0.5, 0.5), (100, 100)))
+
+# test for BlockMat2 (and its transpose)
+
+
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), 100))
 # direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(21, 3)
-direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(27, 2)
+direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(13, 1)
 
 equations = EPMAfem.PNEquations()
-excitation = EPMAfem.PNExcitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.5, 0.0) |> normalize, VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.5, 0.0) |> normalize])
+excitation = EPMAfem.pn_excitation([(x=x_, y=0.0) for x_ in -0.7:0.02:0.7], [0.8, 0.7], [VectorValue(-1.0, 0.5, 0.0) |> normalize, VectorValue(-1.0, 0.0, 0.0), VectorValue(-1.0, -0.5, 0.0) |> normalize])
 extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
 
 model = EPMAfem.DiscretePNModel(space_model, 0.0:0.01:1.0, direction_model)
@@ -43,17 +47,69 @@ updatable_pnproblem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda(
 # updatable_pnproblem.problem.km[1][1].diag .= 1.0
 # updatable_pnproblem.problem.km[2][1].diag .= 1.0
 
-updatable_pnproblem.problem.kp[1][1].diag |> collect |> plot
-
-discrete_system = EPMAfem.schurimplicitmidpointsystem(updatable_pnproblem.problem)
+discrete_system = EPMAfem.fullimplicitmidpointsystem(updatable_pnproblem.problem)
+discrete_system1 = EPMAfem.implicit_midpoint(updatable_pnproblem.problem, EPMAfem.PNKrylovMinresSolver)
+discrete_system2 = EPMAfem.implicit_midpoint(updatable_pnproblem.problem, EPMAfem.PNSchurSolver; solver=EPMAfem.PNKrylovMinresSolver)
 
 discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
 discrete_ext = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda(), updatable=true)
 
 discrete_outflux = EPMAfem.discretize_outflux(model, EPMAfem.cuda())
 
+@time sol = discrete_ext[1].vector * (discrete_system  * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system1 * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system2 * discrete_rhs[1, 35, 2])
 
-sol = discrete_system * discrete_rhs[1, 35, 2]
+@time sol = discrete_ext[1].vector * (discrete_system  * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system1 * discrete_rhs[1, 35, 2])
+@time sol = discrete_ext[1].vector * (discrete_system2 * discrete_rhs[1, 35, 2])
+
+# @time sol = discrete_ext[1].vector * (discrete_system3 * discrete_rhs[1, 35, 2])
+# @time sol = discrete_ext[1].vector * (discrete_system4 * discrete_rhs[1, 35, 2])
+
+@time sol = (discrete_ext[1].vector * discrete_system)  * discrete_rhs[1, 35, 2]
+@time sol = (discrete_ext[1].vector * discrete_system1) * discrete_rhs[1, 35, 2]
+@time sol = (discrete_ext[1].vector * discrete_system2) * discrete_rhs[1, 35, 2]
+
+@time sol = (discrete_ext[1].vector * discrete_system)  * discrete_rhs[1, 35, 2]
+@time sol = (discrete_ext[1].vector * discrete_system1) * discrete_rhs[1, 35, 2]
+@time sol = (discrete_ext[1].vector * discrete_system2) * discrete_rhs[1, 35, 2]
+
+@profview sol = discrete_ext[1].vector * (discrete_system * discrete_rhs[1, 35, 2])
+@profview sol = discrete_ext[1].vector * (discrete_system2 * discrete_rhs[1, 35, 2])
+
+
+
+
+problem = updatable_pnproblem.problem
+Δϵ = step(EPMAfem.energy_model(model))
+b1 = 0.5*Δϵ
+b2 = -0.5*Δϵ
+d = 0.5*Δϵ
+b = (b1, b2, d)
+BM1 = EPMAfem.FullBlockMat(problem.ρp, problem.ρm, problem.∇pm, problem.∂p, problem.Ip, problem.Im, problem.kp, problem.km, problem.Ωpm,  problem.absΩp, discrete_system.a, b, discrete_system.c, discrete_system.tmp, discrete_system.tmp2, true)
+
+rand_x = rand(5628) |> cu
+rand_y = CUDA.zeros(5628)
+
+LinearAlgebra.mul!(rand_y, BM1, rand_x, true, false)
+
+nb = EPMAfem.n_basis(model)
+ns = EPMAfem.n_sums(problem)
+cache = CUDA.zeros(max(nb.nx.p, nb.nx.m)*max(nb.nΩ.p, nb.nΩ.m))
+cache2 = CUDA.zeros(max(nb.nΩ.p, nb.nΩ.m))
+
+A = EPMAfem.ZMatrix2{Float64}(problem.ρp, problem.Ip, problem.kp, discrete_system.a, discrete_system.c, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.ne, ns.nσ, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.p), Diagonal(@view(cache2[1:nb.nΩ.p])))
+B = EPMAfem.DMatrix2{Float64}(problem.∇pm, problem.Ωpm, nb.nx.p, nb.nx.m, nb.nΩ.m, nb.nΩ.p, ns.nd, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.m))
+C = EPMAfem.ZMatrix2{Float64}(problem.ρm, problem.Im, problem.km, discrete_system.a, discrete_system.c, nb.nx.m, nb.nx.m, nb.nΩ.m, nb.nΩ.m, ns.ne, ns.nσ, EPMAfem.mat_view(cache, nb.nx.m, nb.nΩ.m), Diagonal(@view(cache2[1:nb.nΩ.m])))
+D = EPMAfem.DMatrix2{Float64}(problem.∂p, problem.absΩp, nb.nx.p, nb.nx.p, nb.nΩ.p, nb.nΩ.p, ns.nd, EPMAfem.mat_view(cache, nb.nx.p, nb.nΩ.p))
+
+BM2 = EPMAfem.BlockMat2(A, B, C, D, nb.nx.p*nb.nΩ.p, nb.nx.m*nb.nΩ.m, d, b1, b2, true)
+
+rand_y2 = CUDA.zeros(5628)
+LinearAlgebra.mul!(rand_y2, BM2, rand_x, true, false)
+
+rand_y2 .- rand_y
 
 @gif for (ϵ, ψ) in sol
     ψp, ψm = EPMAfem.pmview(ψ, model)

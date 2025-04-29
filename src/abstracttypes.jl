@@ -1,16 +1,9 @@
 abstract type AbstractPNEquations end
-
-# basic grid definitions, number of basis functions, etc.. 
-abstract type AbstractPNModel end
-
-# holds the basis matrices for the PNProblem
-abstract type AbstractDiscretePNProblem end
+abstract type AbstractMonochromPNEquations end
+abstract type AbstractDegeneratePNEquations end
 
 # a "solvable" PNProblem, it holds the problem and defines the solver
 abstract type AbstractDiscretePNSystem end
-
-# implicit midpoint systems
-abstract type AbstractDiscretePNSystemIM <: AbstractDiscretePNSystem end
 
 abstract type AbstractDiscretePNVector end
 # there is no structural difference between a vector and its adjoint (but during construction we can specify if we want to use it with with the adjoint or nonadjoint system)

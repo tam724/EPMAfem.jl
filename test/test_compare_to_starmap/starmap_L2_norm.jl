@@ -7,7 +7,7 @@ EPMAfem.number_of_scatterings(::ExpandingGaussianEquations) = 1
 EPMAfem.stopping_power(::ExpandingGaussianEquations, e, ϵ) = 1.0
 EPMAfem.absorption_coefficient(::ExpandingGaussianEquations, e, ϵ) = 0.0
 EPMAfem.scattering_coefficient(::ExpandingGaussianEquations, e, i, ϵ) = 0.0
-EPMAfem.electron_scattering_kernel(eq::ExpandingGaussianEquations, e, i, μ) = 0.0
+EPMAfem.scattering_kernel(eq::ExpandingGaussianEquations, e, i) = μ -> 0.0
 EPMAfem.mass_concentrations(::ExpandingGaussianEquations, e, (x, y)) = 1.0
 initial_space_distribution(::ExpandingGaussianEquations, (x, y), σ=1e-2) = 1/(4π*σ)*exp(-(x*x+y*y)/(4σ))
 

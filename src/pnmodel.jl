@@ -1,4 +1,4 @@
-@concrete struct DiscretePNModel <: AbstractPNModel
+@concrete struct DiscretePNModel
     space_mdl
     energy_mdl
     direction_mdl
@@ -6,7 +6,7 @@
 end
 
 function DiscretePNModel(space_model, energy_model, direction_model, allow_different_dimensionality=false)
-    if !allow_different_dimensionality @assert SpaceModels.dimensionality(space_model) == SphericalHarmonicsModels.dimensionality(direction_model) end
+    if !allow_different_dimensionality @assert dimensionality(space_model) == dimensionality(direction_model) end
     n_basis_energy = length(energy_model)
     n_basis_space = SpaceModels.n_basis(space_model)
     n_basis_direction = SphericalHarmonicsModels.n_basis(direction_model)
@@ -58,14 +58,12 @@ function energy_eval_basis(energy_model, f::Function)
     return f.(energy_model)
 end
 
-
-
 function direction_model(model::DiscretePNModel)
     return model.direction_mdl
 end
 
-dimensionality(model::DiscretePNModel) = SpaceModels.dimensionality(space_model(model))
-dimensions(model::DiscretePNModel) = Dimensions.dimensions(dimensionality(model))
+Dimensions.dimensionality(model::DiscretePNModel) = dimensionality(space_model(model))
+Dimensions.dimensions(model::DiscretePNModel) = dimensions(dimensionality(model))
 
 # max_degree(model::PNGridapModel) = model.direction_model
 # space_directions(model::PNGridapModel) = space_directions(space_model(model))
@@ -87,19 +85,19 @@ function n_basis(model::DiscretePNModel)
     return model.number_of_basis_functions
 end
 
-function pview(v::AbstractVector, model::AbstractPNModel)
+function pview(v::AbstractVector, model::DiscretePNModel)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     @assert length(v) == nxp*nΩp + nxm*nΩm
     return reshape(@view(v[1:nxp*nΩp]), (nxp, nΩp))
 end
 
-function mview(v::AbstractVector, model::AbstractPNModel)
+function mview(v::AbstractVector, model::DiscretePNModel)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     @assert length(v) == nxp*nΩp + nxm*nΩm
     return reshape(@view(v[nxp*nΩp+1:nxp*nΩp + nxm*nΩm]), (nxm, nΩm))
 end
 
-function pmview(v::AbstractVector, model::AbstractPNModel)
+function pmview(v::AbstractVector, model::DiscretePNModel)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
     @assert length(v) == nxp*nΩp + nxm*nΩm
     pview = reshape(@view(v[1:nxp*nΩp]), (nxp, nΩp))

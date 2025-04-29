@@ -48,7 +48,7 @@ end
 
 # if β isa Number we add to rhs
 function assemble_at!(rhs, (; b)::PNVectorAssembler{<:Rank1DiscretePNVector}, idx, Δ, sym, β=false)
-    bp, bm = pmview(rhs, b.model)
+    rhs_p, rhs_m = pmview(rhs, b.model)
     T = base_type(b.arch)
     if idx.adjoint #you are assembling the rhs at the half step
         @assert !_is_adjoint_vector(b)
@@ -57,8 +57,8 @@ function assemble_at!(rhs, (; b)::PNVectorAssembler{<:Rank1DiscretePNVector}, id
         @assert _is_adjoint_vector(b)
         bϵ2 = b.bϵ[idx]
     end
-    mul!(bp, b.bxp, transpose(b.bΩp), bϵ2*Δ, β)
-    my_rmul!(bm, β) # * -1 if sym
+    mul!(rhs_p, b.bxp, transpose(b.bΩp), bϵ2*Δ, β)
+    my_rmul!(rhs_m, β) # * -1 if sym
 end
 
 

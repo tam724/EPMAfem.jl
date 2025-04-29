@@ -52,6 +52,6 @@ function assemble_trilinear(∫, model, U, V) # W is implicitly given by a 0-th 
 
         process_cell!(U_ids, V_ids, U_cache, V_cache, cell_mats, cell_mat_cache, glue, Is, Js, Ks, Vs)
     end
-    trian = args[2]
+    trian = get_triangulation(U)
     return Sparse3Tensor.sparse3tensor(Is, Js, Ks, Vs, (num_free_dofs(V), num_free_dofs(U), num_cells(trian)))
 end

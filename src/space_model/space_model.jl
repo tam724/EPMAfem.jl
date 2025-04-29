@@ -1,29 +1,50 @@
-abstract type AbstractSpaceModel{ND} end
-@concrete struct GridapSpaceModel{ND} <: AbstractSpaceModel{ND}
+@concrete struct GridapSpaceModel{ND}
     discrete_model
     even_fe_space
     odd_fe_space
+    args
 end
 
-function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}) where ND
-    reffe1 = ReferenceFE(lagrangian, Float64, 1)
-    even_fe_space = TestFESpace(discrete_model, reffe1, conformity=:H1)
-    reffe0 = ReferenceFE(lagrangian, Float64, 0)
-    odd_fe_space = TestFESpace(discrete_model, reffe0, conformity=:L2)
-    return GridapSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space)
+function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2)) where ND
+    reffe1 = ReferenceFE(lagrangian, Float64, even.order)
+    even_fe_space = TestFESpace(discrete_model, reffe1, conformity=even.conformity)
+    reffe0 = ReferenceFE(lagrangian, Float64, odd.order)
+    odd_fe_space = TestFESpace(discrete_model, reffe0, conformity=odd.conformity)
+    return GridapSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space, get_args_(discrete_model))
 end
 
-dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality_type(ND)
+Dimensions.dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality(ND)
 
-function get_args(model::GridapSpaceModel)
-    dims = dimensionality(model)
-    R = Triangulation(model.discrete_model)
-    Γ = BoundaryTriangulation(model.discrete_model)
+boundary_tags(::Dimensions._1D) = (1, 2)
+boundary_tag(::Dimensions.Z, ::Dimensions.LeftBoundary, ::Dimensions._1D) = 1
+boundary_tag(::Dimensions.Z, ::Dimensions.RightBoundary, ::Dimensions._1D) = 2
+
+boundary_tags(::Dimensions._2D) = (5, 6, 7, 8)
+boundary_tag(::Dimensions.Z, ::Dimensions.LeftBoundary, ::Dimensions._2D) = 7
+boundary_tag(::Dimensions.Z, ::Dimensions.RightBoundary, ::Dimensions._2D) = 8
+boundary_tag(::Dimensions.X, ::Dimensions.LeftBoundary, ::Dimensions._2D) = 5
+boundary_tag(::Dimensions.X, ::Dimensions.RightBoundary, ::Dimensions._2D) = 6
+
+boundary_tags(::Dimensions._3D) = (21, 22, 23, 24, 25, 26)
+boundary_tag(::Dimensions.Z, ::Dimensions.LeftBoundary, ::Dimensions._3D) = 25
+boundary_tag(::Dimensions.Z, ::Dimensions.RightBoundary, ::Dimensions._3D) = 26
+boundary_tag(::Dimensions.X, ::Dimensions.LeftBoundary, ::Dimensions._3D) = 23
+boundary_tag(::Dimensions.X, ::Dimensions.RightBoundary, ::Dimensions._3D) = 24
+boundary_tag(::Dimensions.Y, ::Dimensions.LeftBoundary, ::Dimensions._3D) = 21
+boundary_tag(::Dimensions.Y, ::Dimensions.RightBoundary, ::Dimensions._3D) = 22
+
+function get_args_(discrete_model::DiscreteModel{ND, ND}) where ND
+    dims = dimensionality(ND)
+    R = Triangulation(discrete_model)
+    Γ = BoundaryTriangulation(discrete_model)
     dx = Measure(R, 6)
     dΓ = Measure(Γ, 6)
+    dΓi = Dict((tag => Measure(BoundaryTriangulation(discrete_model; tags=tag), 6)) for tag in boundary_tags(dims))
     n = get_normal_vector(Γ)
-    return (dims, R, dx, Γ, dΓ, n)
+    return (dims, dx, dΓ, dΓi, n)
 end
+
+get_args(model::GridapSpaceModel) = model.args
 
 function even(model::GridapSpaceModel)
     return model.even_fe_space
@@ -42,20 +63,20 @@ function n_basis(model::GridapSpaceModel)
     return (p=num_free_dofs(even(model)), m=num_free_dofs(odd(model)))
 end
 
-function L2_projection(f, model)
-    (dims, R, dx, Γ, dΓ, n) = get_args(model)
-    V = material(model)
-    U = TrialFESpace(V)
-    op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, V)
-    return Gridap.solve(op).free_values
-end
-
-function projection(f, model, space)
-    (dims, R, dx, Γ, dΓ, n) = get_args(model)
+function projection_fefunc(f, model, space)
+    (dims, dx, dΓ, dΓi, n) = get_args(model)
     V = space
     U = TrialFESpace(V)
     op = AffineFEOperator((u, v) -> ∫(u*v)dx, v -> ∫(v*f)dx, U, V)
-    return Gridap.solve(op).free_values
+    return Gridap.solve(op)
+end
+
+function projection(f, model, space)
+    return projection_fefunc(f, model, space).free_values
+end
+
+function L2_projection(f, model)
+    projection(f, model, material(model))
 end
 
 # dirac basis evaluation

@@ -21,13 +21,14 @@ function initialize_integration(b::Array{<:TangentDiscretePNVector{<:UpdatableDi
     arch = problem.arch
     T = base_type(arch)
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
+    (; nd, ne, nσ) = n_sums(problem)
 
     isp, jsp = arch.(Int64, Sparse3Tensor.get_ijs(upd_problem.ρp_tens))
     ism, jsm = arch.(Int64, Sparse3Tensor.get_ijs(upd_problem.ρm_tens))
     Λtemp = allocate_vec(arch, max(nxp*nΩp, nxm*nΩm))
     σtemp = allocate_vec(arch, max(nΩp, nΩm))
-    ΛpΦp = [allocate_vec(arch, length(isp)) for _ in 1:length(problem.ρp)]
-    ΛmΦm = [allocate_vec(arch, length(ism)) for _ in 1:length(problem.ρp)]
+    ΛpΦp = [allocate_vec(arch, length(isp)) for _ in 1:ne]
+    ΛmΦm = [allocate_vec(arch, length(ism)) for _ in 1:ne]
     for ΛpΦpi in ΛpΦp
         fill!(ΛpΦpi, zero(eltype(ΛpΦpi)))
     end
@@ -42,10 +43,11 @@ function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:Tangent
     upd_problem = first(b).updatable_problem_or_vector
     problem = upd_problem.problem
     (; ΛpΦp, ΛmΦm) = cache
+    (; nd, ne, nσ) = n_sums(problem)
 
     # first we collect the adjoint for all parameters
     ρs_adjoint = zeros(n_parameters(upd_problem))
-    for i_e in 1:length(problem.ρp)
+    for i_e in 1:ne
         Sparse3Tensor.contract!(@view(ρs_adjoint[i_e, :]), upd_problem.ρp_tens, ΛpΦp[i_e] |> collect, true, true)
         Sparse3Tensor.contract!(@view(ρs_adjoint[i_e, :]), upd_problem.ρm_tens, ΛmΦm[i_e] |> collect, true, true)
     end
@@ -64,11 +66,15 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:U
 
     upd_problem = first(b).updatable_problem_or_vector
     problem = upd_problem.problem
+    Ip, Im, kp, km, absΩp, Ωpm = direction_matrices(problem)
+
     T = base_type(architecture(problem))
 
     Δϵ = T(step(energy_model(problem.model)))
 
     (nϵ, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
+    (; nd, ne, nσ) = n_sums(problem)
+
     Λtempp = reshape(@view(Λtemp[1:nxp*nΩp]), (nxp, nΩp))
     Λtempm = reshape(@view(Λtemp[1:nxm*nΩm]), (nxm, nΩm))
     σtempp = Diagonal(@view(σtemp[1:nΩp]))
@@ -79,13 +85,13 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:U
     Λ_im2p, Λ_im2m = pmview(Λ[minus½(idx)], problem.model)
     Λ_ip2p, Λ_ip2m = pmview(Λ[plus½(idx)], problem.model)
 
-    for i_e in 1:length(problem.ρp)
+    for i_e in 1:ne
         s_i = problem.s[i_e, idx]
         τ_i = problem.τ[i_e, idx]
 
         σtempp.diag .= τ_i
         for i in 1:size(problem.σ, 2)
-            σtempp.diag .-= problem.σ[i_e, i, idx] .* problem.kp[i_e][i].diag
+            σtempp.diag .-= problem.σ[i_e, i, idx] .* kp[i_e][i].diag
         end
 
         mul!(Λtempp, Λ_ip2p, σtempp, T(0.5), false)
@@ -96,7 +102,7 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:U
 
         σtempm.diag .= τ_i
         for i in 1:size(problem.σ, 2)
-            σtempm.diag .-= problem.σ[i_e, i, idx] .* problem.km[i_e][i].diag
+            σtempm.diag .-= problem.σ[i_e, i, idx] .* km[i_e][i].diag
         end
 
         mul!(Λtempm, Λ_ip2m, σtempm, T(0.5), false)
@@ -161,6 +167,8 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
 
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(problem.model)
     (nd, ne, nσ) = n_sums(problem)
+    Ip, Im, kp, km, absΩp, Ωpm = direction_matrices(problem)
+
 
     for ie in 1:ne
         cache.a[ie] = problem.s[ie, idx]/Δϵ + problem.τ[ie, idx]*0.5
@@ -173,8 +181,8 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
     Λp⁻½, Λm⁻½ = pmview(b.cached_solution[minus½(idx)], problem.model)
     Λp⁺½, Λm⁺½ = pmview(b.cached_solution[plus½(idx)], problem.model)
 
-    mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁺½[:]), Δ, β)
-    mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁺½[:]), γ*Δ, β)
+    mul!(@view(rhsp[:]), ZMatrix2(cache.ρp_tangent, Ip, kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁺½[:]), Δ, β)
+    mul!(@view(rhsm[:]), ZMatrix2(cache.ρm_tangent, Im, km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁺½[:]), γ*Δ, β)
 
     for ie in 1:ne
         cache.a[ie] = -problem.s[ie, idx]/Δϵ + problem.τ[ie, idx]*0.5
@@ -182,8 +190,8 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
             cache.c[ie][iσ] = -problem.σ[ie, iσ, idx]*0.5
         end
     end
-    mul!(@view(rhsp[:]), ZMatrix(cache.ρp_tangent, problem.Ip, problem.kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁻½[:]), Δ, true)
-    mul!(@view(rhsm[:]), ZMatrix(cache.ρm_tangent, problem.Im, problem.km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁻½[:]), γ*Δ, true)
+    mul!(@view(rhsp[:]), ZMatrix2(cache.ρp_tangent, Ip, kp, cache.a, cache.c, mat_view(cache.tmp, nxp, nΩp), Diagonal(@view(cache.tmp2[1:nΩp]))), @view(Λp⁻½[:]), Δ, true)
+    mul!(@view(rhsm[:]), ZMatrix2(cache.ρm_tangent, Im, km, cache.a, cache.c, mat_view(cache.tmp, nxm, nΩm), Diagonal(@view(cache.tmp2[1:nΩm]))), @view(Λm⁻½[:]), γ*Δ, true)
 end
 
 ## NOW VECTOR

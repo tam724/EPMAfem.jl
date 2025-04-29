@@ -14,7 +14,7 @@ EPMAfem.number_of_scatterings(::PN1DEquations) = 1
 EPMAfem.stopping_power(::PN1DEquations, e, ϵ) = 1.0
 EPMAfem.absorption_coefficient(::PN1DEquations, e, ϵ) = 0.0
 EPMAfem.scattering_coefficient(::PN1DEquations, e, i, ϵ) = 0.0
-EPMAfem.electron_scattering_kernel(eq::PN1DEquations, e, i, μ) = 0.0
+EPMAfem.scattering_kernel(eq::PN1DEquations, e, i) = μ -> 0.0
 EPMAfem.mass_concentrations(::PN1DEquations, e, (x, )) = 1.0
 initial_space_distribution(::PN1DEquations, (x,)) = tanh(-100*x)*0.5 + 0.5
 
