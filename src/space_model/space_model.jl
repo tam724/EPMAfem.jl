@@ -2,6 +2,7 @@
     discrete_model
     even_fe_space
     odd_fe_space
+    args
 end
 
 function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2)) where ND
@@ -9,7 +10,7 @@ function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}; even=(order=1, 
     even_fe_space = TestFESpace(discrete_model, reffe1, conformity=even.conformity)
     reffe0 = ReferenceFE(lagrangian, Float64, odd.order)
     odd_fe_space = TestFESpace(discrete_model, reffe0, conformity=odd.conformity)
-    return GridapSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space)
+    return GridapSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space, get_args_(discrete_model))
 end
 
 Dimensions.dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality(ND)
@@ -32,16 +33,18 @@ boundary_tag(::Dimensions.X, ::Dimensions.RightBoundary, ::Dimensions._3D) = 24
 boundary_tag(::Dimensions.Y, ::Dimensions.LeftBoundary, ::Dimensions._3D) = 21
 boundary_tag(::Dimensions.Y, ::Dimensions.RightBoundary, ::Dimensions._3D) = 22
 
-function get_args(model::GridapSpaceModel)
-    dims = dimensionality(model)
-    R = Triangulation(model.discrete_model)
-    Γ = BoundaryTriangulation(model.discrete_model)
+function get_args_(discrete_model::DiscreteModel{ND, ND}) where ND
+    dims = dimensionality(ND)
+    R = Triangulation(discrete_model)
+    Γ = BoundaryTriangulation(discrete_model)
     dx = Measure(R, 6)
     dΓ = Measure(Γ, 6)
-    dΓi = Dict((tag => Measure(BoundaryTriangulation(model.discrete_model; tags=tag), 6)) for tag in boundary_tags(dimensionality(model)))
+    dΓi = Dict((tag => Measure(BoundaryTriangulation(discrete_model; tags=tag), 6)) for tag in boundary_tags(dims))
     n = get_normal_vector(Γ)
     return (dims, dx, dΓ, dΓi, n)
 end
+
+get_args(model::GridapSpaceModel) = model.args
 
 function even(model::GridapSpaceModel)
     return model.even_fe_space
