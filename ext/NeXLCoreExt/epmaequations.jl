@@ -95,6 +95,10 @@ end
 #     return A
 # end
 
+function EPMAfem.absorption_coefficient(eq::EPMAEquations, e, ϵ)
+    return sum(EPMAfem.scattering_coefficient(eq, e, i, ϵ) for i in 1:EPMAfem.number_of_scatterings(eq))
+end
+
 function EPMAfem.scattering_coefficient(eq::EPMAEquations, e, i, ϵ)
     return eq.scattering_approx[e][i][1](ϵ)
 end
@@ -115,7 +119,7 @@ end
 # end
 
 function EPMAfem.mass_concentrations(eq::EPMAEquations, e, x)
-    return dimless(eq.elements[1].density, eq.dim_basis)
+    return e == 1 ? dimless(eq.elements[1].density, eq.dim_basis) : 0.0
 end
 
 function EPMAfem.scattering_kernel(eq::EPMAEquations, e, i)
