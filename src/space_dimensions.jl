@@ -88,6 +88,10 @@ constrain(x::VectorValue{3}, ::_1D) = VectorValue(select(x, Z()))
 constrain(x::VectorValue{3}, ::_2D) = VectorValue(select(x, Z()), select(x, X()))
 constrain(x::VectorValue{3}, ::_3D) = x
 
+to_args(x::VectorValue{3}) = (; z=select(x, Z()), x=select(x, X()), y=select(x, Y()))
+to_args(x::VectorValue{2}) = (; z=select(x, Z()), x=select(x, X()))
+to_args(x::VectorValue{1}) = (; z=select(x, Z()))
+
 to_Ω(z, x, y) = VectorValue(z, x, y)
 from_Ω(Ω) = (; z=Ωz(Ω), x=Ωx(Ω), y=Ωy(Ω))
 

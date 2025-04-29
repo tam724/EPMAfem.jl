@@ -23,8 +23,8 @@ end
 function mass_concentrations(eq::DegeneratePNEquations, e, x)
     if x[1]*x[1] + x[2]*x[2] > 0.1^2
     # if x[1] - x[2] < 0
-        return e == 1 ? 1.0 : 0.0
+        return e == 1 ? 0.0 : 0.0
     else
-        return e == 1 ? 0.0 : 1.0
+        return e == 1 ? 0.0 : 0.0
     end
 end

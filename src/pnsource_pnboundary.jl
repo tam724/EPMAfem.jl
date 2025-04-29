@@ -51,7 +51,6 @@ function discretize(pn_Ω_q::PNDirectionSource, direction_mdl::SphericalHarmonic
     return bΩp, bΩm
 end
 
-
 ## combined
 @concrete struct PNXΩExcitation
     x_excitation
