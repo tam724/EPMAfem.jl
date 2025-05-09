@@ -9,7 +9,8 @@ end
 
 function epma_equations(elements, energy_model_units, PN_N; elastic_scattering_cross_section=NeXLCore.Liljequist1989, bethe_energy_loss=NeXLCore.JoyLuo, ϵ_rel=1e-6)
     energy_interval = energy_model_units[end] - energy_model_units[1]
-    dim_basis = DimBasis(500u"nm", energy_interval, minimum(e.density for e in elements))
+    max_spatial_range = uconvert(u"nm", maximum(e -> NeXLCore.range(Kanaya1972, NeXLCore.pure(e), ustrip(uconvert(u"eV", energy_model_units[end])), true), elements)u"cm")
+    dim_basis = DimBasis(max_spatial_range, energy_interval, minimum(e.density for e in elements))
 
     energy_model_dimless = dimless(energy_model_units, dim_basis)
     
