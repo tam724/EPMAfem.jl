@@ -8,7 +8,7 @@ Pkg.add(url="https://github.com/usnistgov/NeXLCore.jl", rev="master")
 Pkg.add("NeXLMatrixCorrection")
 Pkg.add("Unitful")
 Pkg.add("Dimensionless")
-Pkg.add(url="https://github.com/tam724/EPMAfem.jl", rev="main")
+Pkg.add(url="https://github.com/tam724/EPMAfem.jl", rev="a63052f6473865223501c0947ec830220de42136")
 
 # include the required packages
 using Plots
