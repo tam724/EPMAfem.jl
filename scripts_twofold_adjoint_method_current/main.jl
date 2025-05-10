@@ -116,7 +116,6 @@ let
 
     Plots.scatter!([pos.x for pos in excitation.beam_positions], [excitation.beam_energies[2]], color=:white, label=nothing, markersize=2)
 
-
     # for j in 10:5:36
     #     contour!(x, EPMAfem.energy_model(model), (x, ϵ) -> EPMAfem.beam_space_distribution(excitation, j, VectorValue(0.0, x, 0.0))*EPMAfem.beam_energy_distribution(excitation, 1, ϵ), color=:gray, ls=:dash)
     # end
@@ -130,7 +129,6 @@ let
     Plots.ylabel!(L"\epsilon")
     Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     Plots.savefig(joinpath(figpath, "epma_riesz_forward.png"))
-
 end
 
 let
@@ -147,13 +145,12 @@ let
     Plots.plot!([], [], ls=:dash, color=:gray, label="tilted beam")
 
     i_beam = 36
-    Plots.scatter!(fill(beam_pos[i_beam], 8), [true_meas[i, j, i_beam, k] for i in 1:2 for j in 1:2 for k in 2:3], color=:gray, label=nothing, alpha=0.5)
+    Plots.scatter!(fill(beam_pos[i_beam], 8), [true_meas[i, j, i_beam, k] for i in 1:2 for j in 1:1 for k in 2:2], color=:gray, label=nothing, alpha=0.5)
     Plots.plot!(legend=:left)
     Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
     Plots.xlabel!("beam position")
     Plots.ylabel!("k-ratio")
     Plots.savefig(joinpath(figpath, "epma_measurements.png"))
-
 end
 
 ## taylor remainder
@@ -393,6 +390,47 @@ res = optimize(Optim.only_fg!(fg!), p0, Optim.LBFGS(), Optim.Options(callback=cb
 using Serialization
 Serialization.serialize(joinpath(figpath, "opti_trace.jls"), (res, int_store))
 
+res, int_store = Serialization.deserialize("/home/tamme/Projects/EPMA/adjoint_adjoint_paper/epma-fem/figures/opti_trace.jls")
+
+
+# plot all iterations
+mat_func_true = FEFunction(EPMAfem.SpaceModels.odd(space_model), true_ρs[1, :])
+
+for tr in res.trace
+    ρs = Lux.apply(lux_model, xy, tr.metadata["x"], st)[1]
+    mat_func = FEFunction(EPMAfem.SpaceModels.odd(space_model), ρs[1, :])
+    plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(0, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]))
+    plt1 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func_true, linewidth=1, swapxy=true, aspect_ratio=:equal, clim=(0, 1), color=:lightgray, levels=1)
+    Plots.scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"z")
+    Plots.xlims!(-0.82, 0.82)
+
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    savefig(joinpath(figpath, "opti/it_$(tr.iteration).png"))
+end
+
+beam_pos_x = [pos.x for pos in excitation.beam_positions]
+for (i, ints) in enumerate(int_store)
+    plot(beam_pos_x, ints[1, 1, :, 2], color=1, label="A")
+    plot!(beam_pos_x, noisy_meas[1, 1, :, 2], color=1, linestyle=:dash, label=nothing)
+    plot!(beam_pos_x, ints[1, 1, :, 3], color=3, label="A (tilted beam)")
+    plot!(beam_pos_x, noisy_meas[1, 1, :, 3], color=3, linestyle=:dash, label=nothing)
+
+    plot!(beam_pos_x, ints[2, 1, :, 2], color=2, label="B")
+    plot!(beam_pos_x, noisy_meas[2, 1, :, 2], color=2, linestyle=:dash, label=nothing)
+    plot!(beam_pos_x, ints[2, 2, :, 2], color=4, label="B (lower energy)")
+    plot!(beam_pos_x, noisy_meas[2, 2, :, 2], color=4, linestyle=:dash, label=nothing)
+
+    plot!(beam_pos_x, true_meas[2, 1, :, 1], color=:gray, alpha=0.3, linestyle=:dash, label="...")
+    plot!(beam_pos_x, true_meas[1, 1, :, 1], color=:gray, alpha=0.3, linestyle=:dash, label=nothing)
+    plot!(beam_pos_x, true_meas[1, 1, :, 3], color=:gray, alpha=0.3, linestyle=:dash, label=nothing)
+
+    Plots.xlabel!("beam position")
+    Plots.ylabel!("k-ratio")
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=nothing)
+    savefig(joinpath(figpath, "opti/meas_it_$(i-1).png"))
+end
 
 
 p = res.trace[1].metadata["x"]
@@ -406,14 +444,13 @@ for (ρs_, figname) in [(ρs, "epma_opti_material_noisy"), (true_ρs, "epma_opti
 
     plt1 = contourf(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func, linewidth=0, swapxy=true, aspect_ratio=:equal, clim=(0, 1), cmap=cgrad([get_color_palette(:auto, 1)[2], :black, get_color_palette(:auto, 1)[1]]))
     plt1 = contour!(range(-1, 0, 40), range(-0.8, 0.8, 120), mat_func_true, linewidth=1, swapxy=true, aspect_ratio=:equal, clim=(0, 1), color=:lightgray, levels=1)
-    scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
-    xlabel!(L"x")
-    ylabel!(L"z")
-    xlims!(-0.82, 0.82)
+    Plots.scatter!([pos.x for pos in excitation.beam_positions], [0.0], color=:white, label=nothing, markersize=2)
+    Plots.xlabel!(L"x")
+    Plots.ylabel!(L"z")
+    Plots.xlims!(-0.82, 0.82)
 
-    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
-    savefig(joinpath(figpath, "$figname.png"))
-
+    Plots.plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern")
+    # savefig(joinpath(figpath, "$figname.png"))
 end
 
 
