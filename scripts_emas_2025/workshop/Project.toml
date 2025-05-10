@@ -1,0 +1,7 @@
+[deps]
+Dimensionless = "a24885ee-f44e-4313-a031-cb477fdea68a"
+EPMAfem = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
+NeXLCore = "93a0284f-3680-435e-8d39-dd6e52a1dbc8"
+NeXLMatrixCorrection = "3ab34fdf-2fe8-473b-9b20-30f5809db337"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"

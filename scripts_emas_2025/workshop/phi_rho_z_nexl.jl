@@ -17,7 +17,7 @@ function compute_phi_z_epmafem(atomic_subshell, beam_energy, depth=1000u"nm")
 	ϵ_range = range(edgeenergy(atomic_subshell)u"eV" - 1u"keV", beam_energy+5.0u"keV", length=200)
     eq = NExt.epma_equations(mat, ϵ_range, 27)
 	
-    model = NExt.epma_model(eq, (-depth, 0.0u"nm"), (100), 27)
+    model = NExt.epma_model(eq, (-depth, 0.0u"nm"), (200), 27)
 	arch = EPMAfem.cpu()
 	pnproblem = EPMAfem.discretize_problem(eq, model, arch, updatable=false)
 
