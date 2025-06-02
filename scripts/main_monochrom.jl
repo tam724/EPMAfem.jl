@@ -17,10 +17,10 @@ end
 ## 2D
 eq = EPMAfem.MonochromPNEquations()
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5, 0.5, -0.5, 0.5), (30, 30)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(7, 2)
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(7, 2)
 model = EPMAfem.DiscreteMonochromPNModel(space_model, direction_model)
 
-function fx((; z))
+function fx(; z)
     return exp(-200*(z)^2)
 end
 function fΩ_left(Ω)
@@ -50,6 +50,7 @@ rhs_left = EPMAfem.discretize_rhs(bc_left, model, EPMAfem.cpu())
 rhs_right = EPMAfem.discretize_rhs(bc_right, model, EPMAfem.cpu())
 
 system = EPMAfem.system(problem, EPMAfem.PNSchurSolver)
+
 x_left = EPMAfem.allocate_solution_vector(system)
 x_right = EPMAfem.allocate_solution_vector(system)
 x_source = EPMAfem.allocate_solution_vector(system)
@@ -60,13 +61,18 @@ EPMAfem.solve(x_source, system, rhs_source)
 Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> problem.arch
 
 xp_left, xm_left = EPMAfem.pmview(x_left, model)
+
+
 xp_right, xm_right = EPMAfem.pmview(x_right, model)
 xp_source, xm_source = EPMAfem.pmview(x_source, model)
+
 func_left = EPMAfem.SpaceModels.interpolable((p=xp_left*Ωp|> collect, m=xm_left*Ωm |> collect), space_model)
+
 func_right = EPMAfem.SpaceModels.interpolable((p=xp_right*Ωp|> collect, m=xm_right*Ωm |> collect), space_model)
 func_source = EPMAfem.SpaceModels.interpolable((p=xp_source*Ωp|> collect, m=xm_source*Ωm |> collect), space_model)
     
 p1 = Plots.contourf(-0.5:0.001:0.5, -0.5:0.001:0.5, (z, x) -> func_left(VectorValue(x, z)), cmap=:grays, aspect_ratio=:equal)
+
 p2 = Plots.contourf(-0.5:0.001:0.5, -0.5:0.001:0.5, (z, x) -> func_right(VectorValue(x, z)), cmap=:grays, aspect_ratio=:equal)
 p3 = Plots.contourf(-0.5:0.001:0.5, -0.5:0.001:0.5, (z, x) -> func_source(VectorValue(x, z)), cmap=:grays, aspect_ratio=:equal)
 plot(p1, p2, size=(1500, 1000))
