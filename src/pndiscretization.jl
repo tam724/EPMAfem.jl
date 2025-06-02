@@ -83,10 +83,20 @@ function discretize_direction(pn_eq::Union{AbstractPNEquations, AbstractMonochro
     Im = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature())) |> arch
 
     absΩp_full = [SH.assemble_bilinear(∫, direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(direction_mdl))]
-    absΩp = [BlockedMatrices.blocked_from_mat(absΩp_full[i], SH.get_indices_∫S²absΩuv(direction_mdl)) for (i, dim) in enumerate(dimensions(dimensionality(direction_mdl)))] |> arch
+    if direction_mdl isa SH.EOSphericalHarmonicsModel
+        absΩp = absΩp_full |> arch
+    else
+        @assert direction_mdl isa SH.EEEOSphericalHarmonicsModel
+        absΩp = [BlockedMatrices.blocked_from_mat(absΩp_full[i], SH.get_indices_∫S²absΩuv(direction_mdl)) for (i, dim) in enumerate(dimensions(dimensionality(direction_mdl)))] |> arch
+    end
 
     Ωpm_full = [SH.assemble_bilinear(∫, direction_mdl, SH.even(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(direction_mdl))]
-    Ωpm = [BlockedMatrices.blocked_from_mat(Ωpm_full[i], SH.get_indices_∫S²Ωuv(direction_mdl, dim)) for (i, dim) in enumerate(dimensions(dimensionality(direction_mdl)))] |> arch
+    if direction_mdl isa SH.EOSphericalHarmonicsModel
+        Ωpm = Ωpm_full |> arch
+    else
+        @assert direction_mdl isa SH.EEEOSphericalHarmonicsModel
+        Ωpm = [BlockedMatrices.blocked_from_mat(Ωpm_full[i], SH.get_indices_∫S²Ωuv(direction_mdl, dim)) for (i, dim) in enumerate(dimensions(dimensionality(direction_mdl)))] |> arch
+    end
 
     return DirectionDiscretization(direction_mdl, arch, Ip, Im, kp, km, absΩp, Ωpm)
 end
