@@ -1,15 +1,16 @@
 @concrete terse struct TangentDiscretePNVector{U} <: AbstractDiscretePNVector
     adjoint::Bool
     updatable_problem_or_vector::U
+    parameters
     cached_solution
     parameter_index
 end
 
-function tangent(upd_problem::UpdatableDiscretePNProblem, ψ::AbstractDiscretePNSolution)
+function tangent(upd_problem::UpdatableDiscretePNProblem, ψ::AbstractDiscretePNSolution, ρs)
     # this basically creates the "PNVectors" \dot{a}(\cdot{}, ψ) or \dot{a}(ψ, \cdot{})
     # if ψ is an adjoint solution, this is an nonadjoint vector, is ψ is a nonadjoint solution, this is an adjoint vector 
     (n_e, n_cells) = n_parameters(upd_problem)
-    return [TangentDiscretePNVector(_is_adjoint_solution(ψ), upd_problem, ψ, (i, j)) for i in 1:n_e, j in 1:n_cells]
+    return [TangentDiscretePNVector(_is_adjoint_solution(ψ), upd_problem, ρs, ψ, (i, j)) for i in 1:n_e, j in 1:n_cells]
 end
 
 _is_adjoint_vector(b::TangentDiscretePNVector) = b.adjoint
@@ -195,10 +196,10 @@ function assemble_at!(rhs, (; b, cache)::PNVectorAssembler{<:TangentDiscretePNVe
 end
 
 ## NOW VECTOR
-function tangent(upd_vector::UpdatableRank1DiscretePNVector)
+function tangent(upd_vector::UpdatableRank1DiscretePNVector, ρs)
     # this basically creates the "PNVectors" \dot{b}(ψ)
     (n_e, n_cells) = n_parameters(upd_vector)
-    return [TangentDiscretePNVector(_is_adjoint_vector(upd_vector.vector), upd_vector, nothing, (i, j))  for i in 1:n_e, j in 1:n_cells]
+    return [TangentDiscretePNVector(_is_adjoint_vector(upd_vector.vector), upd_vector, ρs, nothing, (i, j))  for i in 1:n_e, j in 1:n_cells]
 end
 
 function initialize_integration(b::TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector})
@@ -212,8 +213,10 @@ end
 function finalize_integration((; b, cache)::PNVectorIntegrator{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}})
     arch = b.updatable_problem_or_vector.vector.arch
     if b.parameter_index[1] == b.updatable_problem_or_vector.element_index
-        ρ_proj = b.updatable_problem_or_vector.ρ_proj[:, b.parameter_index[2]]
-        return dot(ρ_proj.nzval, @view(cache.bxp_adjoint[arch(Int, ρ_proj.nzind)]) |> collect)
+        # this is inefficient.. 
+        ρ_adjoint = zeros(n_parameters(b.updatable_problem_or_vector))
+        update_bxp_adjoint!(ρ_adjoint, b.updatable_problem_or_vector.bxp_updater, cache.bxp_adjoint, b.parameters)
+        return ρ_adjoint[b.parameter_index...]
     else
         return 0.0
     end
@@ -251,23 +254,14 @@ function initialize_integration(b::Array{<:TangentDiscretePNVector{<:UpdatableRa
 end
 
 function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}}})
-    # arch = first(b).updatable_problem_or_vector.vector.arch
-
-    ρ_adjoints = Dict(k => zeros(n_parameters(first(b).updatable_problem_or_vector)[2]) for (k, v) in cache.bxp_adjoints)
+    ρ_adjoints = zeros(n_parameters(first(b).updatable_problem_or_vector))
     for (x_base, bxp_adjoint) in cache.bxp_adjoints
-        mul!(ρ_adjoints[x_base], transpose(b[x_base].updatable_problem_or_vector.ρ_proj), bxp_adjoint |> collect, true, true)
+        update_bxp_adjoint!(ρ_adjoints, b[x_base].updatable_problem_or_vector.bxp_updater, bxp_adjoint, b[x_base].parameters)
     end
+    # this feels silly..
     integral = zeros(size(b))
-    for (x_base, x_rem) in cache.idx_order
-        for (Ω_base, Ωx_rem) in x_rem
-            for (ϵ_base, ϵΩx_rem) in Ωx_rem
-                for i in ϵΩx_rem
-                    if b[i].parameter_index[1] == b[i].updatable_problem_or_vector.element_index
-                        integral[i] = ρ_adjoints[x_base][b[i].parameter_index[2]]
-                    end
-                end
-            end
-        end
+    for (i, b) in enumerate(b)
+        integral[i] += ρ_adjoints[b.parameter_index...]
     end
     return integral
 end

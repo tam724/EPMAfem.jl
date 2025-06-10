@@ -26,8 +26,8 @@ function update_standard_intensities!(epma_problem)
         ρs = discretize_mass_concentrations([x -> i == e ? 1.0 : 0.0 for e in 1:ne], epma_problem.upd_problem.problem.model)
         update_problem_and_vectors!(epma_problem, ρs)
         # collect all extractions with element_index i
-        idxs = [idx for (idx, c) in pairs(IndexCartesian(), epma_problem.upd_extractions) if c.element_index == i]
-        cs = [c.vector for (_, c) in pairs(IndexCartesian(), epma_problem.upd_extractions) if c.element_index == i]
+        idxs = [idx for (idx, c) in pairs(IndexCartesian(), epma_problem.upd_extractions) if c.bxp_updater.element_index == i]
+        cs = [c.vector for (_, c) in pairs(IndexCartesian(), epma_problem.upd_extractions) if c.bxp_updater.element_index == i]
         intensities = cs * epma_problem.system * epma_problem.excitations
         for (idx1, idx2) in pairs(IndexLinear(), idxs)
             epma_problem.standard_intensities[idx2, axes(epma_problem.excitations)...] .= intensities[idx1, axes(epma_problem.excitations)...]
@@ -53,8 +53,8 @@ function ChainRulesCore.rrule(epma_problem::EPMAProblem, ρs::Array)
         for (j, cj) in pairs(IndexCartesian(), epma_problem.upd_extractions)
             # recompute and cache the forward pass
             λ = saveall(cj.vector * epma_problem.system)
-            a_dot = tangent(epma_problem.upd_problem, λ)
-            cj_dot = tangent(cj)
+            a_dot = tangent(epma_problem.upd_problem, λ, ρs)
+            cj_dot = tangent(cj, ρs)
             λ_bar = epma_problem.system * dot(@view(intensities_bar[j, axes(epma_problem.excitations)...]), epma_problem.excitations)
             ρ_bar += (a_dot + cj_dot) * λ_bar
         end

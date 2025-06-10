@@ -188,7 +188,7 @@ function discretize_extraction(pn_ex::PNExtraction, mdl::DiscretePNModel, arch::
         ρ_proj = SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.even(space_mdl))
         ρs = discretize_mass_concentrations(pn_ex.pn_eq, mdl)
         n_parameters = (number_of_elements(pn_ex.pn_eq), n_basis(mdl).nx.m)
-        return [UpdatableRank1DiscretePNVector(Rank1DiscretePNVector(true, mdl, arch, μϵs[i], ρ_proj*@view(ρs[i, :]) |> arch, μΩps[i]), ρ_proj, n_parameters, i) for i in 1:number_of_extractions(pn_ex)]
+        return [UpdatableRank1DiscretePNVector(Rank1DiscretePNVector(true, mdl, arch, μϵs[i], ρ_proj*@view(ρs[i, :]) |> arch, μΩps[i]), EPMAfem.PNNoAbsorbtion(mdl, arch, ρ_proj, i), n_parameters) for i in 1:number_of_extractions(pn_ex)]
     else
         μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.even(space_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
         return [Rank1DiscretePNVector(true, mdl, arch, μϵs[i], μxps[i], μΩps[i]) for i in 1:number_of_extractions(pn_ex)]

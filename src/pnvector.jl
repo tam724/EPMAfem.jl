@@ -190,10 +190,9 @@ LinearAlgebra.dot(weights::AbstractArray, vecs::Array{<:AbstractDiscretePNVector
 
 @concrete terse struct UpdatableRank1DiscretePNVector
     vector
-    ρ_proj
+    bxp_updater
 
     n_parameters
-    element_index
 end
 
 n_parameters(upd_vector::UpdatableRank1DiscretePNVector) = upd_vector.n_parameters
@@ -203,9 +202,7 @@ Base.show(io::IO, ::MIME"text/plain", v::UpdatableRank1DiscretePNVector) = show(
 
 function update_vector!(upd_vector::UpdatableRank1DiscretePNVector, ρs)
     @assert size(ρs) == n_parameters(upd_vector)
-    vector = upd_vector.vector
-    arch = vector.arch
-    vector.bxp .= upd_vector.ρ_proj*@view(ρs[upd_vector.element_index, :]) |> arch
+    update_bxp!(upd_vector.vector.bxp, upd_vector.bxp_updater, ρs)
 end
 
 

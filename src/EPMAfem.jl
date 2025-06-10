@@ -10,6 +10,7 @@ using HCubature
 using Distributions
 using Krylov
 using UnsafeArrays
+using Zygote
 using ChainRulesCore
 
 include("special_matrices/sparse3tensor.jl")
@@ -38,6 +39,7 @@ include("pnsource_pnboundary.jl")
 
 include("pnindex.jl")
 include("pniterators.jl")
+include("pnabsorption.jl")
 include("pnvector.jl")
 include("pnderivativevector.jl")
 include("pnprobes.jl")
