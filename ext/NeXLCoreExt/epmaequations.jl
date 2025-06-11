@@ -1,5 +1,12 @@
+@concrete struct EPMADetector
+    k_ratio
+    takeoff_direction
+end
+
 @concrete struct EPMAEquations <: EPMAfem.AbstractPNEquations
     elements
+    detectors
+
     dim_basis
     scattering_approx
     energy_model_dimless
@@ -7,9 +14,10 @@
     bethe_energy_loss
 end
 
-function epma_equations(elements, energy_model_units, PN_N; elastic_scattering_cross_section=NeXLCore.Liljequist1989, bethe_energy_loss=NeXLCore.JoyLuo, ϵ_rel=1e-6)
+function epma_equations(elements, detectors, energy_model_units, PN_N; elastic_scattering_cross_section=NeXLCore.Liljequist1989, bethe_energy_loss=NeXLCore.JoyLuo, ϵ_rel=1e-6)
     energy_interval = energy_model_units[end] - energy_model_units[1]
     max_spatial_range = uconvert(u"nm", maximum(e -> NeXLCore.range(Kanaya1972, NeXLCore.pure(e), ustrip(uconvert(u"eV", energy_model_units[end])), true), elements)u"cm")
+    @show max_spatial_range
     dim_basis = DimBasis(max_spatial_range, energy_interval, minimum(e.density for e in elements))
 
     energy_model_dimless = dimless(energy_model_units, dim_basis)
@@ -32,7 +40,7 @@ function epma_equations(elements, energy_model_units, PN_N; elastic_scattering_c
     end
     scattering_approx = [build_scattering_approximation(E, K, energy_model_dimless, rank) for (E, K) in EKs]
 
-    return EPMAEquations(elements, dim_basis, scattering_approx, energy_model_dimless, elastic_scattering_cross_section, bethe_energy_loss)
+    return EPMAEquations(elements, detectors, dim_basis, scattering_approx, energy_model_dimless, elastic_scattering_cross_section, bethe_energy_loss)
 end
 
 function EPMAfem.number_of_elements(eq::EPMAEquations)
@@ -126,3 +134,65 @@ end
 function EPMAfem.scattering_kernel(eq::EPMAEquations, e, i)
     return eq.scattering_approx[e][i][2]
 end
+
+## problem discretization uses the main discretization funciton @see ./src/pndiscretization.jl
+
+
+## Because for EPMA the equations are more or less tied to the extraction and the boundary conditions, we use EPMAEquations for everything:
+
+## Extractions
+
+EPMAfem.number_of_extractions(eq::EPMAEquations) = length(eq.detectors)
+
+function EPMAfem.extraction_energy_distribution(eq::EPMAEquations, i, ϵ)
+    ϵ_dim = dimful(ϵ, u"eV", eq.dim_basis)
+    return dimless(NeXLCore.ionizationcrosssection(eq.detectors[i].k_ratio |> NeXLCore.inner, ustrip(ϵ_dim))*u"cm^2", eq.dim_basis)
+end
+
+function mass_absorption_coefficient(eq::EPMAEquations, k_ratio)
+    return [dimless(NeXLCore.mac(elm, k_ratio)u"cm^2/g", eq.dim_basis) for elm in eq.elements]
+end
+
+function element_index(eq, k_ratio)
+    return only(findall(e -> element(k_ratio) == e, eq.elements))
+end
+
+function discretize_detectors(eq::EPMAEquations, mdl::EPMAfem.DiscretePNModel, arch::EPMAfem.PNArchitecture; updatable=true)
+    T = EPMAfem.base_type(arch)
+
+    ## instantiate Gridap
+    SM = EPMAfem.SpaceModels
+    SH = EPMAfem.SphericalHarmonicsModels
+
+    space_mdl = EPMAfem.space_model(mdl)
+    direction_mdl = EPMAfem.direction_model(mdl)
+
+    μϵs = [Vector{T}([EPMAfem.extraction_energy_distribution(eq, i, ϵ) for ϵ ∈ EPMAfem.energy_model(mdl)]) for i in 1:EPMAfem.number_of_extractions(eq)]
+    # isotropic in direction
+    μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> 1.0), direction_mdl, SH.even(direction_mdl)) for i in 1:EPMAfem.number_of_extractions(eq)] |> arch
+
+    ρs = EPMAfem.discretize_mass_concentrations(eq, mdl)
+    ρ_proj = SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.even(space_mdl))
+    n_parameters = (EPMAfem.number_of_elements(eq), EPMAfem.n_basis(mdl).nx.m)
+
+    # only compute the line_contribs for unique takeoff directions
+    unique_takeoff_directions = unique([det.takeoff_direction for det in eq.detectors])
+    @show length(unique_takeoff_directions)
+    line_integral_contribs = [EPMAfem.compute_line_integral_contribs(space_mdl, takeoff_direction) for takeoff_direction in unique_takeoff_directions]
+    absorptions = [EPMAfem.PNAbsorption(mdl, arch, ρ_proj, line_integral_contribs[findfirst(tak_dir -> tak_dir == eq.detectors[i].takeoff_direction, unique_takeoff_directions)], mass_absorption_coefficient(eq, eq.detectors[i].k_ratio), element_index(eq, eq.detectors[i].k_ratio)) for i in 1:EPMAfem.number_of_extractions(eq)]
+
+    vecs = [EPMAfem.UpdatableRank1DiscretePNVector(EPMAfem.Rank1DiscretePNVector(true, mdl, arch, μϵs[i], EPMAfem.allocate_vec(arch, EPMAfem.n_basis(mdl).nx.p), μΩps[i]), absorptions[i], n_parameters) for i in 1:EPMAfem.number_of_extractions(eq)]
+    for vec in vecs
+        EPMAfem.update_vector!(vec, ρs)
+    end
+    if updatable
+        return vecs
+    else
+        return [vec.vector for vec in vecs]
+    end
+    # else
+    #     μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.even(space_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
+    #     return [Rank1DiscretePNVector(true, mdl, arch, μϵs[i], μxps[i], μΩps[i]) for i in 1:number_of_extractions(pn_ex)]
+    # end
+end
+
