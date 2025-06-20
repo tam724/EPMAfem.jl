@@ -11,42 +11,69 @@ Pkg.add("Dimensionless")
 Pkg.add(url="https://github.com/tam724/EPMAfem.jl", rev="a63052f6473865223501c0947ec830220de42136")
 
 # include the required packages
+using Revise
 using Plots
 using EPMAfem
 using NeXLCore
 using NeXLMatrixCorrection
 using Unitful
-using Dimensionless
 using EPMAfem.Gridap
 
 NExt = Base.get_extension(EPMAfem, :NeXLCoreExt)
+dimless, dimful = NExt.dimless, NExt.dimful
 
 # material components: Copper, Aluminium (per default the material is homogeneous (first element, here: Copper))
 mat = [n"Cu", n"Al"]
+dets = NExt.EPMADetector.([n"Cu K-L2", n"Al K-L2"], Ref(VectorValue(1.0)))
+
 # define the energy range (and the steps in energy)
-ϵ_range = range(3u"keV", 17u"keV", length=20)
+ϵ_range = range(3u"keV", 17u"keV", length=100)
 # prepare the "equations": stopping power, cross sections, etc...
-eq = NExt.epma_equations(mat, ϵ_range, 27)
+eq = NExt.epma_equations(mat, dets, ϵ_range, 27)
 
 # plot the stopping power (thereby reintroduce units)
 plot(ϵ_range, ϵ -> dimful(EPMAfem.stopping_power(eq, 1, dimless(ϵ, eq.dim_basis)), u"keV"/u"nm", eq.dim_basis))
 plot!(ϵ_range, ϵ -> dimful(EPMAfem.stopping_power(eq, 2, dimless(ϵ, eq.dim_basis)), u"keV"/u"nm", eq.dim_basis))
 
 # define the model (spatial extents, number of grid nodes in space, number of spherical harmonics)
-model = NExt.epma_model(eq, (-800u"nm", 0u"nm"), (20), 1)
+model = NExt.epma_model(eq, (-800u"nm", 0u"nm"), (100), 21)
 
 # discretize the problem -> build the "matrix"
 pnproblem = EPMAfem.discretize_problem(eq, model, EPMAfem.cpu(), updatable=true)
 # define the "linear solver" (system can be thought of as "matrix"^{-1})
 system = EPMAfem.implicit_midpoint(pnproblem.problem, EPMAfem.PNSchurSolver);
 
+detectors = NExt.discretize_detectors(eq, model, EPMAfem.cpu(), updatable=true)
+
+ρs = EPMAfem.discretize_mass_concentrations(eq, model)
+func = EPMAfem.absorption_approximation(detectors[1].bxp_updater, ρs)
+
+plot(dimless.(-800u"nm":1u"nm":0u"nm", eq.dim_basis), x -> func(VectorValue(x)))
+
 # define a beam at (0, 0) with energy 15keV in direction -z
+
 beam = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [dimless(15.0u"keV", eq.dim_basis)], [VectorValue(-1.0, 0.0, 0.0)]; beam_energy_σ=0.05)
 # discretize the "rhs of the equation"
 pnsource = EPMAfem.discretize_rhs(beam, model, EPMAfem.cpu())[1]
 
+sol = system * pnsource
+
 # define what we want to do with the high dimensional solution. here : marginalize over energies and direction -> results in a function in space
 probe = EPMAfem.PNProbe(model, EPMAfem.cpu(), ϵ = ϵ -> 1.0, Ω = Ω -> 1.0)
+
+probe = EPMAfem.PNProbe(model, EPMAfem.cpu(), ϵ = 0.5, Ω = Ω -> 1.0)
+
+probe(system*pnsource).p
+
+f = EPMAfem.interpolable(probe, system*pnsource)
+
+
+dimless(-800u"nm", eq.dim_basis)
+dimless(0u"nm", eq.dim_basis)
+
+plot(-0.25:0.001:0, x -> f(VectorValue(x)))
+
+
 
 # compute the solution and build an "interpolable" function
 f = EPMAfem.interpolable(probe, system * pnsource)

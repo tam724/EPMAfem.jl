@@ -3,16 +3,16 @@ using NeXLCore
 using EPMAfem
 using NeXLCore.Unitful
 using Plots
-using Dimensionless
 using Gridap
 
 NExt = Base.get_extension(EPMAfem, :NeXLCoreExt)
+dimless, dimful = NExt.dimless, NExt.dimful
 
 mat = [n"Cu", n"Pt", n"Fe"]
 k_rats = [n"Cu K-L2", n"Pt L3-M5", n"Fe K-L2"]
 ϵ_range = range(5u"keV", 17.0u"keV", length=50)
 eq = NExt.epma_equations(mat, ϵ_range, 13)
-model = NExt.epma_model(eq, (-1200.0u"nm", 0.0u"nm", -1200.0u"nm", 1200.0u"nm", -1200.0u"nm", 1200.0u"nm"), (50, 70, 70), 13)
+model = NExt.epma_model(eq, (-1200.0u"nm", 0.0u"nm", -1200.0u"nm", 1200.0u"nm", -1200.0u"nm", 1200.0u"nm"), (30, 30, 30), 13)
 # model = NExt.epma_model(eq, (-1500.0u"nm", 0.0u"nm", -1500u"nm", 1500u"nm", -1500u"nm", 1500u"nm"), (2, 2, 2), 13)
 
 upd_pnproblem = EPMAfem.discretize_problem(eq, model, EPMAfem.cuda(), updatable=true)
@@ -20,8 +20,10 @@ pnsystem = EPMAfem.implicit_midpoint(upd_pnproblem.problem, EPMAfem.PNSchurSolve
 
 # outflux = EPMAfem.discretize_outflux(model, EPMAfem.cuda())
 
-excitation = EPMAfem.pn_excitation([(x=dimless(x_, eq.dim_basis), y=dimless(y_, eq.dim_basis)) for x_ in range(-700u"nm", 700u"nm", length=70) for y_ in range(-700u"nm", 700u"nm", length=70)], [dimless(15.0u"keV", eq.dim_basis)], [VectorValue(-1.0, 0.0, 0.0)], beam_position_σ=dimless(50u"nm", eq.dim_basis), beam_energy_σ=dimless(0.5u"keV", eq.dim_basis), beam_direction_κ=50.0)
-discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
+excitation = EPMAfem.pn_excitation([(x=dimless(x_, eq.dim_basis), y=dimless(y_, eq.dim_basis)) for x_ in range(-700u"nm", 700u"nm", length=20) for y_ in range(-700u"nm", 700u"nm", length=20)], [dimless(15.0u"keV", eq.dim_basis)], [VectorValue(-1.0, 0.0, 0.0)], beam_position_σ=dimless(50u"nm", eq.dim_basis), beam_energy_σ=dimless(0.5u"keV", eq.dim_basis), beam_direction_κ=50.0)
+@profview discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())
+
+
 
 # (should be in the library somwhere)
 discrete_ext = let
