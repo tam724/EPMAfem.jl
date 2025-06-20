@@ -5,18 +5,59 @@ using NeXLCore.Unitful
 using Plots
 using Dimensionless
 using EPMAfem.SphericalHarmonicsModels.LegendrePolynomials
+using EPMAfem.Gridap
 
-NExt = Base.get_extension(EPMAfem, :NeXLCoreExt)
+eq = EPMAfem.PNEquations()
 
-plot(0:0.01:2π, θ -> dimless(NeXLCore.δσδΩ(NeXLCore.ScreenedRutherford, θ, n"Cu", ϵ_range[1]/u"eV" |> upreferred)*u"cm"^2, eq.dim_basis))
+SH = EPMAfem.SphericalHarmonicsModels
+direction_mdl = SH.EEEOSphericalHarmonicsModel(60, 3)
 
-f(μ) = dimless(NeXLCore.δσδΩ(NeXLCore.ScreenedRutherford, acos(μ), n"Cu", ϵ_range[end]/u"eV" |> upreferred)*u"cm"^2, eq.dim_basis)
-f_lg = EPMAfem.SphericalHarmonicsModels.expand_legendre(f, 35, EPMAfem.SphericalHarmonicsModels.hcubature_quadrature(1e-9, 1e-9))
+A1 = SH.assemble_bilinear(SH.∫S²_kuv(EPMAfem.scattering_kernel(eq, nothing, nothing)), direction_mdl, direction_mdl.moments, direction_mdl.moments, SH.hcubature_quadrature(1e-9, 1e-9))
+A1 = SH.assemble_bilinear(SH.∫S²_kuv(μ -> exp(-100.0*(μ-1.0)^2)), direction_mdl, direction_mdl.moments, direction_mdl.moments, SH.hcubature_quadrature(1e-9, 1e-9))
+A1 = SH.assemble_bilinear(SH.∫S²_kuv(μ -> 1 + μ), direction_mdl, direction_mdl.moments, direction_mdl.moments, SH.hcubature_quadrature(1e-9, 1e-9))
+A2 = SH.assemble_bilinear(SH.∫S²_kuv(μ -> 1), direction_mdl, direction_mdl.moments, direction_mdl.moments, SH.hcubature_quadrature(1e-9, 1e-9))
+# normalize A1
+A1 .= A1 ./ A1[1, 1]
+
+function ic(x)
+    if x[1] > 0.5
+        return 1.0
+    else
+        return 2.0
+    end
+end
+
+f_initial = SH.assemble_linear(SH.∫S²_hv(ic), direction_mdl, direction_mdl.moments, SH.lebedev_quadrature_max())
+
+x = sin.(0:0.01:2π)
+y = cos.(0:0.01:2π)
+
+κ = diag(1.0 .- A1)
+
+@gif for t in 0:0.1:5
+    val = zeros(size(x))
+    for i in 1:size(x, 1)
+        val[i] = dot(f_initial .* exp.(-κ.* t), direction_mdl.moments(VectorValue(x[i], y[i], 0.0)))
+    end
+    plot(0:0.01:2π, val)
+    # plot(val.*x, val.*y, aspect_ratio=:equal)
+end
 
 
 
-plot(-1:0.001:1, f)
-plot!(-1:0.001:1, μ -> f_lg(μ))
+
+
+# NExt = Base.get_extension(EPMAfem, :NeXLCoreExt)
+
+# plot(0:0.01:2π, θ -> dimless(NeXLCore.δσδΩ(NeXLCore.ScreenedRutherford, θ, n"Cu", ϵ_range[1]/u"eV" |> upreferred)*u"cm"^2, eq.dim_basis))
+
+# f(μ) = dimless(NeXLCore.δσδΩ(NeXLCore.ScreenedRutherford, acos(μ), n"Cu", ϵ_range[end]/u"eV" |> upreferred)*u"cm"^2, eq.dim_basis)
+# f_lg = EPMAfem.SphericalHarmonicsModels.expand_legendre(f, 35, EPMAfem.SphericalHarmonicsModels.hcubature_quadrature(1e-9, 1e-9))
+
+
+
+# plot(-1:0.001:1, f)
+# plot!(-1:0.001:1, μ -> f_lg(μ))
 
 SH = EPMAfem.SphericalHarmonicsModels
 direction_mdl = SH.EEEOSphericalHarmonicsModel(12, 2)

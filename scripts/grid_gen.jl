@@ -1,6 +1,6 @@
 using GridapGmsh: gmsh
 
-function grid_gen_2D((zl, zr, xl, xr); min_res=0.05, max_res=0.01, filepath="/tmp/tmp_msh.msh")
+function grid_gen_2D((zl, zr, xl, xr); min_res=0.1, max_res=0.01, filepath="/tmp/tmp_msh.msh")
     gmsh.initialize()
     gmsh.clear()
                                 # x, y, z, res, tag
@@ -55,7 +55,7 @@ function grid_gen_2D((zl, zr, xl, xr); min_res=0.05, max_res=0.01, filepath="/tm
     gmsh.clear()
 end
 
-grid_gen_2D((-0.5, 0.5, -0.5, 0.5), 0.1)
+grid_gen_2D((-0.5, 0.5, -0.5, 0.5); filepath="/tmp/tmp_msh.msh")
 
 using Gridap
 
