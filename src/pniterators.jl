@@ -91,6 +91,11 @@ function saveall(it)
     CachedDiscretePNSolution(it, Dict(idx => copy(sol) for (idx, sol) in it))
 end
 
+function saveall_cpu(it)
+    CachedDiscretePNSolution(it, Dict(idx => collect(sol) for (idx, sol) in it))
+end
+
+
 function _is_adjoint_solution(it::CachedDiscretePNSolution)
     return _is_adjoint_solution(it.it)
 end
@@ -100,18 +105,21 @@ function Base.length(it::CachedDiscretePNSolution)
 end
 
 function Base.iterate(it::CachedDiscretePNSolution)
+    arch = it.it.system.problem.arch
     (idx, _), _ = iterate(it.it)
-    return idx => it.solution_cache[idx], idx
+    return idx => arch(it.solution_cache[idx]), idx
 end
 
 function Base.iterate(it::CachedDiscretePNSolution, idx::ϵidx)
+    arch = it.it.system.problem.arch
     idx_next = next(idx)
     if isnothing(idx_next) return nothing end
-    return idx_next => it.solution_cache[idx_next], idx_next
+    return idx_next => arch(it.solution_cache[idx_next]), idx_next
 end
 
 function Base.getindex(it::CachedDiscretePNSolution, idx::ϵidx)
-    return it.solution_cache[idx]
+    arch = it.it.system.problem.arch
+    return arch(it.solution_cache[idx])
 end
 
 @concrete struct DiscreteIntervalPNIterator{IT}
