@@ -1,3 +1,10 @@
+include("pnmatrices.jl")
+include("pnkronmatrix.jl")
+include("pnsummatrix.jl")
+include("pnblockmatrix.jl")
+include("pncachedmatrix.jl")
+
+
 include("pnexplicitimplicitmatrix.jl")
 include("pnsystemsolver.jl")
 include("pnimplicitmidpoint.jl")
