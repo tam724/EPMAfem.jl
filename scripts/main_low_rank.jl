@@ -5,11 +5,53 @@ using Test
 using CUDA
 # include("plot_overloads.jl")
 
-create_rand_mat(n::Int, m::Int) = rand(n, m) |> cu
-create_rand_vec(n::Int) = rand(n) |> cu
-T() = Float32
+create_rand_mat(n::Int, m::Int) = rand(n, m)
+create_rand_vec(n::Int) = rand(n)
+T() = Float64
 T(x) = T()(x)
 
+A = create_rand_mat(10, 10)
+B = create_rand_mat(10, 10)
+
+K = EPMAfem.KronMatrix{Float64}(A, B)
+C = EPMAfem.Cached{Float64}(K)
+
+W = EPMAfem.Wrapped{Float64}(C)
+
+W.workspace_cache
+
+x = rand(size(W, 2))
+W*x
+
+W.workspace_cache
+
+A = create_rand_mat(10, 10)
+R = EPMAfem.ReshapeableMatrix{Float64}(A)
+
+x = rand(size(R, 2))
+R * x
+
+EPMAfem.reshape!(R, (2, 2))
+x = rand(size(R, 2))
+R * x
+
+X = EPMAfem.KronMatrix{Float64}(create_rand_mat(10, 10), R)
+
+EPMAfem.reshape!(R, (2, 2))
+X
+
+x = rand(size(X, 2))
+X*x
+
+RC = EPMAfem.Cached{Float64}(R)
+
+EPMAfem.reshape!(R, (5, 5))
+RC
+
+x = rand(size(RC, 2))
+RC * x
+
+nothing
 # test the caching system to some extent ...
 @testset let
     nS1 = rand(1:40)

@@ -11,7 +11,7 @@ LinearAlgebra.isdiag(At::Transpose{T, <:AbstractPNMatrix{T}}) where T = isdiag(p
 
 function Base.Matrix(A::AbstractPNMatrix{T}) where T
     ws = allocate_workspace_cache(cache_with!, required_workspace_cache(A))
-    M = zeros(T, size(A)) |> cu
+    M = zeros(T, size(A)) # |> cu
     cache_with!(ws, M, A, true, false)
     return M
 end
@@ -73,7 +73,7 @@ Base.getindex(wsch::WorkspaceCache{<:Union{Vector, Tuple}, <:AbstractVector{<:Nu
 const cache_id_counter = Ref(UInt64(0))
 next_cache_id() = (cache_id_counter[] += 1)
 
-allocate_cache(n::Int) = (zeros(n) |> cu, next_cache_id())
+allocate_cache(n::Int) = (zeros(n), next_cache_id()) # |> cu
 allocate_cache(::Nothing) = nothing
 allocate_cache(ch::Union{Vector, Tuple}) = allocate_cache.(ch)
 
@@ -82,13 +82,13 @@ function mul_with!(::WorkspaceCache, _, _, ::AbstractPNMatrix, ::Number, ::Numbe
 function cache_with!(::WorkspaceCache, _, ::AbstractPNMatrix, ::Number, ::Number) error("interface definition, should be implemented!") end
 
 function allocate_workspace_cache(::typeof(mul_with!), required::WorkspaceCache)
-    workspace = zeros(mul_with_ws(required)) |> cu
+    workspace = zeros(mul_with_ws(required))# |> cu
     cache = allocate_cache(ch(required))
     return WorkspaceCache(cache, workspace)
 end
 
 function allocate_workspace_cache(::typeof(cache_with!), required::WorkspaceCache)
-    workspace = zeros(cache_with_ws(required)) |> cu
+    workspace = zeros(cache_with_ws(required))# |> cu
     cache = allocate_cache(ch(required))
     return WorkspaceCache(cache, workspace)
 end

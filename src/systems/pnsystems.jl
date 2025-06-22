@@ -3,6 +3,7 @@ include("pnkronmatrix.jl")
 include("pnsummatrix.jl")
 include("pnblockmatrix.jl")
 include("pncachedmatrix.jl")
+include("pnreshapeablematrix.jl")
 
 
 include("pnexplicitimplicitmatrix.jl")
