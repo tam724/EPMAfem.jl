@@ -1,6 +1,20 @@
 @concrete struct SumMatrix{T} <: AbstractPNMatrix{T}
     As
     αs
+    o
+end
+
+function SumMatrix(As, αs)
+    T = promote_type(eltype.(As)...)
+    o = Observable(nothing)
+    for A in As
+        if is_observable(A)
+            on(_ -> notify(o), get_observable(A))
+        end
+    end
+    αs_o = Observable.(αs)
+    onany((args...) -> notify(o), αs_o...)
+    return SumMatrix{T}(As, αs_o, o)
 end
 
 size_string(S::SumMatrix{T}) where T = "$(size(S)[1])x$(size(S)[2]) SumMatrix{$(T)}"
@@ -8,7 +22,7 @@ content_string(S::SumMatrix{T}) where T = "[$(size_string(S.As[1])), ...]"
 
 function cache_with!(ws::WorkspaceCache, cached, S::SumMatrix, α::Number, β::Number)
     for i in eachindex(S.As, S.αs)
-        cache_with!(ws[i], cached, S.As[i], α*S.αs[i], (i == 1) ? β : true)
+        cache_with!(ws[i], cached, S.As[i], α*S.αs[i][], (i == 1) ? β : true)
     end
 end
 
@@ -34,13 +48,13 @@ LinearAlgebra.issymmetric(S::SumMatrix) = all(issymmetric, S.As)
 
 function mul_with!(ws::WorkspaceCache{<:Union{Vector, Tuple}}, y::AbstractVecOrMat, S::SumMatrix, x::AbstractVecOrMat, α::Number, β::Number)
     for i in eachindex(S.As, S.αs)
-        mul_with!(ws[i], y, S.As[i], x, S.αs[i]*α, (i == 1) ? β : true)
+        mul_with!(ws[i], y, S.As[i], x, S.αs[i][]*α, (i == 1) ? β : true)
     end
 end
 
 function mul_with!(ws::WorkspaceCache{<:Union{Vector, Tuple}}, y::AbstractVecOrMat, x::AbstractVecOrMat, S::SumMatrix, α::Number, β::Number)
     for i in eachindex(S.As, S.αs)
-        mul_with!(ws[i], y, x, S.As[i], S.αs[i]*α, (i == 1) ? β : true)
+        mul_with!(ws[i], y, x, S.As[i], S.αs[i][]*α, (i == 1) ? β : true)
     end
 end
 
@@ -50,12 +64,12 @@ content_string(St::Transpose{T, <:SumMatrix{T}}) where T = "[$(size_string(trans
 
 function mul_with!(ws::WorkspaceCache{<:Union{Vector, Tuple}}, y::AbstractVecOrMat, St::Transpose{T, <:SumMatrix{T}}, x::AbstractVecOrMat, α::Number, β::Number) where T
     for i in eachindex(parent(St).As, parent(St).αs)
-        mul_with!(ws[i], y, transpose(parent(St).As[i]), x, parent(St).αs[i]*α, (i == 1) ? β : true)
+        mul_with!(ws[i], y, transpose(parent(St).As[i]), x, parent(St).αs[i][]*α, (i == 1) ? β : true)
     end
 end
 
 function mul_with!(ws::WorkspaceCache{<:Union{Vector, Tuple}}, y::AbstractVecOrMat, x::AbstractVecOrMat, St::Transpose{T, <:SumMatrix{T}}, α::Number, β::Number) where T
     for i in eachindex(parent(St).As, parent(St).αs)
-        mul_with!(ws[i], y, x, transpose(parent(St).As[i]), parent(St).αs[i]*α, (i == 1) ? β : true)
+        mul_with!(ws[i], y, x, transpose(parent(St).As[i]), parent(St).αs[i][]*α, (i == 1) ? β : true)
     end
 end

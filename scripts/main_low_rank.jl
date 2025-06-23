@@ -7,69 +7,112 @@ using CUDA
 
 create_rand_mat(n::Int, m::Int) = rand(n, m)
 create_rand_vec(n::Int) = rand(n)
-T() = Float64
-T(x) = T()(x)
 
-A = create_rand_mat(10, 10)
-B = create_rand_mat(10, 10)
+# check ReshapeMatrix + KronMatrix
+@testset begin
+    A = rand(10, 11)
+    B = rand(12, 13)
+    R = EPMAfem.ReshapeableMatrix(B)
 
-K = EPMAfem.KronMatrix{Float64}(A, B)
-C = EPMAfem.Cached{Float64}(K)
+    K = EPMAfem.KronMatrix(A, R)
+    K_ref = kron(transpose(B), A)
 
-W = EPMAfem.Wrapped{Float64}(C)
+    @test size(K) == (size(B, 2)*size(A, 1), size(B, 1)*size(A, 2))
+    x = create_rand_vec(size(K, 2))
+    @test K * x ≈ K_ref * x
 
-W.workspace_cache
+    C = rand(3, 4)
+    EPMAfem.set!(R, C)
+    K_ref = kron(transpose(C), A)
 
-x = rand(size(W, 2))
-W*x
+    @test size(K) == (size(C, 2)*size(A, 1), size(C, 1)*size(A, 2))
+    x = create_rand_vec(size(K, 2))
+    @test K * x ≈ K_ref * x
+end
 
-W.workspace_cache
+# check aliasing
+@testset begin
+    A = rand(10, 11)
+    R = EPMAfem.ReshapeableMatrix(A)
 
-A = create_rand_mat(10, 10)
-R = EPMAfem.ReshapeableMatrix{Float64}(A)
+    K = EPMAfem.SumMatrix((R, R), (1.0, 2.0))
+    K_ref = 1.0 .* A .+ 2.0 .* A
 
-x = rand(size(R, 2))
-R * x
 
-EPMAfem.reshape!(R, (2, 2))
-x = rand(size(R, 2))
-R * x
+    @test size(K) == (10, 11)
+    x = create_rand_vec(size(K, 2))
+    @test K*x ≈ K_ref * x
 
-X = EPMAfem.KronMatrix{Float64}(create_rand_mat(10, 10), R)
+    B = rand(2, 3)
+    EPMAfem.set!(R, B)
 
-EPMAfem.reshape!(R, (2, 2))
-X
+    K_ref = 1.0 .* B .+ 2.0 .* B
+    @test size(K) == (2, 3)
+    x = create_rand_vec(size(K, 2))
+    @test K*x ≈ K_ref*x
+end
 
-x = rand(size(X, 2))
-X*x
+# check cache invalidity bubbling
+@testset let
+    A = create_rand_mat(10, 10)
+    α1 = rand()
+    S1 = EPMAfem.SumMatrix((A, ), (α1, ))
+    C1 = EPMAfem.Cached(S1)
+    α2 = rand()
+    S2 = EPMAfem.SumMatrix((C1, ), (α2, ))
+    C2 = EPMAfem.Cached(S2)
+    W = EPMAfem.Wrapped(C2)
 
-RC = EPMAfem.Cached{Float64}(R)
+    W_ref = α1*α2.*A
+    x = create_rand_vec(10)
+    @test W * x ≈ W_ref * x
+    @test C1.o[] != -1
+    @test C2.o[] != -1
 
-EPMAfem.reshape!(R, (5, 5))
-RC
+    # manually destroy the cache to check that it is not recomputed
+    W.workspace_cache.cache[1][1] .= 0
+    @test all(W*x .== 0.0)
 
-x = rand(size(RC, 2))
-RC * x
+    S1.αs[1][] = 1.0
+    @test C1.o[] == -1
+    @test C2.o[] == -1
+    W_ref = α2.*A
+    x = create_rand_vec(10)
+    @test W * x ≈ W_ref * x
 
-nothing
+    # manually destroy the inner cache to check that it is not recomputed
+    W.workspace_cache.cache[2][1][1][1] .= 0
+    @test W*x ≈ W_ref*x
+
+    EPMAfem.invalidate_cache!(W)
+    @test W*x ≈ W_ref*x
+
+    S2.αs[1][] = 1.0
+    @test C1.o[] != -1
+    @test C2.o[] == -1
+    W_ref = A
+    x = create_rand_vec(10)
+    @test W*x ≈ W_ref*x
+end
+
 # test the caching system to some extent ...
 @testset let
     nS1 = rand(1:40)
     mS1 = rand(1:40)
     A1 = create_rand_mat(nS1, mS1)
     A2 = create_rand_mat(nS1, mS1)
-    S1 = EPMAfem.SumMatrix{T()}((A1, A2), (rand(T()), rand(T())))
-    C1 = EPMAfem.Cached{T()}(S1)
+    S1 = EPMAfem.SumMatrix((A1, A2), (rand(T()), rand(T())))
+    C1 = EPMAfem.Cached(S1)
 
     nS2 = rand(1:40)
     mS2 = rand(1:40)
     B1 = create_rand_mat(nS2, mS2)
     B2 = create_rand_mat(nS2, mS2)
-    S2 = EPMAfem.SumMatrix{T()}([B1, B2], rand(2))
-    C2 = EPMAfem.Cached{T()}(S2)
+    S2 = EPMAfem.SumMatrix([B1, B2], rand(2))
+    C2 = EPMAfem.Cached(S2)
 
-    KS = EPMAfem.KronMatrix{T()}(S1, S2)
-    KC = EPMAfem.KronMatrix{T()}(C1, C2)
+    KS = EPMAfem.KronMatrix(S1, S2)
+    KC = EPMAfem.KronMatrix(C1, C2)
 
     KS_ref = Matrix(KS)
     KC_ref = Matrix(KC)
@@ -84,8 +127,8 @@ nothing
     @test EPMAfem.mul_with_ws(KC_wsch) == min(nS1*nS2, mS1*mS2)# the kronecker workspace
     @test EPMAfem.cache_with_ws(KC_wsch) == nS1*mS1 + nS2*mS2 # the cached sums
 
-    WS = EPMAfem.Wrapped{T()}(KS)
-    WC = EPMAfem.Wrapped{T()}(KC)
+    WS = EPMAfem.Wrapped(KS)
+    WC = EPMAfem.Wrapped(KC)
 
     # WS.workspace_cache
     # WC.workspace_cache
@@ -109,8 +152,8 @@ end
 # Cached and Wrapped
 @testset let
     A = create_rand_mat(10, 11)
-    C = EPMAfem.Cached{T()}(A)
-    W = EPMAfem.Wrapped{T()}(C)
+    C = EPMAfem.Cached(A)
+    W = EPMAfem.Wrapped(C)
 
     x = create_rand_vec(size(C, 2))
     @test A*x ≈ C*x
@@ -131,10 +174,10 @@ end
     b = create_rand_mat(10, 15)
     c = create_rand_mat(15, 15)
 
-    B = EPMAfem.BlockMatrix{T()}(a, b, c, rand(T()), rand(T()), rand(T()), rand(T()), true, T(1.0))
-    B_ref_ = B.Δ .* [
-        B.α .* B.A      B.β .* B.B
-        B.δ .* B.βt .* transpose(B.B)   B.δ .* B.γ .* B.C
+    B = EPMAfem.BlockMatrix(a, b, c, rand(), rand(), rand(), rand(), 1.0)
+    B_ref_ = B.Δ[] .* [
+        B.α[] .* B.A      B.β[] .* B.B
+        B.δ[] .* B.βt[] .* transpose(B.B)   B.δ[] .* B.γ[] .* B.C
     ]
     B_ref = Matrix(B)
     @test B_ref_ ≈ B_ref
@@ -150,16 +193,16 @@ end
 
 # stich KronMatrix and BlockMatrix together
 @testset let
-    KA = EPMAfem.KronMatrix{T()}(create_rand_mat(10, 10), create_rand_mat(11, 11))
+    KA = EPMAfem.KronMatrix(create_rand_mat(10, 10), create_rand_mat(11, 11))
     KA_ref = Matrix(KA)
 
-    KB = EPMAfem.KronMatrix{T()}(create_rand_mat(10, 9), create_rand_mat(12, 11))
+    KB = EPMAfem.KronMatrix(create_rand_mat(10, 9), create_rand_mat(12, 11))
     KB_ref = Matrix(KB)
 
-    KC = EPMAfem.KronMatrix{T()}(create_rand_mat(9, 9), create_rand_mat(12, 12))
+    KC = EPMAfem.KronMatrix(create_rand_mat(9, 9), create_rand_mat(12, 12))
     KC_ref = Matrix(KC)
 
-    B = EPMAfem.BlockMatrix{T()}(KA, KB, KC, rand(T()), rand(T()), rand(T()), rand(T()), true, T(1.0))
+    B = EPMAfem.BlockMatrix(KA, KB, KC, rand(), rand(), rand(), rand(), 1.0)
     B_ref = Matrix(B)
 
     x = create_rand_vec(size(B, 2))
@@ -176,8 +219,8 @@ end
     A2 = create_rand_mat(10, 11)
     A3 = create_rand_mat(10, 11)
     αs = rand(3)
-    S = EPMAfem.SumMatrix{T()}([A1, A2, A3], αs)
-    S_tuple = EPMAfem.SumMatrix{T()}((A1, A2, A3), tuple(αs...))
+    S = EPMAfem.SumMatrix([A1, A2, A3], αs)
+    S_tuple = EPMAfem.SumMatrix((A1, A2, A3), tuple(αs...))
 
     S_ref_ = αs[1] .* A1 .+ αs[2] .* A2 .+ αs[3] .* A3 
     S_ref = Matrix(S)
@@ -200,12 +243,12 @@ end
 
 # stich KronMatrix and SumMatrix together
 @testset let
-    K1 = EPMAfem.KronMatrix{T()}(create_rand_mat(10, 11), create_rand_mat(12, 13))
+    K1 = EPMAfem.KronMatrix(create_rand_mat(10, 11), create_rand_mat(12, 13))
     K1_ref = kron(transpose(K1.B), K1.A)
-    K2 = EPMAfem.KronMatrix{T()}(create_rand_mat(10, 11), create_rand_mat(12, 13))
+    K2 = EPMAfem.KronMatrix(create_rand_mat(10, 11), create_rand_mat(12, 13))
     K2_ref = kron(transpose(K2.B), K2.A)
-    S1 = EPMAfem.SumMatrix{T()}([K1, K2], rand(2))
-    S1_ref = K1_ref .* S1.αs[1] .+ K2_ref .* S1.αs[2]
+    S1 = EPMAfem.SumMatrix([K1, K2], rand(2))
+    S1_ref = K1_ref .* S1.αs[1][] .+ K2_ref .* S1.αs[2][]
 
     x = create_rand_vec(size(S1)[2])
     @test S1_ref * x ≈ S1 * x
@@ -215,29 +258,29 @@ end
     @test transpose(S1_ref) * x ≈ S1t * x
 
     # stich the two together
-    S1 = EPMAfem.SumMatrix{T()}([create_rand_mat(10, 11), create_rand_mat(10, 11)], rand(2))
-    S1_ref = S1.As[1] .* S1.αs[1] .+ S1.As[2] .* S1.αs[2]
+    S1 = EPMAfem.SumMatrix([create_rand_mat(10, 11), create_rand_mat(10, 11)], rand(2))
+    S1_ref = S1.As[1] .* S1.αs[1][] .+ S1.As[2] .* S1.αs[2][]
 
-    S2 = EPMAfem.SumMatrix{T()}([create_rand_mat(12, 13), create_rand_mat(12, 13)], rand(2))
-    S2_ref = S2.As[1] .* S2.αs[1] .+ S2.As[2] .* S2.αs[2]
+    S2 = EPMAfem.SumMatrix([create_rand_mat(12, 13), create_rand_mat(12, 13)], rand(2))
+    S2_ref = S2.As[1] .* S2.αs[1][] .+ S2.As[2] .* S2.αs[2][]
 
-    K1 = EPMAfem.KronMatrix{T()}(S1, S2)
+    K1 = EPMAfem.KronMatrix(S1, S2)
     K1_ref = kron(transpose(S2_ref), S1_ref)
 
     x = create_rand_vec(size(K1)[2])
     @test K1*x ≈ K1_ref*x
 
-    S3 = EPMAfem.SumMatrix{T()}([create_rand_mat(10, 11), create_rand_mat(10, 11)], rand(2))
-    S3_ref = S3.As[1] .* S3.αs[1] .+ S3.As[2] .* S3.αs[2]
+    S3 = EPMAfem.SumMatrix([create_rand_mat(10, 11), create_rand_mat(10, 11)], rand(2))
+    S3_ref = S3.As[1] .* S3.αs[1][] .+ S3.As[2] .* S3.αs[2][]
 
-    S4 = EPMAfem.SumMatrix{T()}([create_rand_mat(12, 13), create_rand_mat(12, 13)], rand(2))
-    S4_ref = S4.As[1] .* S4.αs[1] .+ S4.As[2] .* S4.αs[2]
+    S4 = EPMAfem.SumMatrix([create_rand_mat(12, 13), create_rand_mat(12, 13)], rand(2))
+    S4_ref = S4.As[1] .* S4.αs[1][] .+ S4.As[2] .* S4.αs[2][]
 
-    K2 = EPMAfem.KronMatrix{T()}(S3, S4)
+    K2 = EPMAfem.KronMatrix(S3, S4)
     K2_ref = kron(transpose(S4_ref), S3_ref)
 
-    K = EPMAfem.SumMatrix{T()}([K1, K2], rand(2))
-    K_ref = K1_ref .* K.αs[1] .+ K2_ref .* K.αs[2]
+    K = EPMAfem.SumMatrix([K1, K2], rand(2))
+    K_ref = K1_ref .* K.αs[1][] .+ K2_ref .* K.αs[2][]
 
     x = create_rand_vec(size(K)[2])
     @test K*x ≈ K_ref*x
@@ -251,7 +294,7 @@ end
     A = create_rand_mat(10, 11)
     B = create_rand_mat(12, 13)
 
-    K = EPMAfem.KronMatrix{T()}(A, B)
+    K = EPMAfem.KronMatrix(A, B)
     K_ref_ = kron(transpose(B), A)
     K_ref = Matrix(K)
     @test K_ref_ ≈ K_ref
@@ -292,7 +335,7 @@ end
     A = Diagonal(create_rand_vec(10))
     B = Diagonal(create_rand_vec(11))
 
-    K_diag = EPMAfem.KronMatrix{T()}(A, B)
+    K_diag = EPMAfem.KronMatrix(A, B)
     @test isdiag(K_diag) == true
 end
 

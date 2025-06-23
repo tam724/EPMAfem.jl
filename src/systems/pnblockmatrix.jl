@@ -15,7 +15,21 @@ matrix of the form
     δ # ::Union{Val{1}, Val{-1}}
 
     Δ
+
+    o
 end
+
+function BlockMatrix(A, B, C, α, β, βt, γ, Δ)
+    T = promote_type(eltype.((A, B, C))...)
+    o = Observable(nothing)
+    if is_observable(A) on(_ -> notify(o), get_observable(A)) end
+    if is_observable(B) on(_ -> notify(o), get_observable(B)) end
+    if is_observable(C) on(_ -> notify(o), get_observable(C)) end
+    α_o, β_o, βt_o, γ_o, δ_o, Δ_o = Observable{T}.((α, β, βt, γ, 1, Δ))
+    onany((args...) -> notify(o), (α_o, β_o, βt_o, γ_o, δ_o, Δ_o)...)
+    return BlockMatrix{T}(A, B, C, α_o, β_o, βt_o, γ_o, δ_o, Δ_o, o)
+end
+
 
 size_string(B::BlockMatrix{T}) where T = "$(size(B)[1])x$(size(B)[2]) BlockMatrix{$(T)}"
 function content_string(B::BlockMatrix{T}) where T
@@ -67,11 +81,11 @@ function ur_mul_with!(ws::WorkspaceCache, y1::AbstractVector, B::BlockMatrix, x2
 end
 
 function ll_mul_with!(ws::WorkspaceCache, y2::AbstractVector, B::BlockMatrix, x1::AbstractVector, α::Number, β::Number)
-    mul_with!(ws, y2, transpose(B.B), x1, B.Δ[]*B.δ*B.βt[]*α, β)
+    mul_with!(ws, y2, transpose(B.B), x1, B.Δ[]*B.δ[]*B.βt[]*α, β)
 end
 
 function lr_mul_with!(ws::WorkspaceCache, y2::AbstractVector, B::BlockMatrix, x2::AbstractVector, α::Number, β::Number)
-    mul_with!(ws, y2, B.C, x2, B.Δ[]B.δ*B.γ[]*α, β)
+    mul_with!(ws, y2, B.C, x2, B.Δ[]B.δ[]*B.γ[]*α, β)
 end
 
 function mul_with!(ws::WorkspaceCache, y::AbstractVector, B::Union{BlockMatrix, Transpose{T, <:BlockMatrix{T}}}, x::AbstractVector, α::Number, β::Number) where T
@@ -118,10 +132,10 @@ end
 
 function ll_mul_with!(ws::WorkspaceCache, y2::AbstractVector, Bt::Transpose{T, <:BlockMatrix{T}}, x1::AbstractVector, α::Number, β::Number) where T
     B = parent(Bt)
-    mul_with!(ws, y2, transpose(B.B), x1, B.Δ[]*B.δ*B.β[]*α, β)
+    mul_with!(ws, y2, transpose(B.B), x1, B.Δ[]*B.δ[]*B.β[]*α, β)
 end
 
 function lr_mul_with!(ws::WorkspaceCache, y2::AbstractVector, Bt::Transpose{T, <:BlockMatrix{T}}, x2::AbstractVector, α::Number, β::Number) where T
     B = parent(Bt)
-    mul_with!(ws, y2, transpose(B.C), x2, B.Δ[]B.δ*B.γ[]*α, β)
+    mul_with!(ws, y2, transpose(B.C), x2, B.Δ[]B.δ[]*B.γ[]*α, β)
 end

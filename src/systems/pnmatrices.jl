@@ -4,6 +4,10 @@ abstract type AbstractPNMatrix{T} <: AbstractMatrix{T} end
 Base.show(io::IO, A::Union{AbstractPNMatrix{T}, Transpose{<:T, <:AbstractPNMatrix{T}}}) where T = print(io, "$(size_string(A)): $(content_string(A))")
 Base.show(io::IO, ::MIME"text/plain", A::Union{AbstractPNMatrix, Transpose{<:T, <:AbstractPNMatrix{T}}}) where T = show(io, A)
 
+is_observable(_) = false
+is_observable(::AbstractPNMatrix) = true
+get_observable(A::AbstractPNMatrix) = A.o
+
 required_workspace_cache(At::Transpose{T, <:AbstractPNMatrix{T}}) where T = required_workspace_cache(parent(At))
 invalidate_cache!(At::Transpose{T, <:AbstractPNMatrix{T}}) where T = invalidate_cache!(parent(At))
 

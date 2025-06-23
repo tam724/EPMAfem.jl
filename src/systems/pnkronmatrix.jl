@@ -1,10 +1,19 @@
 @concrete struct KronMatrix{T} <: AbstractPNMatrix{T}
     A
     B
+    o
+end
+
+function KronMatrix(A::AbstractMatrix, B::AbstractMatrix)
+    T = promote_type(eltype(A), eltype(B))
+    o = Observable(nothing)
+    if is_observable(A) on(_ -> notify(o), get_observable(A)) end
+    if is_observable(B) on(_ -> notify(o), get_observable(B)) end
+    return KronMatrix{T}(A, B, o)
 end
 
 size_string(K::KronMatrix{T}) where T = "$(size(K)[1])x$(size(K)[2]) KronMatrix{$(T)}"
-content_string(K::KronMatrix) = "[$(size_string(transpose(K.B))) ⊗  $(size_string(K.A))]"
+content_string(K::KronMatrix) = "[$(size_string(transpose(K.B))) ⊗ $(size_string(K.A))]"
 
 function cache_with!(ws::WorkspaceCache, cached, K::KronMatrix, α::Number, β::Number)
     @assert α == true

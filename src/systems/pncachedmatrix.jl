@@ -1,10 +1,14 @@
 struct Cached{T, PT} <: AbstractPNMatrix{T}
     P::PT
-    valid
+    o
 end
 
-function Cached{T}(P) where T
-    return Cached{T, typeof(P)}(P, Ref(-1))
+function Cached(P::AbstractMatrix)
+    o = Observable(-1)
+    if is_observable(P)
+        on(_ -> o[] = -1, get_observable(P))
+    end
+    return Cached{eltype(P), typeof(P)}(P, o)
 end
 
 size_string(C::Cached{T}) where T = "$(size(C, 1))x$(size(C, 2)) Cached{$(typeof(C.P).name.wrapper){$(typeof(C.P).parameters[1])}}"
@@ -31,16 +35,17 @@ end
 
 function invalidate_cache!(C::Cached)
     invalidate_cache!(C.P)
-    C.valid[] = -1
+    C.o[] = -1
 end
 
 function get_cached!(ws::WorkspaceCache, C::Cached)
     cache_and_id, rem = take_ch(ws)
     cache, cache_id = cache_and_id
     cached = reshape(@view(cache[:]), size(C.P))
-    if !(C.valid[] == cache_id) # check_cache_invalidity
+    if !(C.o[] == cache_id) # check_cache_invalidity
+        @show "caching"
         cache_with!(rem, cached, C.P, true, false)
-        C.valid[] = cache_id
+        C.o[] = cache_id
     end
     return cached
 end
@@ -72,11 +77,17 @@ end
 @concrete struct Wrapped{T} <: AbstractPNMatrix{T}
     A
     workspace_cache
+    o
 end
 
-function Wrapped{T}(A) where T
+function Wrapped(A)
+    T = eltype(A)
+    o = Observable(nothing)
+    if is_observable(A)
+        on(_ -> notify(o), get_observable(A))
+    end
     ws = allocate_workspace_cache(mul_with!, required_workspace_cache(A))
-    return Wrapped{T}(A, ws)
+    return Wrapped{T}(A, ws, o)
 end
 
 size_string(W::Wrapped{T}) where T = "$(size(W, 1))x$(size(W, 2)) Wrapped{$(typeof(W.A).name.wrapper){$(typeof(W.A).parameters[1])}}"

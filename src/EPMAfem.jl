@@ -12,6 +12,7 @@ using Krylov
 using UnsafeArrays
 using Zygote
 using ChainRulesCore
+using Observables
 
 include("special_matrices/sparse3tensor.jl")
 using EPMAfem.Sparse3Tensor
