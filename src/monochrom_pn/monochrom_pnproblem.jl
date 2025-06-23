@@ -62,8 +62,9 @@ function system(pbl::DiscreteMonochromPNProblem, solver; solver_kwargs...)
     )
 end
 
-function solve(x, system::DiscreteMonochromPNSystem, b::DiscreteMonochromPNVector)
-    assemble!(system.rhs, b, -1, system.A.sym[])
+function solve(x, system::DiscreteMonochromPNSystem, B::Vector)
+    assemble!(system.rhs, B, -1, system.A.sym[])
+    normalize!(system.rhs)
     pn_linsolve!(system.lin_solver, x, system.A, system.rhs)
 end
 
