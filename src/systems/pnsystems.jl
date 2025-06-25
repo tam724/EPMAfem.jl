@@ -1,6 +1,8 @@
 include("pnmatrices.jl")
+include("pntransposematrix.jl")
 include("pnkronmatrix.jl")
 include("pnsummatrix.jl")
+include("pnprodmatrix.jl")
 include("pnblockmatrix.jl")
 include("pncachedmatrix.jl")
 include("pnreshapeablematrix.jl")

@@ -3,10 +3,145 @@ using EPMAfem
 using LinearAlgebra
 using Test
 using CUDA
+using ConcreteStructs
+using BenchmarkTools
+using SparseArrays
 # include("plot_overloads.jl")
 
-create_rand_mat(n::Int, m::Int) = rand(n, m)
-create_rand_vec(n::Int) = rand(n)
+
+lazy(A) = EPMAfem.lazy(A)
+
+using BenchmarkTools
+
+rand_mat(m, n) = rand(m, n)
+rand_vec(n) = rand(n)
+
+
+# materialize kron stays diagonal (we need this for schur)
+@testset let
+    A_ = Diagonal(rand(5))
+    B_ = Diagonal(rand(5))
+
+    A = lazy(A_)
+    B = lazy(B_)
+
+    D = EPMAfem.materialize(kron(A, B))
+    @test EPMAfem.isdiagonal(D)
+
+    ws = EPMAfem.Workspace(zeros(EPMAfem.required_workspace(EPMAfem.materialize_with, D)))
+    @test ws.workspace |> length == 25
+    D_mat, rem_ws = EPMAfem.materialize_with(ws, D)
+    @test D_mat isa Diagonal
+    @test D_mat ≈ kron(A_, B_)
+
+    D_big = EPMAfem.materialize(kron(kron(A, B), 3.0 * kron(A, B)))
+    ws = EPMAfem.Workspace(zeros(EPMAfem.required_workspace(EPMAfem.materialize_with, D_big)))
+    ws.workspace |> length
+
+    D_big_mat, rem_ws = EPMAfem.materialize_with(ws, D_big)
+    EPMAfem.materialize_with(ws, D_big)
+
+    @test D_big_mat isa Diagonal
+    @test D_big_mat ≈ kron(kron(A, B), 3.0 .* kron(A, B))
+end
+
+@testset let
+    a_ = rand_mat(3, 4)
+    b_ = rand_mat(5, 6)
+
+    c_ = rand_mat(3, 4)
+    d_ = rand_mat(5, 6)
+
+    a, b, c, d = lazy.((a_, b_, c_, d_))
+
+    k1 = kron(3.0 * a, b)
+    k2 = kron(3.0 *c, EPMAfem.materialize(2.0 * d))
+
+    s = EPMAfem.materialize(k1 + k2)
+
+    EPMAfem.required_workspace(EPMAfem.mul_with!, s)
+    ws = EPMAfem.Workspace(zeros(EPMAfem.required_workspace(EPMAfem.mul_with!, s)))
+
+    x = rand_vec(size(s, 2))
+    y = rand_vec(size(s, 1))
+
+    EPMAfem.mul_with!(ws, y, s, x, true, false)
+
+    test = kron(3.0*a_, b_) + kron(3.0*c, 2.0*d)
+    @test Matrix(s) ≈ test
+end
+
+# benchmark a small example
+@testset let
+    a_ = rand_mat(50, 60)
+    b_ = rand_mat(50, 60)
+
+    c_ = rand_mat(70, 80)
+    d_ = rand_mat(70, 80)
+    e_ = rand_mat(70, 80)
+    f_ = rand_mat(70, 80)
+    g_ = rand_mat(70, 80)
+
+    a, b, c, d, e, f, g = lazy.((a_, b_, c_, d_, e_, f_, g_))
+
+    K_ = kron(a_ + b_, c_ + d_ + e_ + f_ + g_)
+    K = kron(a + b, c + d + e + f + g)
+    KM = kron(EPMAfem.materialize(a + b), EPMAfem.materialize(c + d + e + f + g))
+
+    x = rand_vec(size(K, 2))
+    y_ = zeros(size(K, 1))
+    y = zeros(size(K, 1))
+    yM = zeros(size(K, 1))
+
+
+    ws = EPMAfem.Workspace(EPMAfem.required_workspace(EPMAfem.mul_with!, K) |> zeros)
+    wsM = EPMAfem.Workspace(EPMAfem.required_workspace(EPMAfem.mul_with!, KM) |> zeros)
+
+    ws.workspace |> size
+    wsM.workspace |> size
+
+    EPMAfem.mul_with!(ws, y, K, x, true, false)
+    EPMAfem.mul_with!(wsM, yM, KM, x, true, false)
+    LinearAlgebra.mul!(y_, K_, x, true, false)
+    @test y ≈ y_
+    @test yM ≈ y_
+
+    temp1 = zeros(size(a_))
+    temp2 = zeros(size(c_))
+    temp3 = zeros(size(temp2, 1), size(temp1, 2))
+
+    function fair_comparison(y, x, temp1, temp2, temp3, a, b, c, d, e, f, g)
+        temp1 .= a .+ b
+        temp2 .= c .+ d .+ e .+ f .+ g
+        mul!(temp3, temp2, reshape(x, (size(temp2, 2), size(temp1, 2))), true, false)
+        mul!(reshape(y, (size(temp2, 1), size(temp1, 1))), temp3, transpose(temp1), true, false)
+        return y
+    end
+
+    yfair = zeros(size(K, 1))
+    fair_comparison(yfair, x, temp1, temp2, temp3, a_, b_, c_, d_, e_, f_, g_)
+    @test yfair ≈ y_
+
+    # @profview @benchmark EPMAfem.mul_with!($ws, $y, $K, $x, $true, $false)
+    # @profview @benchmark EPMAfem.mul_with!($wsM, $yM, $KM, $x, $true, $false)
+    # @profview @benchmark fair_comparison($yfair, $x, $temp1, $temp2, $temp3, $a_, $b_, $c_, $d_, $e_, $f_, $g_)
+    # @profview @benchmark LinearAlgebra.mul!($y_, $K_, $x, $true, $false)
+
+    baseline_lazy = @benchmark EPMAfem.mul_with!($ws, $y, $K, $x, $true, $false)
+    speedy_lazy = @benchmark EPMAfem.mul_with!($wsM, $yM, $KM, $x, $true, $false)
+    speedy = @benchmark fair_comparison($yfair, $x, $temp1, $temp2, $temp3, $a_, $b_, $c_, $d_, $e_, $f_, $g_)
+    slow = @benchmark LinearAlgebra.mul!($y_, $K_, $x, $true, $false)
+
+    @test time(slow) > time(baseline_lazy) > time(speedy_lazy) 
+    @test time(baseline_lazy) > time(speedy) 
+    @show "Lazy"
+    display(speedy_lazy)
+    @show "fair comparison"
+    display(speedy)
+
+    # EPMAfem.mul_with!(wsM, yM, KM, x, true, false)
+end
+
 
 # check ReshapeMatrix + KronMatrix
 @testset begin
@@ -170,36 +305,36 @@ end
 
 # BlockMatrix
 @testset let
-    a = create_rand_mat(10, 10)
-    b = create_rand_mat(10, 15)
-    c = create_rand_mat(15, 15)
+    a = rand_mat(10, 10)
+    b = rand_mat(10, 15)
+    c = rand_mat(15, 15)
 
-    B = EPMAfem.BlockMatrix(a, b, c, rand(), rand(), rand(), rand(), 1.0)
-    B_ref_ = B.Δ[] .* [
-        B.α[] .* B.A      B.β[] .* B.B
-        B.δ[] .* B.βt[] .* transpose(B.B)   B.δ[] .* B.γ[] .* B.C
+    B = EPMAfem.lazy(EPMAfem.blockmatrix, a, b, c)
+    B_ref_ = [
+        a b
+        transpose(b) c
     ]
     B_ref = Matrix(B)
     @test B_ref_ ≈ B_ref
 
-    x = create_rand_vec(size(B, 2))
+    x = rand_vec(size(B, 2))
     @test B_ref*x ≈ B*x
 
     Bt = transpose(B)
     Bt_ref = transpose(B_ref)
-    x = create_rand_vec(size(Bt, 2))
+    x = rand_vec(size(Bt, 2))
     @test Bt_ref*x ≈ Bt*x
 end
 
 # stich KronMatrix and BlockMatrix together
 @testset let
-    KA = EPMAfem.KronMatrix(create_rand_mat(10, 10), create_rand_mat(11, 11))
+    KA = EPMAfem.lazy(kron, rand_mat(10, 10), rand_mat(11, 11))
     KA_ref = Matrix(KA)
 
-    KB = EPMAfem.KronMatrix(create_rand_mat(10, 9), create_rand_mat(12, 11))
+    KB = EPMAfem.lazy(kron, rand_mat(10, 9), rand_mat(12, 11))
     KB_ref = Matrix(KB)
 
-    KC = EPMAfem.KronMatrix(create_rand_mat(9, 9), create_rand_mat(12, 12))
+    KC = EPMAfem.lazy(kron, rand_mat(9, 9), rand_mat(12, 12))
     KC_ref = Matrix(KC)
 
     B = EPMAfem.BlockMatrix(KA, KB, KC, rand(), rand(), rand(), rand(), 1.0)
@@ -213,158 +348,189 @@ end
     @test Bt*x ≈ transpose(B_ref)*x
 end
 
+# stich KronMatrix and SumMatrix together
+@testset let
+    K1 = EPMAfem.lazy(kron, rand_mat(10, 11), rand_mat(12, 13))
+    K1_ref = Matrix(K1)
+    K2 = EPMAfem.lazy(kron, rand_mat(10, 11), rand_mat(12, 13))
+    K2_ref = Matrix(K2)
+
+    S1 = EPMAfem.lazy(+, K1, K2)
+    S1_ref = K1_ref .+ K2_ref
+    @test S1_ref ≈ Matrix(S1)
+
+    x = rand_vec(size(S1, 2))
+    @test S1_ref * x ≈ S1 * x
+
+    S1t = transpose(S1)
+    x = rand_vec(size(S1t, 2))
+    @test transpose(S1_ref) * x ≈ S1t * x
+
+    # stich the two together
+    S1 = EPMAfem.lazy(+, rand_mat(10, 11), rand_mat(10, 11))
+    S1_ref = Matrix(S1)
+
+    S2 = EPMAfem.lazy(+, rand_mat(12, 13), rand_mat(12, 13))
+    S2_ref = Matrix(S2)
+
+    K1 = EPMAfem.lazy(kron, S1, S2)
+    K1_ref = kron(transpose(S2_ref), S1_ref)
+    @test Matrix(K1) ≈ K1_ref
+
+    x = rand_vec(size(K1, 2))
+    @test K1*x ≈ K1_ref*x
+
+    S3 = EPMAfem.lazy(+, rand_mat(10, 11), rand_mat(10, 11))
+    S3_ref = Matrix(S3)
+
+    S4 = EPMAfem.lazy(+, rand_mat(12, 13), rand_mat(12, 13))
+    S4_ref = Matrix(S4)
+
+    K2 = EPMAfem.lazy(kron, S3, S4)
+    K2_ref = kron(transpose(S4_ref), S3_ref)
+
+    K = EPMAfem.lazy(+, K1, K2)
+    K_ref = K1_ref .+ K2_ref 
+    @test Matrix(K) ≈ K_ref
+
+    x = rand_vec(size(K, 2))
+    @test K*x ≈ K_ref*x
+
+    x = rand_vec(size(K, 1))
+    @test transpose(K)*x ≈ transpose(K_ref)*x
+end
+
+## ScaleMatrix
+@testset let
+    l = rand()
+    r = rand()
+    L = rand_mat(2, 3)
+    R = rand_mat(2, 3)
+
+    SL = EPMAfem.lazy(*, l, L)
+    SR = EPMAfem.lazy(*, R, r)
+
+    SL_ref = l*L
+    SR_ref = R*r
+
+    x = rand(size(SL, 2))
+    @test SL * x ≈ SL_ref * x
+    @test SR * x ≈ SR_ref * x
+
+    X = rand_mat(size(SL, 2), 4)
+    @test SL * X ≈ SL_ref * X
+    @test SR * X ≈ SR_ref * X
+
+    X = rand_mat(4, size(SL, 1))
+    @test X * SL ≈ X * SL_ref
+    @test X * SR ≈ X * SR_ref
+
+    SLt = transpose(SL)
+    SRt = transpose(SR)
+    SLt_ref = transpose(SL_ref)
+    SRt_ref = transpose(SR_ref)
+
+    x = rand_vec(size(SLt, 2))
+    @test SLt * x ≈ SLt_ref * x
+    @test SRt * x ≈ SRt_ref * x
+
+    X = rand_mat(size(SLt, 2), 12)
+    @test SLt * X ≈ SLt_ref * X
+    @test SRt * X ≈ SRt_ref * X
+
+    X = rand_mat(12, size(SLt, 1))
+    @test X * SLt ≈ X * SLt_ref
+    @test X * SRt ≈ X * SRt_ref
+end
+
 ## SumMatrix
 @testset let
-    A1 = create_rand_mat(10, 11)
-    A2 = create_rand_mat(10, 11)
-    A3 = create_rand_mat(10, 11)
-    αs = rand(3)
-    S = EPMAfem.SumMatrix([A1, A2, A3], αs)
-    S_tuple = EPMAfem.SumMatrix((A1, A2, A3), tuple(αs...))
+    A1 = rand_mat(10, 11)
+    A2 = rand_mat(10, 11)
+    A3 = rand_mat(10, 11)
+    S = EPMAfem.LazyOpMatrix{eltype(A1)}(+, [A1, A2, A3])
+    S_tuple = EPMAfem.lazy(+, A1, A2, A3)
 
-    S_ref_ = αs[1] .* A1 .+ αs[2] .* A2 .+ αs[3] .* A3 
+    S_ref_ = A1 .+ A2 .+ A3 
     S_ref = Matrix(S)
     @test S_ref_ ≈ S_ref
     S_ref = Matrix(S_tuple)
     @test S_ref_ ≈ S_ref
 
-    x = create_rand_vec(size(S)[2])
+    x = rand_vec(size(S, 2))
     @test S_ref * x ≈ S * x
     @test S_ref * x ≈ S_tuple * x
+
+    X = rand_mat(size(S, 2), 12)
+    @test S_ref * X ≈ S * X
+    @test S_ref * X ≈ S_tuple * X
+
+    X = rand_mat(12, size(S, 1))
+    @test X * S_ref ≈ X * S
+    @test X * S_ref ≈ X * S_tuple
 
     St = transpose(S)
     St_tuple = transpose(S_tuple)
     St_ref = transpose(S_ref)
 
-    x = create_rand_vec(size(St)[2])
+    x = rand_vec(size(St, 2))
     @test St_ref * x ≈ St * x
     @test St_ref * x ≈ St_tuple * x
-end
 
-# stich KronMatrix and SumMatrix together
-@testset let
-    K1 = EPMAfem.KronMatrix(create_rand_mat(10, 11), create_rand_mat(12, 13))
-    K1_ref = kron(transpose(K1.B), K1.A)
-    K2 = EPMAfem.KronMatrix(create_rand_mat(10, 11), create_rand_mat(12, 13))
-    K2_ref = kron(transpose(K2.B), K2.A)
-    S1 = EPMAfem.SumMatrix([K1, K2], rand(2))
-    S1_ref = K1_ref .* S1.αs[1][] .+ K2_ref .* S1.αs[2][]
+    X = rand_mat(size(St, 2), 12)
+    @test St_ref * X ≈ St * X
+    @test St_ref * X ≈ St_tuple * X
 
-    x = create_rand_vec(size(S1)[2])
-    @test S1_ref * x ≈ S1 * x
-
-    S1t = transpose(S1)
-    x = create_rand_vec(size(S1t)[2])
-    @test transpose(S1_ref) * x ≈ S1t * x
-
-    # stich the two together
-    S1 = EPMAfem.SumMatrix([create_rand_mat(10, 11), create_rand_mat(10, 11)], rand(2))
-    S1_ref = S1.As[1] .* S1.αs[1][] .+ S1.As[2] .* S1.αs[2][]
-
-    S2 = EPMAfem.SumMatrix([create_rand_mat(12, 13), create_rand_mat(12, 13)], rand(2))
-    S2_ref = S2.As[1] .* S2.αs[1][] .+ S2.As[2] .* S2.αs[2][]
-
-    K1 = EPMAfem.KronMatrix(S1, S2)
-    K1_ref = kron(transpose(S2_ref), S1_ref)
-
-    x = create_rand_vec(size(K1)[2])
-    @test K1*x ≈ K1_ref*x
-
-    S3 = EPMAfem.SumMatrix([create_rand_mat(10, 11), create_rand_mat(10, 11)], rand(2))
-    S3_ref = S3.As[1] .* S3.αs[1][] .+ S3.As[2] .* S3.αs[2][]
-
-    S4 = EPMAfem.SumMatrix([create_rand_mat(12, 13), create_rand_mat(12, 13)], rand(2))
-    S4_ref = S4.As[1] .* S4.αs[1][] .+ S4.As[2] .* S4.αs[2][]
-
-    K2 = EPMAfem.KronMatrix(S3, S4)
-    K2_ref = kron(transpose(S4_ref), S3_ref)
-
-    K = EPMAfem.SumMatrix([K1, K2], rand(2))
-    K_ref = K1_ref .* K.αs[1][] .+ K2_ref .* K.αs[2][]
-
-    x = create_rand_vec(size(K)[2])
-    @test K*x ≈ K_ref*x
-
-    x = create_rand_vec(size(K)[1])
-    @test transpose(K)*x ≈ transpose(K_ref)*x
+    X = rand_mat(12, size(St, 1))
+    @test X * St_ref ≈ X * St
+    @test X * St_ref ≈ X * St_tuple
 end
 
 ## KronMatrix
 @testset let
-    A = create_rand_mat(10, 11)
-    B = create_rand_mat(12, 13)
+    A = rand_mat(10, 11)
+    B = rand_mat(12, 13)
 
-    K = EPMAfem.KronMatrix(A, B)
+    K = EPMAfem.lazy(kron, A, B)
     K_ref_ = kron(transpose(B), A)
     K_ref = Matrix(K)
     @test K_ref_ ≈ K_ref
 
-    @test isdiag(K) == false
+    # @test isdiag(K) == false
 
     @test size(K) == size(K_ref)
 
-    x = create_rand_vec(size(K)[2])
+    x = rand_vec(size(K)[2])
     @test K * x ≈ K_ref * x
 
-    y = create_rand_vec(size(K)[1])
+    y = rand_vec(size(K)[1])
     y_ref = copy(y)
 
-    α = rand(T())
-    β = rand(T())
+    α = rand()
+    β = rand()
     mul!(y, K, x, α, β)
     mul!(y_ref, K_ref, x, α, β)
     @test y ≈ y_ref
 
     Kt = transpose(K)
-    Kt_ref = transpose(K)
-    isdiag(Kt) == false
+    Kt_ref = transpose(K_ref)
 
     @test size(Kt) == size(Kt_ref)
 
-    x = create_rand_vec(size(Kt)[2])
+    x = rand_vec(size(Kt)[2])
     @test Kt * x ≈ Kt_ref * x
 
-    y = create_rand_vec(size(Kt)[1])
+    y = rand_vec(size(Kt)[1])
     y_ref = copy(y)
-    α = rand(T())
-    β = rand(T())
+    α = rand()
+    β = rand()
     mul!(y, Kt, x, α, β)
     mul!(y_ref, Kt_ref, x, α, β)
     @test y ≈ y_ref
 
-    A = Diagonal(create_rand_vec(10))
-    B = Diagonal(create_rand_vec(11))
+    # A = Diagonal(create_rand_vec(10))
+    # B = Diagonal(create_rand_vec(11))
 
-    K_diag = EPMAfem.KronMatrix(A, B)
-    @test isdiag(K_diag) == true
+    # K_diag = EPMAfem.KronMatrix(A, B)
+    # @test isdiag(K_diag) == true
 end
-
-nothing
-
-# space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (50, 100)))
-# direction_model = EPMAfem.SphericalHarmonicsModels.EEEOSphericalHarmonicsModel(13, 2)
-
-# eq = EPMAfem.PNEquations()
-# beam = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [1.8], [VectorValue(-1.0, 0.0, 0.0) |> normalize]; beam_position_σ=0.05, beam_energy_σ=0.05)
-
-# model = EPMAfem.DiscretePNModel(space_model, 0.0:0.02:2.0, direction_model)
-
-# problem = EPMAfem.discretize_problem(eq, model, EPMAfem.cuda(), updatable=false)
-# system = EPMAfem.implicit_midpoint(problem, EPMAfem.PNSchurSolver)
-
-# rhs = EPMAfem.discretize_rhs(beam, model, EPMAfem.cuda())[1]
-
-# @gif for (ϵ, ψ) in system * rhs
-#     @show ϵ
-#     ψp, ψm = EPMAfem.pmview(ψ, model)
-#     plot(svd(ψp).S |> collect)
-#     plot!(svd(ψm).S |> collect)
-# end
-
-# probe = EPMAfem.PNProbe(model, EPMAfem.cuda(); Ω = Ω -> 1.0)
-# res = probe(system * rhs)
-
-# @gif for i in reverse(1:size(res.p, 2))
-#     func = EPMAfem.SpaceModels.interpolable((p=res.p[:, i], m=res.m[:, i]), EPMAfem.space_model(model))
-#     heatmap(-1:0.01:1, -1:0.01:0, (x, z) -> func(Gridap.VectorValue(z, x)), aspect_ratio=:equal)
-# end

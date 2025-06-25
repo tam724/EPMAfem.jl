@@ -1,75 +1,82 @@
-@concrete struct SumMatrix{T} <: AbstractPNMatrix{T}
-    As
-    αs
-    o
-end
+const TSumMatrix{T} = LazyOpMatrix{T, typeof(+), <:Tuple{Vararg{<:AbstractMatrix{T}}}}
+const VSumMatrix{T} = LazyOpMatrix{T, typeof(+), <:AbstractVector{<:AbstractMatrix{T}}}
+const SumMatrix{T} = Union{TSumMatrix{T}, VSumMatrix{T}}
+@inline As(S::SumMatrix) = S.args
+Base.size(S::SumMatrix) = only_unique(size(A) for A in As(S))
+max_size(S::SumMatrix) = only_unique(max_size(A) for A in As(S))
+Base.getindex(S::SumMatrix, idx::Vararg{<:Integer}) = +(getindex.(As(S), idx...)...)
+@inline isdiagonal(S::SumMatrix) = all(isdiagonal, As(S))
 
-function SumMatrix(As, αs)
-    T = promote_type(eltype.(As)...)
-    o = Observable(nothing)
-    for A in As
-        if is_observable(A)
-            on(_ -> notify(o), get_observable(A))
-        end
+broadcast_materialize(T::TSumMatrix) = broadcast_materialize(As(T)...)
+
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::VSumMatrix, X::AbstractVecOrMat, α::Number, β::Number)
+    for A in As(S)
+        mul_with!(ws, Y, A, X, α, β)
+        β = true
     end
-    αs_o = Observable.(αs)
-    onany((args...) -> notify(o), αs_o...)
-    return SumMatrix{T}(As, αs_o, o)
+    return
 end
+# TODO: worth doing for all mul_with!(⋅) ?
+mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::TSumMatrix, X::AbstractVecOrMat, α::Number, β::Number) = _sum_mul_with!(ws, Y, As(S), X, α, β)
+function _sum_mul_with!(ws::Workspace, Y::AbstractVecOrMat, (A, Ss...)::Tuple{<:AbstractMatrix, Vararg{<:AbstractMatrix}}, X::AbstractVecOrMat, α::Number, β::Number)
+    _sum_mul_with!(ws, Y, Ss, X, α, β)
+    mul_with!(ws, Y, A, X, α, true)
+end
+_sum_mul_with!(ws::Workspace, Y::AbstractVecOrMat, A::Tuple{<:AbstractMatrix}, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, only(A), X, α, β)
 
-size_string(S::SumMatrix{T}) where T = "$(size(S)[1])x$(size(S)[2]) SumMatrix{$(T)}"
-content_string(S::SumMatrix{T}) where T = "[$(size_string(S.As[1])), ...]"
-
-function cache_with!(ws::WorkspaceCache, cached, S::SumMatrix, α::Number, β::Number)
-    for i in eachindex(S.As, S.αs)
-        cache_with!(ws[i], cached, S.As[i], α*S.αs[i][], (i == 1) ? β : true)
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:SumMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
+    for A in parent(St).args
+        mul_with!(ws, Y, transpose(A), X, α, β)
+        β = true
     end
+    return
 end
 
-Base.size(S::SumMatrix) = size(first(S.As))
-max_size(S::SumMatrix) = max_size(first(S.As))
-
-function required_workspace_cache(S::SumMatrix)
-    As_wsch = required_workspace_cache.(S.As)
-    As_mul_with_ws = maximum(mul_with_ws, As_wsch)
-    As_cache_with_ws = maximum(cache_with_ws, As_wsch)
-
-    return WorkspaceCache(ch.(As_wsch), (mul_with=As_mul_with_ws, cache_with=As_cache_with_ws))
-end
-
-function invalidate_cache!(S::SumMatrix)
-    for i in eachindex(S.As)
-        invalidate_cache!(S.As[i])
+function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::SumMatrix, α::Number, β::Number)
+    for A in As(S)
+        mul_with!(ws, Y, X, A, α, β)
+        β = true
     end
+    return
+end
+function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:SumMatrix{T}}, α::Number, β::Number) where T
+    for A in parent(St).args
+        mul_with!(ws, Y, X, transpose(A), α, β)
+        β = true
+    end
+    return
+end
+required_workspace(::typeof(mul_with!), S::SumMatrix) = maximum(required_workspace(mul_with!, A) for A in As(S))
+
+function reshape_into(ws::AbstractVector, materialized::Matrix)
+    return reshape(@view(ws[1:length(materialized)]), size(materialized))
 end
 
-LinearAlgebra.isdiag(S::SumMatrix) = all(isdiag, S.As)
-LinearAlgebra.issymmetric(S::SumMatrix) = all(issymmetric, S.As)
-
-function mul_with!(ws::WorkspaceCache{<:Union{Vector, Tuple}}, y::AbstractVecOrMat, S::SumMatrix, x::AbstractVecOrMat, α::Number, β::Number)
-    for i in eachindex(S.As, S.αs)
-        mul_with!(ws[i], y, S.As[i], x, S.αs[i][]*α, (i == 1) ? β : true)
-    end
+function reshape_into(ws::AbstractVector, materialized::Diagonal)
+    return Diagonal(@view(ws[1:length(materialized.diag)]))
 end
 
-function mul_with!(ws::WorkspaceCache{<:Union{Vector, Tuple}}, y::AbstractVecOrMat, x::AbstractVecOrMat, S::SumMatrix, α::Number, β::Number)
-    for i in eachindex(S.As, S.αs)
-        mul_with!(ws[i], y, x, S.As[i], S.αs[i][]*α, (i == 1) ? β : true)
+function materialize_with(ws::Workspace, S::SumMatrix)
+    # what we do here is to wrap every component into a lazy(materialize, ) and then materialize the full matrix
+    S_mat, rem = structured_from_ws(ws, S)
+    S_mat .= zero(eltype(S_mat))
+    for A in As(S)
+        A_mat, _ = materialize_with(rem, materialize(A))
+        S_mat .+= A_mat
     end
+    return S_mat, rem
 end
 
-# transpose SumMatrix
-size_string(St::Transpose{T, <:SumMatrix{T}}) where T = "$(size(St)[1])x$(size(St)[2]) transpose(::SumMatrix{$(T)})"
-content_string(St::Transpose{T, <:SumMatrix{T}}) where T = "[$(size_string(transpose(parent(St).As[1]))), ...]"
+materialize_broadcasted(S::SumMatrix) = Base.Broadcast.broadcasted(+, materialize_broadcasted.(As(S))...)
 
-function mul_with!(ws::WorkspaceCache{<:Union{Vector, Tuple}}, y::AbstractVecOrMat, St::Transpose{T, <:SumMatrix{T}}, x::AbstractVecOrMat, α::Number, β::Number) where T
-    for i in eachindex(parent(St).As, parent(St).αs)
-        mul_with!(ws[i], y, transpose(parent(St).As[i]), x, parent(St).αs[i][]*α, (i == 1) ? β : true)
+required_workspace(::typeof(materialize_with), S::SumMatrix) = required_workspace(broadcast_materialize(S), materialize_with, S)
+required_workspace(::ShouldBroadcastMaterialize, ::typeof(materialize_with), S::SumMatrix) = 0
+function required_workspace(::ShouldNotBroadcastMaterialize, ::typeof(materialize_with), S::SumMatrix)
+    # we report the maximal workspace to materialize an inner matrix
+    max_workspace = 0
+    for A in As(S)
+        @show typeof(A)
+        max_workspace = max(max_workspace, required_workspace(materialize_with, materialize(A)))
     end
-end
-
-function mul_with!(ws::WorkspaceCache{<:Union{Vector, Tuple}}, y::AbstractVecOrMat, x::AbstractVecOrMat, St::Transpose{T, <:SumMatrix{T}}, α::Number, β::Number) where T
-    for i in eachindex(parent(St).As, parent(St).αs)
-        mul_with!(ws[i], y, x, transpose(parent(St).As[i]), parent(St).αs[i][]*α, (i == 1) ? β : true)
-    end
+    return max_workspace
 end
