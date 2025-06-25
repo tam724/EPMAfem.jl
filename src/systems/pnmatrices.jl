@@ -26,7 +26,6 @@ struct ShouldNotBroadcastMaterialize <: BroadcastMaterialize end
     workspace
 end
 
-
 abstract type AbstractLazyMatrix{T} <: AbstractMatrix{T} end
 const AbstractLazyMatrixOrTranspose{T} = Union{<:AbstractLazyMatrix{T}, Transpose{T, <:AbstractLazyMatrix{T}}}
 Base.getindex(L::AbstractLazyMatrix{T}, I::CartesianIndex) where T = getindex(L, I.I...)
@@ -105,6 +104,10 @@ function LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMa
     return y
 end
 
+# # a abstract type that does not implement an operation, but an flag, how we deal with this matrix (materialized, cached)
+# abstract type MarkedLazyMatrix{T} <: AbstractLazyMatrix{T} end
+
+
 @concrete struct LazyOpMatrix{T} <: AbstractLazyMatrix{T}
     op
     args
@@ -148,7 +151,7 @@ end
 lazy(A::AbstractMatrix{T}) where T = Lazy{T}(A)
 lazy(L::AbstractLazyMatrixOrTranspose) = L
 unwrap(L::Lazy) = L.A
-unwrap(Lt::Transpose{T, <:Lazy{T}}) where T = transpose(unwrap(parent(Lt).A))
+unwrap(Lt::Transpose{T, <:Lazy{T}}) where T = transpose(unwrap(parent(Lt)))
 unwrap(L::Union{<:AbstractLazyMatrix{T}, Transpose{T, <:AbstractLazyMatrix{T}}}) where T = L
 
 Base.size(L::Lazy) = size(unwrap(L))
@@ -164,7 +167,7 @@ Base.:+(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L)
 # damn I implemented a weird version of kron...
 LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) where T = transpose(lazy(kron, transpose(unwrap(B)), unwrap(A)))
 materialize(A::AbstractLazyMatrixOrTranspose) = lazy(materialize, unwrap(A))
-
+blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C)
 
 
 

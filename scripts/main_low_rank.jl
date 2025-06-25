@@ -8,14 +8,71 @@ using BenchmarkTools
 using SparseArrays
 # include("plot_overloads.jl")
 
-
 lazy(A) = EPMAfem.lazy(A)
-
-using BenchmarkTools
 
 rand_mat(m, n) = rand(m, n)
 rand_vec(n) = rand(n)
 
+# lets implement something that somewhat resembles EPMA
+
+@testset let
+    nxp = 500
+    nxm = 300
+    nΩp = 120
+    nΩm = 150
+
+    ne = 3
+    nd = 2
+
+    ρp_ = [sprand(nxp, nxp, 0.01) for i in 1:ne]
+    ρm_ = [Diagonal(rand(nxm)) for i in 1:ne]
+
+
+    Ip_temp = Diagonal(ones(nΩp))
+    Ip_ = [Ip_temp for i in 1:ne]
+    Im_temp = Diagonal(ones(nΩm))
+    Im_ = [Im_temp for i in 1:ne]
+
+    ∇d_ = [sprand(nxp, nxm, 0.01) for i in 1:nd]
+    Ωd_ = [sprand(nΩm, nΩp, 0.01) for i in 1:nd]
+
+    kp_ = [Diagonal(rand(nΩp)) for i in 1:ne]
+    km_ = [Diagonal(rand(nΩm)) for i in 1:ne]
+
+    ρp, ρm, Ip, Im, ∇d, Ωd, kp, km = lazy.(ρp_), lazy.(ρm_), lazy.(Ip_), lazy.(Im_), lazy.(∇d_), lazy.(Ωd_), lazy.(kp_), lazy.(km_)
+
+    A = sum(kron(ρp[i], Ip[i] + kp[i]) for i in 1:ne)
+    C = sum(kron(ρm[i], Im[i] + km[i]) for i in 1:ne)
+    B = sum(kron(∇d[i], transpose(Ωd[i])) for i in 1:nd)
+
+    BM = EPMAfem.blockmatrix(A, B, C)
+
+    x = rand(size(BM, 2))
+    y = zeros(size(BM, 1))
+    ws = EPMAfem.Workspace(zeros(EPMAfem.required_workspace(EPMAfem.mul_with!, BM)))
+    EPMAfem.mul_with!(ws, y, BM, x, true, false)
+    @profview EPMAfem.mul_with!(ws, y, BM, x, true, false)
+    # @profview @benchmark EPMAfem.mul_with!($ws, $y, $BM, $x, $true, $false)
+
+    @time A_ = sum(kron(ρp_[i], Ip_[i] + kp_[i]) for i in 1:ne)
+    @time C_ = sum(kron(ρm_[i], Im_[i] + km_[i]) for i in 1:ne)
+    @time B_ = sum(kron(∇d_[i], transpose(Ωd_[i])) for i in 1:nd)
+
+    BM_ = EPMAfem.blockmatrix(A_, B_, C_)
+    @show (BM_.nzval |> length)/prod(size(BM_))
+    @time BM_ = EPMAfem.blockmatrix(A_, B_, C_)
+    @test y ≈ BM_ * x
+
+    y_ = zeros(size(BM_, 2))
+
+    bench_sparse = @benchmark mul!($y_, $BM_, $x)
+    bench_lazy = @benchmark EPMAfem.mul_with!($ws, $y, $BM, $x, $true, $false)
+
+    @show "Lazy:"
+    display(bench_lazy)
+    @show "Sparse"
+    display(bench_sparse)
+end
 
 # materialize kron stays diagonal (we need this for schur)
 @testset let
@@ -71,6 +128,15 @@ end
     @test Matrix(s) ≈ test
 end
 
+
+function fair_comparison(y, x, temp1, temp2, temp3, a, b, c, d, e, f, g)
+    temp1 .= a .+ b
+    temp2 .= c .+ d .+ e .+ f .+ g
+    mul!(temp3, temp2, reshape(x, (size(temp2, 2), size(temp1, 2))), true, false)
+    mul!(reshape(y, (size(temp2, 1), size(temp1, 1))), temp3, transpose(temp1), true, false)
+    return y
+end
+
 # benchmark a small example
 @testset let
     a_ = rand_mat(50, 60)
@@ -110,14 +176,6 @@ end
     temp2 = zeros(size(c_))
     temp3 = zeros(size(temp2, 1), size(temp1, 2))
 
-    function fair_comparison(y, x, temp1, temp2, temp3, a, b, c, d, e, f, g)
-        temp1 .= a .+ b
-        temp2 .= c .+ d .+ e .+ f .+ g
-        mul!(temp3, temp2, reshape(x, (size(temp2, 2), size(temp1, 2))), true, false)
-        mul!(reshape(y, (size(temp2, 1), size(temp1, 1))), temp3, transpose(temp1), true, false)
-        return y
-    end
-
     yfair = zeros(size(K, 1))
     fair_comparison(yfair, x, temp1, temp2, temp3, a_, b_, c_, d_, e_, f_, g_)
     @test yfair ≈ y_
@@ -143,165 +201,165 @@ end
 end
 
 
-# check ReshapeMatrix + KronMatrix
-@testset begin
-    A = rand(10, 11)
-    B = rand(12, 13)
-    R = EPMAfem.ReshapeableMatrix(B)
+# # check ReshapeMatrix + KronMatrix
+# @testset begin
+#     A = rand(10, 11)
+#     B = rand(12, 13)
+#     R = EPMAfem.ReshapeableMatrix(B)
 
-    K = EPMAfem.KronMatrix(A, R)
-    K_ref = kron(transpose(B), A)
+#     K = EPMAfem.KronMatrix(A, R)
+#     K_ref = kron(transpose(B), A)
 
-    @test size(K) == (size(B, 2)*size(A, 1), size(B, 1)*size(A, 2))
-    x = create_rand_vec(size(K, 2))
-    @test K * x ≈ K_ref * x
+#     @test size(K) == (size(B, 2)*size(A, 1), size(B, 1)*size(A, 2))
+#     x = create_rand_vec(size(K, 2))
+#     @test K * x ≈ K_ref * x
 
-    C = rand(3, 4)
-    EPMAfem.set!(R, C)
-    K_ref = kron(transpose(C), A)
+#     C = rand(3, 4)
+#     EPMAfem.set!(R, C)
+#     K_ref = kron(transpose(C), A)
 
-    @test size(K) == (size(C, 2)*size(A, 1), size(C, 1)*size(A, 2))
-    x = create_rand_vec(size(K, 2))
-    @test K * x ≈ K_ref * x
-end
+#     @test size(K) == (size(C, 2)*size(A, 1), size(C, 1)*size(A, 2))
+#     x = create_rand_vec(size(K, 2))
+#     @test K * x ≈ K_ref * x
+# end
 
 # check aliasing
-@testset begin
-    A = rand(10, 11)
-    R = EPMAfem.ReshapeableMatrix(A)
+# @testset begin
+#     A = rand(10, 11)
+#     R = EPMAfem.ReshapeableMatrix(A)
 
-    K = EPMAfem.SumMatrix((R, R), (1.0, 2.0))
-    K_ref = 1.0 .* A .+ 2.0 .* A
+#     K = EPMAfem.SumMatrix((R, R), (1.0, 2.0))
+#     K_ref = 1.0 .* A .+ 2.0 .* A
 
 
-    @test size(K) == (10, 11)
-    x = create_rand_vec(size(K, 2))
-    @test K*x ≈ K_ref * x
+#     @test size(K) == (10, 11)
+#     x = create_rand_vec(size(K, 2))
+#     @test K*x ≈ K_ref * x
 
-    B = rand(2, 3)
-    EPMAfem.set!(R, B)
+#     B = rand(2, 3)
+#     EPMAfem.set!(R, B)
 
-    K_ref = 1.0 .* B .+ 2.0 .* B
-    @test size(K) == (2, 3)
-    x = create_rand_vec(size(K, 2))
-    @test K*x ≈ K_ref*x
-end
+#     K_ref = 1.0 .* B .+ 2.0 .* B
+#     @test size(K) == (2, 3)
+#     x = create_rand_vec(size(K, 2))
+#     @test K*x ≈ K_ref*x
+# end
 
-# check cache invalidity bubbling
-@testset let
-    A = create_rand_mat(10, 10)
-    α1 = rand()
-    S1 = EPMAfem.SumMatrix((A, ), (α1, ))
-    C1 = EPMAfem.Cached(S1)
-    α2 = rand()
-    S2 = EPMAfem.SumMatrix((C1, ), (α2, ))
-    C2 = EPMAfem.Cached(S2)
-    W = EPMAfem.Wrapped(C2)
+# # check cache invalidity bubbling
+# @testset let
+#     A = create_rand_mat(10, 10)
+#     α1 = rand()
+#     S1 = EPMAfem.SumMatrix((A, ), (α1, ))
+#     C1 = EPMAfem.Cached(S1)
+#     α2 = rand()
+#     S2 = EPMAfem.SumMatrix((C1, ), (α2, ))
+#     C2 = EPMAfem.Cached(S2)
+#     W = EPMAfem.Wrapped(C2)
 
-    W_ref = α1*α2.*A
-    x = create_rand_vec(10)
-    @test W * x ≈ W_ref * x
-    @test C1.o[] != -1
-    @test C2.o[] != -1
+#     W_ref = α1*α2.*A
+#     x = create_rand_vec(10)
+#     @test W * x ≈ W_ref * x
+#     @test C1.o[] != -1
+#     @test C2.o[] != -1
 
-    # manually destroy the cache to check that it is not recomputed
-    W.workspace_cache.cache[1][1] .= 0
-    @test all(W*x .== 0.0)
+#     # manually destroy the cache to check that it is not recomputed
+#     W.workspace_cache.cache[1][1] .= 0
+#     @test all(W*x .== 0.0)
 
-    S1.αs[1][] = 1.0
-    @test C1.o[] == -1
-    @test C2.o[] == -1
-    W_ref = α2.*A
-    x = create_rand_vec(10)
-    @test W * x ≈ W_ref * x
+#     S1.αs[1][] = 1.0
+#     @test C1.o[] == -1
+#     @test C2.o[] == -1
+#     W_ref = α2.*A
+#     x = create_rand_vec(10)
+#     @test W * x ≈ W_ref * x
 
-    # manually destroy the inner cache to check that it is not recomputed
-    W.workspace_cache.cache[2][1][1][1] .= 0
-    @test W*x ≈ W_ref*x
+#     # manually destroy the inner cache to check that it is not recomputed
+#     W.workspace_cache.cache[2][1][1][1] .= 0
+#     @test W*x ≈ W_ref*x
 
-    EPMAfem.invalidate_cache!(W)
-    @test W*x ≈ W_ref*x
+#     EPMAfem.invalidate_cache!(W)
+#     @test W*x ≈ W_ref*x
 
-    S2.αs[1][] = 1.0
-    @test C1.o[] != -1
-    @test C2.o[] == -1
-    W_ref = A
-    x = create_rand_vec(10)
-    @test W*x ≈ W_ref*x
-end
+#     S2.αs[1][] = 1.0
+#     @test C1.o[] != -1
+#     @test C2.o[] == -1
+#     W_ref = A
+#     x = create_rand_vec(10)
+#     @test W*x ≈ W_ref*x
+# end
 
-# test the caching system to some extent ...
-@testset let
-    nS1 = rand(1:40)
-    mS1 = rand(1:40)
-    A1 = create_rand_mat(nS1, mS1)
-    A2 = create_rand_mat(nS1, mS1)
-    S1 = EPMAfem.SumMatrix((A1, A2), (rand(T()), rand(T())))
-    C1 = EPMAfem.Cached(S1)
+# # test the caching system to some extent ...
+# @testset let
+#     nS1 = rand(1:40)
+#     mS1 = rand(1:40)
+#     A1 = create_rand_mat(nS1, mS1)
+#     A2 = create_rand_mat(nS1, mS1)
+#     S1 = EPMAfem.SumMatrix((A1, A2), (rand(T()), rand(T())))
+#     C1 = EPMAfem.Cached(S1)
 
-    nS2 = rand(1:40)
-    mS2 = rand(1:40)
-    B1 = create_rand_mat(nS2, mS2)
-    B2 = create_rand_mat(nS2, mS2)
-    S2 = EPMAfem.SumMatrix([B1, B2], rand(2))
-    C2 = EPMAfem.Cached(S2)
+#     nS2 = rand(1:40)
+#     mS2 = rand(1:40)
+#     B1 = create_rand_mat(nS2, mS2)
+#     B2 = create_rand_mat(nS2, mS2)
+#     S2 = EPMAfem.SumMatrix([B1, B2], rand(2))
+#     C2 = EPMAfem.Cached(S2)
 
-    KS = EPMAfem.KronMatrix(S1, S2)
-    KC = EPMAfem.KronMatrix(C1, C2)
+#     KS = EPMAfem.KronMatrix(S1, S2)
+#     KC = EPMAfem.KronMatrix(C1, C2)
 
-    KS_ref = Matrix(KS)
-    KC_ref = Matrix(KC)
-    @test KS_ref ≈ KC_ref
+#     KS_ref = Matrix(KS)
+#     KC_ref = Matrix(KC)
+#     @test KS_ref ≈ KC_ref
 
-    KS_wsch = EPMAfem.required_workspace_cache(KS)
-    KC_wsch = EPMAfem.required_workspace_cache(KC)
+#     KS_wsch = EPMAfem.required_workspace_cache(KS)
+#     KC_wsch = EPMAfem.required_workspace_cache(KC)
 
-    @test EPMAfem.mul_with_ws(KS_wsch) == min(nS1*nS2, mS1*mS2)# the kronecker workspace
-    @test EPMAfem.cache_with_ws(KS_wsch) == nS1*mS1 + nS2*mS2 # the cached sums
+#     @test EPMAfem.mul_with_ws(KS_wsch) == min(nS1*nS2, mS1*mS2)# the kronecker workspace
+#     @test EPMAfem.cache_with_ws(KS_wsch) == nS1*mS1 + nS2*mS2 # the cached sums
 
-    @test EPMAfem.mul_with_ws(KC_wsch) == min(nS1*nS2, mS1*mS2)# the kronecker workspace
-    @test EPMAfem.cache_with_ws(KC_wsch) == nS1*mS1 + nS2*mS2 # the cached sums
+#     @test EPMAfem.mul_with_ws(KC_wsch) == min(nS1*nS2, mS1*mS2)# the kronecker workspace
+#     @test EPMAfem.cache_with_ws(KC_wsch) == nS1*mS1 + nS2*mS2 # the cached sums
 
-    WS = EPMAfem.Wrapped(KS)
-    WC = EPMAfem.Wrapped(KC)
+#     WS = EPMAfem.Wrapped(KS)
+#     WC = EPMAfem.Wrapped(KC)
 
-    # WS.workspace_cache
-    # WC.workspace_cache
+#     # WS.workspace_cache
+#     # WC.workspace_cache
 
-    x = create_rand_vec(size(WS, 2))
-    yS = create_rand_vec(size(WS, 1))
-    yC = create_rand_vec(size(WC, 1))
+#     x = create_rand_vec(size(WS, 2))
+#     yS = create_rand_vec(size(WS, 1))
+#     yC = create_rand_vec(size(WC, 1))
 
-    mul!(yS, WS, x)
-    mul!(yC, WC, x)
+#     mul!(yS, WS, x)
+#     mul!(yC, WC, x)
 
-    # @benchmark mul!($yS, $WS, $x)
-    # @benchmark mul!($yC, $WC, $x)
+#     # @benchmark mul!($yS, $WS, $x)
+#     # @benchmark mul!($yC, $WC, $x)
 
-    @test yS ≈ yC
+#     @test yS ≈ yC
 
-    # WS.workspace_cache
-    # WC.workspace_cache
-end
+#     # WS.workspace_cache
+#     # WC.workspace_cache
+# end
 
-# Cached and Wrapped
-@testset let
-    A = create_rand_mat(10, 11)
-    C = EPMAfem.Cached(A)
-    W = EPMAfem.Wrapped(C)
+# # Cached and Wrapped
+# @testset let
+#     A = create_rand_mat(10, 11)
+#     C = EPMAfem.Cached(A)
+#     W = EPMAfem.Wrapped(C)
 
-    x = create_rand_vec(size(C, 2))
-    @test A*x ≈ C*x
-    @test A*x ≈ W*x
+#     x = create_rand_vec(size(C, 2))
+#     @test A*x ≈ C*x
+#     @test A*x ≈ W*x
 
-    At = transpose(A)
-    Ct = transpose(C)
-    Wt = transpose(W)
+#     At = transpose(A)
+#     Ct = transpose(C)
+#     Wt = transpose(W)
 
-    x = create_rand_vec(size(Ct, 2))
-    @test At*x ≈ Ct*x
-    @test At*x ≈ Wt*x
-end
+#     x = create_rand_vec(size(Ct, 2))
+#     @test At*x ≈ Ct*x
+#     @test At*x ≈ Wt*x
+# end
 
 # BlockMatrix
 @testset let
@@ -337,14 +395,14 @@ end
     KC = EPMAfem.lazy(kron, rand_mat(9, 9), rand_mat(12, 12))
     KC_ref = Matrix(KC)
 
-    B = EPMAfem.BlockMatrix(KA, KB, KC, rand(), rand(), rand(), rand(), 1.0)
+    B = EPMAfem.blockmatrix(KA, KB, KC)
     B_ref = Matrix(B)
 
-    x = create_rand_vec(size(B, 2))
+    x = rand_vec(size(B, 2))
     @test B*x ≈ B_ref*x
 
     Bt = transpose(B)
-    x = create_rand_vec(size(Bt, 2))
+    x = rand_vec(size(Bt, 2))
     @test Bt*x ≈ transpose(B_ref)*x
 end
 
