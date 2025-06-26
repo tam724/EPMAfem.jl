@@ -30,7 +30,7 @@ function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::Materi
     # @show "materialized with :: MaterializedMatrix"
     bcd = Base.Broadcast.instantiate(materialize_broadcasted(A(M)))
     # @show bcd |> typeof
-    if isdiagonal(M) #ideally the compiler can proof this, we could also implement a trait for that.. is the compiler can proof, this is type stable..
+    if isdiagonal(M) #ideally the compiler can proof this, we could also implement a trait for that.. if the compiler can proof, this is type stable..
         ws_M, rem = take_ws(ws, only_unique(size(M)))
         materialized_M = Base.Broadcast.materialize!(Diagonal(ws_M), bcd)
         return materialized_M, rem

@@ -14,7 +14,7 @@ rand_mat(m, n) = rand(m, n)
 rand_vec(n) = rand(n)
 
 
-@testset begin
+@testset let
     A_ = rand(10, 11)
     B_ = rand(11, 12)
     C_ = rand(12, 13)

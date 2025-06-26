@@ -48,14 +48,6 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Tran
 end
 required_workspace(::typeof(mul_with!), S::SumMatrix) = maximum(required_workspace(mul_with!, A) for A in As(S))
 
-function reshape_into(ws::AbstractVector, materialized::Matrix)
-    return reshape(@view(ws[1:length(materialized)]), size(materialized))
-end
-
-function reshape_into(ws::AbstractVector, materialized::Diagonal)
-    return Diagonal(@view(ws[1:length(materialized.diag)]))
-end
-
 function materialize_with(ws::Workspace, S::SumMatrix)
     # what we do here is to wrap every component into a lazy(materialize, ) and then materialize the full matrix
     S_mat, rem = structured_from_ws(ws, S)

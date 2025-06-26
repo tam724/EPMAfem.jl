@@ -67,13 +67,6 @@ function mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractMatrix, X::Abstr
     mul!(Y, A, X, α, β)
 end
 
-# if intentional
-function mul_with!(::Nothing, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    if Y isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(Y))") end
-    if A isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(A))") end
-    if X isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(X))") end
-    mul!(Y, A, X, α, β)
-end
 required_workspace(::typeof(mul_with!), A::AbstractMatrix) = 0
 
 materialize_with(ws::Workspace, A::AbstractMatrix) = A, ws
