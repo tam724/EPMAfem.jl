@@ -21,30 +21,35 @@ mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:NotFusedScaleMa
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:NotFusedScaleMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
 required_workspace(::typeof(mul_with!), S::NotFusedScaleMatrix) = required_workspace(mul_with!, A(S))
 
-# for ScaleMatrix (fused) the mul_with! simply calls back into mul! (via mul_with!(::Nothing, ...) which checks for safety)
-mul_with!(::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul!(Y, S, X, α, β)
-mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul!(Y, X, S, α, β)
+# for ScaleMatrix (fused) the mul_with! simply calls back into mul!
+mul_with!(::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
+mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul!(Y, X, A(S), a(S)*α, β)
+mul_with!(::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
+mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
+required_workspace(::typeof(mul_with!), S::ScaleMatrix) = 0
+
+# and we can additionally overload the LinearAlgebra.mul! calls by simply fusing in the a(S)
 LinearAlgebra.mul!(Y::AbstractVector, S::ScaleMatrix, X::AbstractVector, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
 LinearAlgebra.mul!(Y::AbstractMatrix, S::ScaleMatrix, X::AbstractMatrix, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
 LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul!(Y, X, A(S), a(S)*α, β)
 LinearAlgebra.mul!(Y::AbstractVector, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVector, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
 LinearAlgebra.mul!(Y::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
 LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
-required_workspace(::typeof(mul_with!), S::ScaleMatrix) = 0
 
 materialize_with(ws::Workspace, S::ScaleMatrix) = materialize_with(broadcast_materialize(S), ws, S)
 function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, S::ScaleMatrix)
-    S_mat, rem = structured_from_ws(ws, S)
-    A_mat, _ = materialize_with(rem, materialize(A(S)))
-    S_mat .= a(S) .* A_mat
-    return S_mat, rem
+    # S_mat, rem = structured_from_ws(ws, S)
+    A_mat, rem = materialize_with(ws, materialize(A(S)))
+    A_mat .= a(S) .* A_mat
+    # S_mat .= a(S) .* A_mat
+    return A_mat, rem
 end
 
 broadcast_materialize(S::ScaleMatrix) = broadcast_materialize(A(S))
 materialize_broadcasted(S::ScaleMatrix) = Base.Broadcast.broadcasted(*, a(S), materialize_broadcasted(A(S)))
 required_workspace(::typeof(materialize_with), S::ScaleMatrix) = required_workspace(broadcast_materialize(S), materialize_with, S)
 required_workspace(::ShouldBroadcastMaterialize, ::typeof(materialize_with), S::ScaleMatrix) = 0
-required_workspace(::ShouldNotBroadcastMaterialize, ::typeof(materialize_with), S::ScaleMatrix) = required_workspace(materialize_with, A(S)) # todo..
+required_workspace(::ShouldNotBroadcastMaterialize, ::typeof(materialize_with), S::ScaleMatrix) = required_workspace(materialize_with, A(S)) # TODO: ? 
 
 # it seems as if now the fun starts :D this can be heavily optimized (matrix product chain, etc..) well only go for some simple heuristics here
 # let's start implementing this with only A*B (the general case follows later..)
