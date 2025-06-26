@@ -61,9 +61,9 @@ end
 broadcast_materialize(::AbstractMatrix) = ShouldBroadcastMaterialize()
 
 function mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    if Y isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(Y))") end
-    if A isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(A))") end
-    if X isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(X))") end
+    if Y isa AbstractLazyMatrixOrTranspose error("should not happen! mul_with!(.., ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...)") end
+    if A isa AbstractLazyMatrixOrTranspose error("should not happen! mul_with!(.., ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...)") end
+    if X isa AbstractLazyMatrixOrTranspose error("should not happen! mul_with!(.., ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...)") end
     mul!(Y, A, X, α, β)
 end
 
