@@ -5,7 +5,7 @@ const SumMatrix{T} = Union{TSumMatrix{T}, VSumMatrix{T}}
 Base.size(S::SumMatrix) = only_unique(size(A) for A in As(S))
 max_size(S::SumMatrix) = only_unique(max_size(A) for A in As(S))
 Base.getindex(S::SumMatrix, idx::Vararg{<:Integer}) = +(getindex.(As(S), idx...)...)
-@inline isdiagonal(S::SumMatrix) = all(isdiagonal, As(S))
+isdiagonal(S::SumMatrix) = all(isdiagonal, As(S))
 
 broadcast_materialize(T::TSumMatrix) = broadcast_materialize(As(T)...)
 
@@ -75,7 +75,6 @@ function required_workspace(::ShouldNotBroadcastMaterialize, ::typeof(materializ
     # we report the maximal workspace to materialize an inner matrix
     max_workspace = 0
     for A in As(S)
-        @show typeof(A)
         max_workspace = max(max_workspace, required_workspace(materialize_with, materialize(A)))
     end
     return max_workspace

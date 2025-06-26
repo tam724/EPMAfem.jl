@@ -23,6 +23,7 @@ max_block_size(BM::BlockMatrix) = (
 duplicate(x) = (x, x)
 Base.size(BM::BlockMatrix) = duplicate(sum(block_size(BM)))
 max_size(BM::BlockMatrix) = duplicate(sum(max_block_size(BM)))
+isdiagonal(BM::BlockMatrix) = false # until we support B = ZERO TYPE
 
 function Base.getindex(BM::BlockMatrix, i::Int, j::Int)
     mA, nA = size(A(BM))

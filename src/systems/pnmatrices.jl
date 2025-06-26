@@ -5,19 +5,7 @@ function only_unique(iter)
     if !all(x -> x == a, rest)  error("Collection has multiple elements, must containt exactly 1 element") end
     return a
 end
-# function only_unique(as::AbstractVector)
-#     a = first(as)
-#     if !all(x -> x == a, as) error("Collection has multiple elements, must containt exactly 1 element") end
-#     return a
-# end
-# only_unique(a::Tuple) = _only_unique(a...)
-# # we only recurse the first layer
-# _only_unique((a, rem...)::Vararg{T}) where T = (a == _only_unique(rem...)) ? a : error("Collection has multiple elements, must containt exactly 1 element")
-# _only_unique(a)= a
 
-# workspace
-
-## workspace
 abstract type BroadcastMaterialize end
 struct ShouldBroadcastMaterialize <: BroadcastMaterialize end
 struct ShouldNotBroadcastMaterialize <: BroadcastMaterialize end
@@ -41,8 +29,8 @@ combine_broadcast_materialize(::ShouldBroadcastMaterialize, ::ShouldBroadcastMat
 
 isdiagonal(::AbstractLazyMatrix) = error("should be defined")
 isdiagonal(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = isdiagonal(parent(Lt))
-mul_with!(::Workspace, ::AbstractVecOrMat, ::AbstractLazyMatrix, ::AbstractVecOrMat, ::Number, ::Number) = error("should be defined")
-mul_with!(::Workspace, ::AbstractMatrix, ::AbstractMatrix, ::AbstractLazyMatrix, ::Number, ::Number) = error("should be defined")
+mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractLazyMatrix, X::AbstractVecOrMat, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
+mul_with!(::Workspace, Y::AbstractMatrix, A::AbstractMatrix, X::AbstractLazyMatrix, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
 # this function should return the workspace size that is needed to mul_with! the AbstractLazyMatrix
 required_workspace(::typeof(mul_with!), ::AbstractLazyMatrix) = error("should be defined")
 required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(mul_with!, parent(Lt))
@@ -73,9 +61,17 @@ end
 broadcast_materialize(::AbstractMatrix) = ShouldBroadcastMaterialize()
 
 function mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    if Y isa AbstractLazyMatrixOrTranspose error("should not happen!") end
-    if A isa AbstractLazyMatrixOrTranspose error("should not happen!") end
-    if X isa AbstractLazyMatrixOrTranspose error("should not happen!") end
+    if Y isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(Y))") end
+    if A isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(A))") end
+    if X isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(X))") end
+    mul!(Y, A, X, α, β)
+end
+
+# if intentional
+function mul_with!(::Nothing, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
+    if Y isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(Y))") end
+    if A isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(A))") end
+    if X isa AbstractLazyMatrixOrTranspose error("should not happen! $(typeof(X))") end
     mul!(Y, A, X, α, β)
 end
 required_workspace(::typeof(mul_with!), A::AbstractMatrix) = 0
@@ -88,11 +84,25 @@ materialize_broadcasted(A::AbstractMatrix) = A
 # allocate_with(::Workspace, A::AbstractMatrix) = error("should not be called!")
 # required_workspace(::typeof(allocate_with), A::AbstractMatrix) = 0
 
+# LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::AbstractVector) where T = mul!(y, A, x, true, false)
+# LinearAlgebra.mul!(y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix) where T = mul!(y, A, X, true, false)
+# LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMatrix{T}}, x::AbstractVector) where T = mul!(y, At, x, true, false)
+# LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix) where T = mul!(y, At, X, true, false)
+
 function LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
     ws_size = required_workspace(mul_with!, A)
     ws = Workspace(zeros(T, ws_size))
     if ws_size > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(ws_size))!") end
     mul_with!(ws, y, A, x, α, β)
+    return y
+end
+
+function LinearAlgebra.mul!(y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix, α::Number, β::Number) where T
+    @warn "Not build for this, but we try anyways..."
+    ws_size = required_workspace(mul_with!, A)
+    ws = Workspace(zeros(T, ws_size))
+    if ws_size > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(ws_size))!") end
+    mul_with!(ws, y, A, X, α, β)
     return y
 end
 
@@ -104,9 +114,17 @@ function LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMa
     return y
 end
 
+function LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
+    @warn "Not build for this, but we try anyways..."
+    ws_size = required_workspace(mul_with!, parent(At))
+    ws = Workspace(zeros(T, ws_size))
+    if ws_size > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(ws_size))!") end
+    mul_with!(ws, y, At, X, α, β)
+    return y
+end
+
 # # a abstract type that does not implement an operation, but an flag, how we deal with this matrix (materialized, cached)
 # abstract type MarkedLazyMatrix{T} <: AbstractLazyMatrix{T} end
-
 
 @concrete struct LazyOpMatrix{T} <: AbstractLazyMatrix{T}
     op
@@ -115,13 +133,13 @@ end
 
 function lazy(func, args...)
 	T = promote_type(eltype.(args)...)
-	return LazyOpMatrix{T}(func, args)
+	return LazyOpMatrix{T}(func, unwrap.(args))
 end
 
 # single argument
 function lazy(func, arg::AbstractVector)
 	T = promote_type(eltype.(arg)...)
-	return LazyOpMatrix{T}(func, arg)
+	return LazyOpMatrix{T}(func, unwrap.(arg))
 end
 
 ## lazyopmatrices should always have getindex, therefore: (this should be dispatched on for performance obviously)
@@ -150,6 +168,7 @@ end
 
 lazy(A::AbstractMatrix{T}) where T = Lazy{T}(A)
 lazy(L::AbstractLazyMatrixOrTranspose) = L
+unwrap(A) = A
 unwrap(L::Lazy) = L.A
 unwrap(Lt::Transpose{T, <:Lazy{T}}) where T = transpose(unwrap(parent(Lt)))
 unwrap(L::Union{<:AbstractLazyMatrix{T}, Transpose{T, <:AbstractLazyMatrix{T}}}) where T = L
@@ -160,21 +179,20 @@ Base.getindex(L::Lazy, idx::Vararg{<:Integer}) = getindex(unwrap(L), idx...)
 Base.:*(L::AbstractLazyMatrixOrTranspose, α::Number) = lazy(*, unwrap(L), α)
 Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose) = lazy(*, α, unwrap(L))
 
+Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(*, unwrap(A), unwrap(B))
+Base.:*(As::Vararg{<:AbstractLazyMatrixOrTranspose}) = lazy(*, unwrap.(As)...)
+
 Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy(+, unwrap(L1), unwrap(L2))
 Base.:+(A::AbstractMatrix, L::AbstractLazyMatrixOrTranspose) = lazy(+, A, unwrap(L))
 Base.:+(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L), A)
 
 # damn I implemented a weird version of kron...
-LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) where T = transpose(lazy(kron, transpose(unwrap(B)), unwrap(A)))
+LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = transpose(lazy(kron, transpose(unwrap(B)), unwrap(A)))
 materialize(A::AbstractLazyMatrixOrTranspose) = lazy(materialize, unwrap(A))
 blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C)
 
 
-
-
 # workspace implementation
-
-
 function take_ws(ws::Workspace, n::Integer)
     return @view(ws.workspace[1:n]), Workspace(@view(ws.workspace[n+1:end]))
 end
