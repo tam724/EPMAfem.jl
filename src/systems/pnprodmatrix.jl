@@ -70,6 +70,9 @@ function Base.getindex(M::TwoProdMatrix, I::Vararg{Int, 2})
 end
 @inline isdiagonal(M::TwoProdMatrix) = isdiagonal(A(M)) && isdiagonal(B(M))
 
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::TwoProdMatrix, α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(M), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(Mt), transpose(X), α, β)
+
 function mul_with!(ws::Workspace, y::AbstractVector, M::TwoProdMatrix, x::AbstractVector, α::Number, β::Number)
     WS, rem = take_ws(ws, size(B(M), 1))
     mul_with!(rem, WS, B(M), x, true, false)
@@ -158,6 +161,9 @@ function Base.getindex(M::ProdMatrix, I::Vararg{Int, 2})
     return x[i]
 end
 isdiagonal(M::ProdMatrix) = all(isdiagonal, As(M))
+
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::ProdMatrix, α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(M), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:ProdMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(Mt), transpose(X), α, β)
 
 # no strategy here, simply multiply right to left for now.. (its vector anyways)
 function mul_with!(ws::Workspace, y::AbstractVector, M::ProdMatrix, x::AbstractVector, α::Number, β::Number)

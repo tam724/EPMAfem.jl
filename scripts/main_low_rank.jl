@@ -14,6 +14,44 @@ rand_mat(m, n) = rand(m, n)
 rand_vec(n) = rand(n)
 
 
+@testset begin
+    A_ = rand(10, 11)
+    B_ = rand(11, 12)
+    C_ = rand(12, 13)
+    D_ = rand(13, 14)
+    E_ = rand(14, 15)
+    A, B, C, D, E = lazy.((A_, B_, C_, D_, E_))
+
+    M2_ = A_ * B_
+    M2 = A * B
+
+    M3_ = A_ * B_ * C_
+    M3 = A * B * C
+
+    M4_ = A_ * B_ * C_ * D_
+    M4 = A * B * C * D
+
+    M5_ = A_ * B_ * C_ * D_ * E_
+    M5 = A * B * C * D * E
+
+    for (M, M_) in [(M2, M2_), (M3, M3_), (M4, M4_), (M5, M5_)]
+        # we have no entry point for (Matrix) * (LazyMatrix) multiplication (this is not how it was designed..) however, internally we do at least try..
+        ws = EPMAfem.Workspace(zeros(EPMAfem.required_workspace(EPMAfem.mul_with!, M)))
+
+        # Y = X * M
+        X = rand(rand(3:30), size(M, 1))
+        Y = zeros(size(X, 1), size(M, 2))
+        EPMAfem.mul_with!(ws, Y, X, M, true, false)
+        @test Y ≈ X * M_
+
+        # Y = X * transpose(M)
+        Mt = transpose(M)
+        X = rand(rand(3:30), size(Mt, 1))
+        Y = zeros(size(X, 1), size(Mt, 2))
+        EPMAfem.mul_with!(ws, Y, X, Mt, true, false)
+        @test Y ≈ X * transpose(M_)
+    end
+end
 
 # Product Matrix * Matrix
 @testset let
@@ -83,26 +121,24 @@ rand_vec(n) = rand(n)
         @test Pt*X ≈ transpose(P_)*X
     end
 end
-    # end
 
-# # @testset begin # ROBIN 1
-#     A_ = rand(2, 2)
-#     B_ = rand(2, 4)
-#     C_ = rand(4, 2)
-#     D_ = rand(2, 3)
-#     E_ = rand(3, 2)
-#     F_ = rand(2, 2)
-#     G_ = rand(2, 2)
+@testset let # ROBIN 1
+    A_ = rand(2, 2)
+    B_ = rand(2, 4)
+    C_ = rand(4, 2)
+    D_ = rand(2, 3)
+    E_ = rand(3, 2)
+    F_ = rand(2, 2)
+    G_ = rand(2, 2)
 
-#     A, B, C, D, E, F, G = lazy.((A_, B_, C_, D_, E_, F_, G_))
+    A, B, C, D, E, F, G = lazy.((A_, B_, C_, D_, E_, F_, G_))
 
-#     K_ = kron(A_*B_*C_ + D_*E_*A_, F_ + G_)
-#     K = kron(A*B*C + D*E*A, F + G)
+    K_ = kron(A_*B_*C_ + D_*E_*A_, F_ + G_)
+    K = kron(A*B*C + D*E*A, F + G)
 
-#     x = rand(4)
-#     Matrix(K)*x
-#     K*x
-# # end
+    x = rand(4)
+    @test K * x ≈ K_ * x
+end
 
 @testset let # ROBIN 2
     A_ = rand(3, 2)
