@@ -105,6 +105,57 @@ end
     end
 end
 
+@testset "Another Complex Computational Graph" begin
+    # Random base matrices
+    A = rand(3, 3)
+    B = rand(3, 3)
+    C = rand(3, 3)
+    D = rand(3, 3)
+    E = rand(3, 3)
+    F = rand(3, 3)
+    G = rand(3, 3)
+    H = rand(3, 3)
+    J = rand(9, 9)
+    α = rand()
+    β = rand()
+    γ = rand()
+    δ = rand()
+
+    # Lazy wrappers
+    LA, LB, LC, LD, LE, LF, LG, LH, LJ = lazy.((A, B, C, D, E, F, G, H, J))
+
+    M1 = kron(A, (A + α*B) * (C - D)) + β * kron(E, F)
+    M2 = kron(G + γ*H, E*F) + δ * kron(A, B)
+    M3 = transpose(M1) * M2 + J * M1 * transpose(J)
+    M4 = EPMAfem.blockmatrix(M1, M2, M3)
+
+
+    for m_fac in 0:0.1:1
+        may_m(M) = rand() < m_fac ? EPMAfem.materialize(M) : M
+
+        LM1 = kron(LA, may_m((LA + α*LB) * may_m(LC - LD))) + β * kron(LE, LF)
+        LM2 = may_m(kron(LG + γ*LH, LE*LF) + δ * kron(LA, LB))
+        LM3 = may_m(transpose(LM1) * LM2) + may_m(LJ * LM1 * transpose(LJ))
+        LM4 = EPMAfem.blockmatrix(LM1, LM2, LM3)
+
+        x = rand(size(LM4, 2))
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
+        ws = EPMAfem.Workspace(zeros(ws_size))
+        y = zeros(size(LM4, 1))
+        EPMAfem.mul_with!(ws, y, LM4, x, true, false)
+        @test y ≈ M4 * x
+
+        x = rand(size(LM4, 1))
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
+        ws = EPMAfem.Workspace(zeros(ws_size))
+        y = zeros(size(LM4, 2))
+        EPMAfem.mul_with!(ws, y, transpose(LM4), x, true, false)
+        @test y ≈ transpose(M4) * x
+
+        @test Matrix(LM4) ≈ Matrix(M4)
+    end
+end
+
 @testset "ProductChain Matrix" begin
     A_ = rand(10, 11)
     B_ = rand(11, 12)
