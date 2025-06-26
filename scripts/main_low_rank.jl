@@ -9,12 +9,103 @@ using SparseArrays
 # include("plot_overloads.jl")
 
 lazy(A) = EPMAfem.lazy(A)
-
 rand_mat(m, n) = rand(m, n)
 rand_vec(n) = rand(n)
 
+function do_materialize(M::EPMAfem.MaterializedMatrix)
+    ws = EPMAfem.Workspace(zeros(EPMAfem.required_workspace(EPMAfem.materialize_with, M)))
+    M_mat, _ = EPMAfem.materialize_with(ws, M)
+    return M_mat
+end
 
-@testset let
+@testset "Complex Computational Graph" begin
+    # Random base matrices
+    A = rand(4, 4)
+    B = rand(4, 4)
+    C = rand(4, 4)
+    D = rand(4, 4)
+    E = rand(4, 4)
+    F = rand(4, 4)
+    G = rand(4, 4)
+    H = rand(4, 4)
+    J = rand(16, 4)
+    α = rand()
+    β = rand()
+    γ = rand()
+
+    # Lazy wrappers
+    LA, LB, LC, LD, LE, LF, LG, LH, LJ = lazy.((A, B, C, D, E, F, G, H, J))
+
+    # Compose a graph:
+    M1 = (A + α*B) * (C + D)
+    LM1 = (LA + α * LB) * (LC + LD)
+
+    M2 = kron(E, F) + β * kron(G, H)
+    LM2 = kron(LE, LF) + β * kron(LG, LH)
+
+    M3 = transpose(kron(M1, M1)) * M2
+    LM3 = transpose(kron(LM1, LM1)) * LM2
+
+    M4 = γ * M3 + kron(M1, transpose(transpose(J)*M2*J))
+    LM4 = γ * LM3 + kron(LM1, transpose(transpose(LJ) * LM2 * LJ));
+
+    M5 = M4 * transpose(M4)
+    LM5 = LM4 * transpose(LM4);
+
+    x = rand(size(LM5, 2))
+    ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5)
+    ws = EPMAfem.Workspace(zeros(ws_size))
+    y = zeros(size(LM5, 1))
+    EPMAfem.mul_with!(ws, y, LM5, x, true, false)
+    @test y ≈ M5 * x
+end
+
+@testset "Complex Computational Graph Materialized" begin
+    # Random base matrices
+    A = rand(4, 4)
+    B = rand(4, 4)
+    C = rand(4, 4)
+    D = rand(4, 4)
+    E = rand(4, 4)
+    F = rand(4, 4)
+    G = rand(4, 4)
+    H = rand(4, 4)
+    J = rand(16, 4)
+    α = rand()
+    β = rand()
+    γ = rand()
+
+    M1 = (A + α*B) * (C + D)
+    M2 = kron(E, F) + β * kron(G, H)
+    M3 = transpose(kron(M1, M1)) * M2
+    M4 = γ * M3 + kron(M1, transpose(transpose(J)*M2*J))
+    M5 = M4 * transpose(M4)
+
+    x = rand(size(M5, 2))
+    y_ref = M5 * x
+
+    # Lazy wrappers
+    LA, LB, LC, LD, LE, LF, LG, LH, LJ = lazy.((A, B, C, D, E, F, G, H, J))
+
+    for m_fac in 0:0.1:1
+        may_m(M) = rand() < m_fac ? EPMAfem.materialize(M) : M
+
+        # Compose a graph:
+        LM1 = may_m(LA + may_m(α * LB)) * may_m(LC + LD)
+        LM2 = may_m(kron(LE, LF)) + may_m(β * kron(LG, LH))
+        LM3 = may_m(transpose(kron(LM1, LM1)) * LM2)
+        LM4 = may_m(γ * LM3 + kron(LM1, transpose(may_m(transpose(LJ) * LM2 * LJ))));
+        LM5 = LM4 * transpose(LM4);
+
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5)
+        ws = EPMAfem.Workspace(zeros(ws_size))
+        y = zeros(size(LM5, 1))
+        EPMAfem.mul_with!(ws, y, LM5, x, true, false)
+        @test y ≈ y_ref
+    end
+end
+
+@testset "ProductChain Matrix" begin
     A_ = rand(10, 11)
     B_ = rand(11, 12)
     C_ = rand(12, 13)
@@ -54,7 +145,7 @@ rand_vec(n) = rand(n)
 end
 
 # Product Matrix * Matrix
-@testset let
+@testset "ProductChain Matrix2" begin
     A_ = rand(10, 13)
     B_ = rand(13, 15)
     C_ = rand(15, 9)
@@ -122,7 +213,7 @@ end
     end
 end
 
-@testset let # ROBIN 1
+@testset "robin1" begin # ROBIN 1
     A_ = rand(2, 2)
     B_ = rand(2, 4)
     C_ = rand(4, 2)
@@ -138,9 +229,11 @@ end
 
     x = rand(4)
     @test K * x ≈ K_ * x
+    x = rand(size(K, 1))
+    @test transpose(K) * x ≈ transpose(K_) * x
 end
 
-@testset let # ROBIN 2
+@testset "robin2" begin # ROBIN 2
     A_ = rand(3, 2)
     B_ = rand(3, 4)
     C_ = rand(2, 2)
@@ -168,7 +261,7 @@ function materialize_with_workspace(A)
     return A_mat
 end
 
-@testset let # lets test how far Diagonal bubbles..
+@testset "Diagonal bubbling" begin # lets test how far Diagonal bubbles..
     A_ = Diagonal(rand(10))
     A = A_ |> lazy
     # no need to test the wrapper
@@ -263,7 +356,7 @@ end
 end
 
 # i just wanted to build a weird structure...
-@testset let
+@testset "Weird structure" begin
     A_ = rand(10, 10)
     A = A_ |> lazy
     # no need to test the wrapper
@@ -353,7 +446,7 @@ end
     @test Q_*x ≈ Q*x
 end
 
-@testset let # check inner allocating promatrix
+@testset "Inner Allocating ProdMatrix" begin # check inner allocating promatrix
     A_ = rand(3, 10)
     B_ = rand(11, 8)
     C_ = rand(4, 16)
@@ -424,7 +517,7 @@ end
     @test MM5_mat ≈ M5_ref
 end
 
-@testset let # check inner allocating TwoProdMatrix
+@testset "Inner Allocating TwoProdMatrix" begin # check inner allocating TwoProdMatrix
     A_ = rand(5, 5)
     B_ = rand(5, 5)
     C_ = rand(5, 5)
@@ -450,7 +543,7 @@ end
 end
 
 # matrix product chain
-@testset let
+@testset "Product Chain" begin
     A_ = rand_mat(4, 5)
     B_ = rand_mat(5, 6)
     C_ = rand_mat(6, 7)
@@ -493,7 +586,7 @@ end
 end
 
 # TwoProdMatrix
-@testset let
+@testset "TwoProdMatrix" begin
     A_ = rand_mat(4, 5)
     B_ = rand_mat(5, 7)
 
@@ -518,7 +611,7 @@ end
 end
 
 # lets implement something that somewhat resembles EPMA
-@testset let
+@testset "Small EPMA" begin
     nxp = 500
     nxm = 300
     nΩp = 120
@@ -578,7 +671,7 @@ end
 end
 
 # materialize kron stays diagonal (we need this for schur)
-@testset let
+@testset "Diagonal + Kron" begin
     A_ = Diagonal(rand(5))
     B_ = Diagonal(rand(5))
 
@@ -606,7 +699,7 @@ end
 end
 
 # test materialize
-@testset let
+@testset "Simple Materialize" begin
     a_ = rand_mat(3, 4)
     b_ = rand_mat(5, 6)
 
@@ -641,7 +734,7 @@ function fair_comparison(y, x, temp1, temp2, temp3, a, b, c, d, e, f, g)
 end
 
 # benchmark a small example
-@testset let
+@testset "Small Benchmark" begin
     a_ = rand_mat(50, 60)
     b_ = rand_mat(50, 60)
 
@@ -704,7 +797,7 @@ end
 end
 
 # BlockMatrix
-@testset let
+@testset "BlockMatrix" begin
     a = rand_mat(10, 10)
     b = rand_mat(10, 15)
     c = rand_mat(15, 15)
@@ -727,7 +820,7 @@ end
 end
 
 # stich KronMatrix and BlockMatrix together
-@testset let
+@testset "KronMatrix + BlockMatrix" begin
     KA = EPMAfem.lazy(kron, rand_mat(10, 10), rand_mat(11, 11))
     KA_ref = Matrix(KA)
 
@@ -749,7 +842,7 @@ end
 end
 
 # stich KronMatrix and SumMatrix together
-@testset let
+@testset "KronMatrix + SumMatrix" begin
     K1 = EPMAfem.lazy(kron, rand_mat(10, 11), rand_mat(12, 13))
     K1_ref = Matrix(K1)
     K2 = EPMAfem.lazy(kron, rand_mat(10, 11), rand_mat(12, 13))
@@ -801,7 +894,7 @@ end
 end
 
 ## ScaleMatrix
-@testset let
+@testset "ScaleMatrix" begin
     l = rand()
     r = rand()
     L = rand_mat(2, 3)
@@ -844,7 +937,7 @@ end
 end
 
 ## SumMatrix
-@testset let
+@testset "SumMatrix" begin
     A1 = rand_mat(10, 11)
     A2 = rand_mat(10, 11)
     A3 = rand_mat(10, 11)
@@ -887,7 +980,7 @@ end
 end
 
 ## KronMatrix
-@testset let
+@testset "KronMatrix" begin
     A = rand_mat(10, 11)
     B = rand_mat(12, 13)
 
@@ -934,3 +1027,99 @@ end
     # K_diag = EPMAfem.KronMatrix(A, B)
     # @test isdiag(K_diag) == true
 end
+
+# Additional testsets for edge cases and less common scenarios (thanks AI :D )
+@testset "Empty and singleton matrices" begin
+    # Empty matrices
+    A_ = rand(0, 5)
+    B_ = rand(5, 0)
+    C_ = rand(0, 0)
+    A, B, C = lazy.((A_, B_, C_))
+    @test size(A * B) == (0, 0)
+    @test size(B * C) == (5, 0)
+    @test size(C * A) == (0, 5)
+    @test Matrix(A) == A_
+    @test Matrix(B) == B_
+    @test Matrix(C) == C_
+
+    # Singleton matrices
+    D_ = rand(1, 1)
+    D = lazy(D_)
+    @test D_ * D_ ≈ D * D
+    @test Matrix(D) ≈ D_
+    @test transpose(D) ≈ transpose(D_)
+end
+
+@testset "Broadcasting and elementwise operations" begin
+    A_ = rand(4, 4)
+    B_ = rand(4, 4)
+    A, B = lazy.((A_, B_))
+    # Elementwise addition and multiplication
+    @test (A .+ B) ≈ (A_ .+ B_)
+    @test (A .* B) ≈ (A_ .* B_)
+    # Scalar broadcasting
+    α = rand()
+    @test (A .+ α) ≈ (A_ .+ α)
+    @test (α .+ A) ≈ (α .+ A_)
+    @test (A .* α) ≈ (A_ .* α)
+    @test (α .* A) ≈ (α .* A_)
+end
+
+# TODO: maybe ? did not think about this yet
+# @testset "Type stability and promotion" begin
+#     A_ = rand(Float32, 3, 3)
+#     B_ = rand(Int, 3, 3)
+#     A, B = lazy.((A_, B_))
+#     C = A + B
+#     @test eltype(Matrix(C)) == promote_type(Float32, Int)
+#     D = A * B
+#     @test eltype(Matrix(D)) == promote_type(Float32, Int)
+# end
+
+@testset "Sparse and dense interop" begin
+    A_ = sprand(5, 5, 0.2)
+    B_ = rand(5, 5)
+    A, B = lazy.((A_, B_))
+    @test Matrix(A + B) ≈ Matrix(A_) + B_
+    @test Matrix(A * B) ≈ Matrix(A_) * B_
+    @test Matrix(B * A) ≈ B_ * Matrix(A_)
+end
+
+@testset "Chained lazy operations" begin
+    A_ = rand(4, 4)
+    B_ = rand(4, 4)
+    C_ = rand(4, 4)
+    A, B, C = lazy.((A_, B_, C_))
+    # Chain of operations
+    M = (A + B) * (C - A)
+    M_ref = (A_ + B_) * (C_ - A_)
+    @test Matrix(M) ≈ M_ref
+    x = rand(4)
+    @test M * x ≈ M_ref * x
+end
+
+@testset "Diagonal and block diagonal special cases" begin
+    d = rand(6)
+    D = lazy(Diagonal(d))
+    # Block diagonal
+    B = EPMAfem.blockmatrix(D, D, D)
+    B_ref = Matrix(B)
+    x = rand_vec(size(B, 2))
+    @test B * x ≈ B_ref * x
+    # Diagonal + scalar
+    α = rand()
+    S = D + α * I
+    S_ref = Diagonal(d .+ α)
+    @test Matrix(S) ≈ S_ref
+end
+
+@testset "Lazy matrix with view and submatrix" begin
+    A_ = rand(6, 6)
+    A = lazy(A_)
+    v = view(A, 2:4, 3:6)
+    v_ref = view(A_, 2:4, 3:6)
+    @test Matrix(v) ≈ Matrix(v_ref)
+    x = rand(4)
+    @test v * x ≈ Matrix(v_ref) * x
+end
+
