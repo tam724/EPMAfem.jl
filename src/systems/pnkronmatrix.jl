@@ -4,7 +4,7 @@ const KronMatrix{T} = LazyOpMatrix{T, typeof(kron), <:Tuple{AbstractMatrix{T}, A
 Base.size(K::KronMatrix) = (size(A(K), 1)*size(B(K), 2), size(A(K), 2)*size(B(K), 1))
 max_size(K::KronMatrix) = (max_size(A(K), 1)*max_size(B(K), 2), max_size(A(K), 2)*max_size(B(K), 1))
 
-function Base.getindex(K::KronMatrix, I::Vararg{Int, 2})
+function lazy_getindex(K::KronMatrix, I::Vararg{Int, 2})
     i, j = I
     m, n = size(A(K))
     p, q = size(B(K))

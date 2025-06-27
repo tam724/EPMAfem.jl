@@ -12,7 +12,7 @@ const NotFusedScaleMatrix{T} = ScaleMatrix{T, <:AbstractLazyMatrixOrTranspose{T}
 @inline A(S::ScaleMatrixR) = S.args[1]
 Base.size(S::ScaleMatrix) = Base.size(A(S))
 max_size(S::ScaleMatrix) = max_size(A(S))
-Base.getindex(S::ScaleMatrix, idx::Vararg{<:Integer}) = *(a(S), getindex(A(S), idx...))
+lazy_getindex(S::ScaleMatrix, idx::Vararg{<:Integer}) = *(a(S), getindex(A(S), idx...))
 @inline isdiagonal(S::ScaleMatrix) = isdiagonal(A(S))
 
 mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::NotFusedScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
@@ -69,7 +69,7 @@ function max_size(M::TwoProdMatrix)
     return (max_size(A(M), 1), max_size(B(M), 2))
 end
 
-function Base.getindex(M::TwoProdMatrix, I::Vararg{Int, 2})
+function lazy_getindex(M::TwoProdMatrix, I::Vararg{Int, 2})
     i, j = I
     return sum(getindex(A(M), i, k)*getindex(B(M), k, j) for k in 1:only_unique((size(A(M), 2), size(B(M), 1))))
 end
@@ -149,7 +149,7 @@ function max_size(M::ProdMatrix)
     return (max_size(As(M)[1], 1), max_size(As(M)[end], 2))
 end
 
-function Base.getindex(M::ProdMatrix, I::Vararg{Int, 2})
+function lazy_getindex(M::ProdMatrix, I::Vararg{Int, 2})
     i, j = I
     # naive implementation
     @warn "getindex of ProdMatrix is probably very slow!" maxlog=5

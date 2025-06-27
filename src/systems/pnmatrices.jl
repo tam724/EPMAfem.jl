@@ -17,6 +17,8 @@ end
 abstract type AbstractLazyMatrix{T} <: AbstractMatrix{T} end
 const AbstractLazyMatrixOrTranspose{T} = Union{<:AbstractLazyMatrix{T}, Transpose{T, <:AbstractLazyMatrix{T}}}
 Base.getindex(L::AbstractLazyMatrix{T}, I::CartesianIndex) where T = getindex(L, I.I...)
+Base.getindex(L::AbstractLazyMatrix{T}, I::Vararg{Int, 2}) where T = CUDA.@allowscalar lazy_getindex(L, I.I...)
+Base.getindex(L::AbstractLazyMatrix{T}, i::Int, j::Int) where T = CUDA.@allowscalar lazy_getindex(L, i, j)
 Base.getindex(::AbstractLazyMatrix{T}, args...) where T = error("should be defined")
 
 # generally opt out of broadcasting materialize..
@@ -195,7 +197,7 @@ unwrap(Lt::Transpose{T, <:Lazy{T}}) where T = transpose(unwrap(parent(Lt)))
 unwrap(L::Union{<:AbstractLazyMatrix{T}, Transpose{T, <:AbstractLazyMatrix{T}}}) where T = L
 
 Base.size(L::Lazy) = size(unwrap(L))
-Base.getindex(L::Lazy, idx::Vararg{<:Integer}) = getindex(unwrap(L), idx...)
+Base.getindex(L::Lazy, i::Int, j::Int) = CUDA.@allowscalar getindex(unwrap(L), i, j)
 LinearAlgebra.transpose(L::Lazy) = lazy(transpose(L.A))
 
 

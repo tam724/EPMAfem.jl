@@ -4,7 +4,7 @@ const SumMatrix{T} = Union{TSumMatrix{T}, VSumMatrix{T}}
 @inline As(S::SumMatrix) = S.args
 Base.size(S::SumMatrix) = only_unique(size(A) for A in As(S))
 max_size(S::SumMatrix) = only_unique(max_size(A) for A in As(S))
-Base.getindex(S::SumMatrix, idx::Vararg{<:Integer}) = +(getindex.(As(S), idx...)...)
+lazy_getindex(S::SumMatrix, idx::Vararg{<:Integer}) = +(getindex.(As(S), idx...)...)
 isdiagonal(S::SumMatrix) = all(isdiagonal, As(S))
 
 broadcast_materialize(T::TSumMatrix) = broadcast_materialize(As(T)...)

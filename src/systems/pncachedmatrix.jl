@@ -3,7 +3,7 @@ const MaterializedMatrix{T} = LazyOpMatrix{T, typeof(materialize), <:Tuple{<:Abs
 @inline A(M::MaterializedMatrix) = only(M.args)
 Base.size(M::MaterializedMatrix) = size(A(M))
 max_size(M::MaterializedMatrix) = max_size(A(M))
-Base.getindex(M::MaterializedMatrix{T}, idx::Vararg{<:Integer}) where T = getindex(A(M), idx...)
+lazy_getindex(M::MaterializedMatrix{T}, idx::Vararg{<:Integer}) where T = lazy_getindex(A(M), idx...)
 @inline isdiagonal(M::MaterializedMatrix) = isdiagonal(A(M))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, M::MaterializedMatrix, X::AbstractVecOrMat, α::Number, β::Number)
