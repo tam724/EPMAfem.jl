@@ -113,5 +113,5 @@ interpolated_result = EPMAfem.SpaceModels.interpolable((p=xp*Ωp|> collect, m=xm
     
 p3 = Plots.contourf(0:0.001:0.03, -0.06:0.1:0.06, (x,z) -> interpolated_result(VectorValue(x,z)), cmap=:plasma)
 
-plot(0:0.001:0.03, x -> interpolated_result(VectorValue(x,0)), cmap=:plasma)
+plot(0:0.001:0.03, x -> interpolated_result(VectorValue(x,0)))
 # Plots.contourf(0:0.001:0.03, -1:0.1:1, (x, z) -> qx(VectorValue(x, z)), cmap=:grays)
