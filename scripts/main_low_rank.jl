@@ -775,29 +775,29 @@ end
 end
 
 # lets implement something that somewhat resembles EPMA
-# @testset "Small EPMA" begin
-    nxp = 2
-    nxm = 2
-    nΩp = 2
-    nΩm = 2
+@testset "Small EPMA" begin
+    nxp = 500
+    nxm = 300
+    nΩp = 120
+    nΩm = 150
 
-    ne = 1
-    nd = 1
+    ne = 3
+    nd = 2
 
-    ρp_ = [rand_spmat(nxp, nxp, 1.0) for i in 1:ne]
-    ρm_ = [Diagonal(rand_vec(nxm)) for i in 1:ne]
+    ρp_ = [sprand(nxp, nxp, 0.01) for i in 1:ne]
+    ρm_ = [Diagonal(rand(nxm)) for i in 1:ne]
 
 
-    Ip_temp = Diagonal(ones_vec(nΩp))
+    Ip_temp = Diagonal(ones(nΩp))
     Ip_ = [Ip_temp for i in 1:ne]
-    Im_temp = Diagonal(ones_vec(nΩm))
+    Im_temp = Diagonal(ones(nΩm))
     Im_ = [Im_temp for i in 1:ne]
 
-    ∇d_ = [rand_spmat(nxp, nxm, 1.0) for i in 1:nd]
-    Ωd_ = [rand_spmat(nΩm, nΩp, 1.0) for i in 1:nd]
+    ∇d_ = [sprand(nxp, nxm, 0.01) for i in 1:nd]
+    Ωd_ = [sprand(nΩm, nΩp, 0.01) for i in 1:nd]
 
-    kp_ = [Diagonal(rand_vec(nΩp)) for i in 1:ne]
-    km_ = [Diagonal(rand_vec(nΩm)) for i in 1:ne]
+    kp_ = [Diagonal(rand(nΩp)) for i in 1:ne]
+    km_ = [Diagonal(rand(nΩm)) for i in 1:ne]
 
     ρp, ρm, Ip, Im, ∇d, Ωd, kp, km = lazy.(ρp_), lazy.(ρm_), lazy.(Ip_), lazy.(Im_), lazy.(∇d_), lazy.(Ωd_), lazy.(kp_), lazy.(km_)
 
@@ -823,8 +823,6 @@ end
     @time BM_ = EPMAfem.blockmatrix(A_, B_, C_)
     @test y ≈ BM_ * x
 
-    plot(y .- BM_ * x |> collect)
-
     y_ = rand_vec(size(BM_, 2))
 
     bench_sparse = @benchmark mul!($y_, $BM_, $x)
@@ -834,7 +832,7 @@ end
     display(bench_lazy)
     @show "Sparse (2.7ms)"
     display(bench_sparse)
-# end
+end
 
 # materialize kron stays diagonal (we need this for schur)
 @testset "Diagonal + Kron" begin
