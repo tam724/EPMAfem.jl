@@ -1,5 +1,11 @@
 # now this is special code for EPMA
 function blockmatrix(A, B, C)
+    # weird hack: # TODO!
+    if any(A -> A isa CUDA.CUSPARSE.CuSparseMatrixCSC, (A, B, C, transpose(A), transpose(B), transpose(C)))
+        B_ = collect(B)
+        return sparse([collect(A) B_
+            transpose(B_) collect(C)]) |> cu
+    end
     return [A               B
             transpose(B)    C]
 end

@@ -90,13 +90,22 @@ function LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::Abst
     return y
 end
 
-function LinearAlgebra.mul!(y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix, α::Number, β::Number) where T
+function LinearAlgebra.mul!(Y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix, α::Number, β::Number) where T
     @warn "Not build for this, but we try anyways..."
     ws_size = required_workspace(mul_with!, A)
     ws = Workspace(zeros(T, ws_size))
     if ws_size > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(ws_size))!") end
-    mul_with!(ws, y, A, X, α, β)
-    return y
+    mul_with!(ws, Y, A, X, α, β)
+    return Y
+end
+
+function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::AbstractLazyMatrix{T}, α::Number, β::Number) where T
+    @warn "Not build for this, but we try anyways..."
+    ws_size = required_workspace(mul_with!, A)
+    ws = Workspace(zeros(T, ws_size))
+    if ws_size > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(ws_size))!") end
+    mul_with!(ws, Y, X, A, α, β)
+    return Y
 end
 
 function LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
@@ -116,12 +125,31 @@ function LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMa
     return y
 end
 
+function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, α::Number, β::Number) where T
+    @warn "Not build for this, but we try anyways..."
+    ws_size = required_workspace(mul_with!, parent(At))
+    ws = Workspace(zeros(T, ws_size))
+    if ws_size > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(ws_size))!") end
+    mul_with!(ws, Y, X, At, α, β)
+    return Y
+end
+
 # # a abstract type that does not implement an operation, but an flag, how we deal with this matrix (materialized, cached)
 # abstract type MarkedLazyMatrix{T} <: AbstractLazyMatrix{T} end
 
 @concrete struct LazyOpMatrix{T} <: AbstractLazyMatrix{T}
     op
     args
+end
+
+# so normal * (mul) works
+function Base.similar(L::LazyOpMatrix{T}, TS::Type, (m, n)::Tuple{Int, Int}) where T
+    # TODO: HACK! so scalemat works
+    if first(L.args) isa T 
+        return similar(L.args[2], TS, (m, n))
+    else
+        return similar(L.args[1], TS, (m, n))
+    end
 end
 
 function lazy(func, args...)
@@ -168,6 +196,9 @@ unwrap(L::Union{<:AbstractLazyMatrix{T}, Transpose{T, <:AbstractLazyMatrix{T}}})
 
 Base.size(L::Lazy) = size(unwrap(L))
 Base.getindex(L::Lazy, idx::Vararg{<:Integer}) = getindex(unwrap(L), idx...)
+LinearAlgebra.transpose(L::Lazy) = lazy(transpose(L.A))
+
+
 
 Base.:*(L::AbstractLazyMatrixOrTranspose, α::Number) = lazy(*, unwrap(L), α)
 Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose) = lazy(*, α, unwrap(L))
