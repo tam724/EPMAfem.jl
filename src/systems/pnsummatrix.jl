@@ -48,23 +48,20 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Tran
 end
 required_workspace(::typeof(mul_with!), S::SumMatrix) = maximum(required_workspace(mul_with!, A) for A in As(S))
 
-function materialize_with(ws::Workspace, S::SumMatrix)
+function materialize_with(ws::Workspace, S::SumMatrix, from_cache=nothing)
     # what we do here is to wrap every component into a lazy(materialize, ) and then materialize the full matrix
-    S_mat, rem = structured_from_ws(ws, S)
+    S_mat, rem = structured_from_ws(ws, S, from_cache)
     S_mat .= zero(eltype(S_mat))
     for A in As(S)
-        A_mat, _ = materialize_with(rem, materialize(A))
+        A_mat, _ = materialize_with(rem, materialize(A), nothing)
         S_mat .+= A_mat
     end
     return S_mat, rem
 end
 
-materialize_broadcasted(S::SumMatrix) = Base.Broadcast.broadcasted(+, materialize_broadcasted.(As(S))...)
+materialize_broadcasted(ws::Workspace, S::SumMatrix) = Base.Broadcast.broadcasted(+, materialize_broadcasted.(Ref(ws), As(S))...)
 
-required_workspace(::typeof(materialize_with), S::SumMatrix) = required_workspace(broadcast_materialize(S), materialize_with, S)
-required_workspace(::ShouldBroadcastMaterialize, ::typeof(materialize_with), S::SumMatrix) = 0
-function required_workspace(::ShouldNotBroadcastMaterialize, ::typeof(materialize_with), S::SumMatrix)
-    # we report the maximal workspace to materialize an inner matrix
+function required_workspace(::typeof(materialize_with), S::SumMatrix)
     max_workspace = 0
     for A in As(S)
         max_workspace = max(max_workspace, required_workspace(materialize_with, materialize(A)))

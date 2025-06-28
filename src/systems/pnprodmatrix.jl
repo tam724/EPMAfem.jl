@@ -36,20 +36,18 @@ LinearAlgebra.mul!(Y::AbstractVector, St::Transpose{T, <:ScaleMatrix{T}}, X::Abs
 LinearAlgebra.mul!(Y::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
 LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
 
-materialize_with(ws::Workspace, S::ScaleMatrix) = materialize_with(broadcast_materialize(S), ws, S)
-function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, S::ScaleMatrix)
+materialize_with(ws::Workspace, S::ScaleMatrix, from_cache) = materialize_with(broadcast_materialize(S), ws, S, from_cache)
+function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, S::ScaleMatrix, from_cache)
     # S_mat, rem = structured_from_ws(ws, S)
-    A_mat, rem = materialize_with(ws, materialize(A(S)))
+    A_mat, rem = materialize_with(ws, materialize(A(S)), from_cache)
     A_mat .= a(S) .* A_mat
     # S_mat .= a(S) .* A_mat
     return A_mat, rem
 end
 
 broadcast_materialize(S::ScaleMatrix) = broadcast_materialize(A(S))
-materialize_broadcasted(S::ScaleMatrix) = Base.Broadcast.broadcasted(*, a(S), materialize_broadcasted(A(S)))
-required_workspace(::typeof(materialize_with), S::ScaleMatrix) = required_workspace(broadcast_materialize(S), materialize_with, S)
-required_workspace(::ShouldBroadcastMaterialize, ::typeof(materialize_with), S::ScaleMatrix) = 0
-required_workspace(::ShouldNotBroadcastMaterialize, ::typeof(materialize_with), S::ScaleMatrix) = required_workspace(materialize_with, A(S)) # TODO: ? 
+materialize_broadcasted(ws::Workspace, S::ScaleMatrix) = Base.Broadcast.broadcasted(*, a(S), materialize_broadcasted(ws, A(S)))
+required_workspace(::typeof(materialize_with), S::ScaleMatrix) = required_workspace(materialize_with, A(S))
 
 # it seems as if now the fun starts :D this can be heavily optimized (matrix product chain, etc..) well only go for some simple heuristics here
 # let's start implementing this with only A*B (the general case follows later..)
@@ -69,8 +67,7 @@ function max_size(M::TwoProdMatrix)
     return (max_size(A(M), 1), max_size(B(M), 2))
 end
 
-function lazy_getindex(M::TwoProdMatrix, I::Vararg{Int, 2})
-    i, j = I
+function lazy_getindex(M::TwoProdMatrix, i::Int, j::Int)
     return sum(getindex(A(M), i, k)*getindex(B(M), k, j) for k in 1:only_unique((size(A(M), 2), size(B(M), 1))))
 end
 @inline isdiagonal(M::TwoProdMatrix) = isdiagonal(A(M)) && isdiagonal(B(M))
@@ -117,10 +114,10 @@ function required_workspace(::typeof(mul_with!), M::TwoProdMatrix)
     return size(B(M), 1) + max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
 end
 
-function materialize_with(ws::Workspace, M::TwoProdMatrix)
-    M_mat, rem = structured_from_ws(ws, M)
-    A_mat, rem_ = materialize_with(rem, materialize(A(M)))
-    B_mat, _ = materialize_with(rem_, materialize(B(M)))
+function materialize_with(ws::Workspace, M::TwoProdMatrix, from_cache=nothing)
+    M_mat, rem = structured_from_ws(ws, M, from_cache)
+    A_mat, rem_ = materialize_with(rem, materialize(A(M)), nothing)
+    B_mat, _ = materialize_with(rem_, materialize(B(M)), nothing)
     mul!(M_mat, A_mat, B_mat)
     return M_mat, rem
 end
@@ -149,8 +146,7 @@ function max_size(M::ProdMatrix)
     return (max_size(As(M)[1], 1), max_size(As(M)[end], 2))
 end
 
-function lazy_getindex(M::ProdMatrix, I::Vararg{Int, 2})
-    i, j = I
+function lazy_getindex(M::ProdMatrix, i::Int, j::Int)
     # naive implementation
     @warn "getindex of ProdMatrix is probably very slow!" maxlog=5
     x = zeros(maximum(A -> size(A, 2), As(M)))
@@ -249,24 +245,24 @@ function mat_view(v::AbstractVector, m::Integer, n::Integer)
     return reshape(@view(v[1:m*n]), (m, n))
 end
 
-function materialize_with(ws::Workspace, M::ProdMatrix) # TODO: (GJCBP)[https://arxiv.org/pdf/2003.05755]
-    M_mat, REM = structured_from_ws(ws, M)
+function materialize_with(ws::Workspace, M::ProdMatrix, from_cache=nothing) # TODO: (GJCBP)[https://arxiv.org/pdf/2003.05755]
+    M_mat, REM = structured_from_ws(ws, M, from_cache)
 
     max_m = maximum(A -> size(A, 1), As(M))
     max_n = maximum(A -> size(A, 2), As(M))
     max_intermediate = max_m*max_n
     T1, rem = take_ws(REM, max_intermediate)
 
-    Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))))
-    Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]))
+    Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))), nothing)
+    Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]), nothing)
     mul!(mat_view(T1, size(Aₙ₋₁, 1), size(Aₙ, 2)), Aₙ₋₁, Aₙ)
     T2, rem_ = take_ws(rem, max_intermediate)
     for i in length(As(M))-2:-1:2
-        Aᵢ, _ = materialize_with(rem_, materialize(As(M)[i]))
+        Aᵢ, _ = materialize_with(rem_, materialize(As(M)[i]), nothing)
         mul!(mat_view(T2, size(Aᵢ, 1), size(Aₙ, 2)), Aᵢ, mat_view(T1, size(Aᵢ, 2), size(Aₙ, 2)))
         T1, T2 = T2, T1
     end
-    A₁, _ = materialize_with(rem_, materialize(As(M)[1]))
+    A₁, _ = materialize_with(rem_, materialize(As(M)[1]), nothing)
 
     # the final result is always T1
     mul!(M_mat, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)))

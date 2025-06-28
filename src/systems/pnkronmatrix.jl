@@ -4,8 +4,7 @@ const KronMatrix{T} = LazyOpMatrix{T, typeof(kron), <:Tuple{AbstractMatrix{T}, A
 Base.size(K::KronMatrix) = (size(A(K), 1)*size(B(K), 2), size(A(K), 2)*size(B(K), 1))
 max_size(K::KronMatrix) = (max_size(A(K), 1)*max_size(B(K), 2), max_size(A(K), 2)*max_size(B(K), 1))
 
-function lazy_getindex(K::KronMatrix, I::Vararg{Int, 2})
-    i, j = I
+function lazy_getindex(K::KronMatrix, i::Int, j::Int)
     m, n = size(A(K))
     p, q = size(B(K))
     α, a = divrem(i-1, m)
@@ -72,15 +71,15 @@ function required_workspace(::typeof(mul_with!), K::KronMatrix)
     return min(nA*nB, mA*mB) + max(required_workspace(mul_with!, A(K)), required_workspace(mul_with!, B(K)))
 end
 
-function materialize_with(ws::Workspace, K::KronMatrix)
+function materialize_with(ws::Workspace, K::KronMatrix, from_cache=nothing)
     # what we do here is that we wrap both components into a lazy(materialized, ) and then materialize the full matrix
     A_ = materialize(A(K))
     B_ = materialize(B(K))
 
-    K_mat, rem = structured_from_ws(ws, K)
+    K_mat, rem = structured_from_ws(ws, K, from_cache)
 
-    A_mat, rem_ = materialize_with(rem, A_)
-    B_mat, _ = materialize_with(rem_, B_)
+    A_mat, rem_ = materialize_with(rem, A_, nothing)
+    B_mat, _ = materialize_with(rem_, B_, nothing)
     
     # we implement 
     kron!(K_mat, transpose(B_mat), A_mat)
