@@ -8,6 +8,69 @@ using BenchmarkTools
 using SparseArrays
 # include("plot_overloads.jl")
 
+
+
+
+let
+    using LinearMaps
+    Ap = sprand(500, 500, 0.01)
+    Am = rand(200, 200)
+
+    km1 = Diagonal(rand(200))
+    km2 = Diagonal(rand(200))
+
+    Bpm = sprand(500, 180, 0.1)
+    Qpm = sprand(200, 150, 0.1)
+
+    Cp = Diagonal(rand(180))
+    Cm = Diagonal(rand(150))
+
+    kc1 = Diagonal(rand(150))
+
+    LM(X) = LinearMap(X)
+    lz(X) = lazy(X)
+
+    A = kron(Ap, Am + km1 + km2)
+    ALM = kron(LM(Ap), LM(Am) + LM(km1) + LM(km2))
+    Alz = kron(lz(Ap), lz(Am) + lz(km1) + lz(km2))
+
+    B = kron(Bpm, Qpm)
+    BLM = kron(LM(Bpm), LM(Qpm))
+    Blz = kron(lz(Bpm), lz(Qpm))
+
+    C = kron(Cp, Cm + kc1)
+    CLM = kron(LM(Cp), LM(Cm) + LM(kc1))
+    Clz = kron(lz(Cp), lz(Cm) + lz(kc1))
+
+    BM = EPMAfem.blockmatrix(A, B, C)
+    BMLM = EPMAfem.blockmatrix(ALM, BLM, CLM)
+    BMlz = EPMAfem.blockmatrix(Alz, Blz, Clz)
+
+    x = rand(size(BM, 2))
+    y = rand(size(BM, 1))
+    yLM = rand(size(BM, 1))
+    ylz = rand(size(BM, 1))
+
+    mul!(y, BM, x)
+    mul!(yLM, BMLM, x)
+    mul!(ylz, BMlz, x)
+
+    @test y ≈ yLM
+    @test y ≈ ylz
+    # end
+
+    res1 = @benchmark mul!($y, $BM, $x)
+    res2 = @benchmark mul!($yLM, $BMLM, $x)
+
+    ws = EPMAfem.create_workspace(EPMAfem.mul_with!, BMlz, zeros)
+    res3 = @benchmark EPMAfem.mul_with!($ws, $ylz, $BMlz, $x, true, false)
+
+    display(res1)
+    display(res2)
+    display(res3)
+end
+
+
 function LinearAlgebra.kron!(C::Diagonal, A::Diagonal, B::Diagonal)
     kron!(C.diag, A.diag, B.diag)
     return C
