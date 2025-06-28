@@ -71,12 +71,12 @@ function required_workspace(::typeof(mul_with!), K::KronMatrix)
     return min(nA*nB, mA*mB) + max(required_workspace(mul_with!, A(K)), required_workspace(mul_with!, B(K)))
 end
 
-function materialize_with(ws::Workspace, K::KronMatrix, from_cache=nothing)
+function materialize_with(ws::Workspace, K::KronMatrix, ::Nothing)
     # what we do here is that we wrap both components into a lazy(materialized, ) and then materialize the full matrix
     A_ = materialize(A(K))
     B_ = materialize(B(K))
 
-    K_mat, rem = structured_from_ws(ws, K, from_cache)
+    K_mat, rem = structured_from_ws(ws, K)
 
     A_mat, rem_ = materialize_with(rem, A_, nothing)
     B_mat, _ = materialize_with(rem_, B_, nothing)
@@ -84,6 +84,19 @@ function materialize_with(ws::Workspace, K::KronMatrix, from_cache=nothing)
     # we implement 
     kron!(K_mat, transpose(B_mat), A_mat)
     return K_mat, rem
+end
+
+function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix)
+    # what we do here is that we wrap both components into a lazy(materialized, ) and then materialize the full matrix
+    A_ = materialize(A(K))
+    B_ = materialize(B(K))
+
+    A_mat, rem_ = materialize_with(ws, A_, nothing)
+    B_mat, _ = materialize_with(rem_, B_, nothing)
+    
+    # we implement 
+    kron!(skeleton, transpose(B_mat), A_mat)
+    return skeleton, ws
 end
 
 function required_workspace(::typeof(materialize_with), K::KronMatrix)

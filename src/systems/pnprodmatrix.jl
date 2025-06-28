@@ -36,13 +36,16 @@ LinearAlgebra.mul!(Y::AbstractVector, St::Transpose{T, <:ScaleMatrix{T}}, X::Abs
 LinearAlgebra.mul!(Y::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
 LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
 
-materialize_with(ws::Workspace, S::ScaleMatrix, from_cache) = materialize_with(broadcast_materialize(S), ws, S, from_cache)
-function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, S::ScaleMatrix, from_cache)
-    # S_mat, rem = structured_from_ws(ws, S)
-    A_mat, rem = materialize_with(ws, materialize(A(S)), from_cache)
+function materialize_with(ws::Workspace, S::ScaleMatrix, ::Nothing)
+    A_mat, rem = materialize_with(ws, materialize(A(S)), nothing)
     A_mat .= a(S) .* A_mat
-    # S_mat .= a(S) .* A_mat
     return A_mat, rem
+end
+
+function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix)
+    A_mat, _ = materialize_with(ws, materialize(A(S)), skeleton)
+    skeleton .= a(S) .* A_mat
+    return skeleton, ws
 end
 
 broadcast_materialize(S::ScaleMatrix) = broadcast_materialize(A(S))
@@ -114,12 +117,19 @@ function required_workspace(::typeof(mul_with!), M::TwoProdMatrix)
     return size(B(M), 1) + max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
 end
 
-function materialize_with(ws::Workspace, M::TwoProdMatrix, from_cache=nothing)
-    M_mat, rem = structured_from_ws(ws, M, from_cache)
+function materialize_with(ws::Workspace, M::TwoProdMatrix, ::Nothing)
+    M_mat, rem = structured_from_ws(ws, M)
     A_mat, rem_ = materialize_with(rem, materialize(A(M)), nothing)
     B_mat, _ = materialize_with(rem_, materialize(B(M)), nothing)
     mul!(M_mat, A_mat, B_mat)
     return M_mat, rem
+end
+
+function materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix)
+    A_mat, rem = materialize_with(ws, materialize(A(M)), nothing)
+    B_mat, _ = materialize_with(rem, materialize(B(M)), nothing)
+    mul!(skeleton, A_mat, B_mat)
+    return skeleton, ws
 end
 
 function required_workspace(::typeof(materialize_with), M::TwoProdMatrix)
@@ -241,12 +251,8 @@ function required_workspace(::typeof(mul_with!), M::ProdMatrix)
     return 2*my_ws + int_ws
 end
 
-function mat_view(v::AbstractVector, m::Integer, n::Integer)
-    return reshape(@view(v[1:m*n]), (m, n))
-end
-
-function materialize_with(ws::Workspace, M::ProdMatrix, from_cache=nothing) # TODO: (GJCBP)[https://arxiv.org/pdf/2003.05755]
-    M_mat, REM = structured_from_ws(ws, M, from_cache)
+function materialize_with(ws::Workspace, M::ProdMatrix, ::Nothing) # TODO: (GJCBP)[https://arxiv.org/pdf/2003.05755]
+    M_mat, REM = structured_from_ws(ws, M)
 
     max_m = maximum(A -> size(A, 1), As(M))
     max_n = maximum(A -> size(A, 2), As(M))
@@ -268,6 +274,29 @@ function materialize_with(ws::Workspace, M::ProdMatrix, from_cache=nothing) # TO
     mul!(M_mat, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)))
     return M_mat, REM
 end
+
+function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix) # TODO: (GJCBP)[https://arxiv.org/pdf/2003.05755]
+    max_m = maximum(A -> size(A, 1), As(M))
+    max_n = maximum(A -> size(A, 2), As(M))
+    max_intermediate = max_m*max_n
+    T1, rem = take_ws(ws, max_intermediate)
+
+    Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))), nothing)
+    Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]), nothing)
+    mul!(mat_view(T1, size(Aₙ₋₁, 1), size(Aₙ, 2)), Aₙ₋₁, Aₙ)
+    T2, rem_ = take_ws(rem, max_intermediate)
+    for i in length(As(M))-2:-1:2
+        Aᵢ, _ = materialize_with(rem_, materialize(As(M)[i]), nothing)
+        mul!(mat_view(T2, size(Aᵢ, 1), size(Aₙ, 2)), Aᵢ, mat_view(T1, size(Aᵢ, 2), size(Aₙ, 2)))
+        T1, T2 = T2, T1
+    end
+    A₁, _ = materialize_with(rem_, materialize(As(M)[1]), nothing)
+
+    # the final result is always T1
+    mul!(skeleton, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)))
+    return skeleton, ws
+end
+
 
 function required_workspace(::typeof(materialize_with), M::ProdMatrix)
     # simply exaggerate here.. # TODO bring the workspace size down !

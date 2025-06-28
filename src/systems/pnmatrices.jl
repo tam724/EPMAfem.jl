@@ -50,9 +50,13 @@ mul_with!(::Workspace, Y::AbstractMatrix, A::AbstractMatrix, X::AbstractLazyMatr
 required_workspace(::typeof(mul_with!), ::AbstractLazyMatrix) = error("should be defined")
 required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(mul_with!, parent(Lt))
 
-materialize_with(::Workspace, ::AbstractLazyMatrix, from_cache=nothing) = error("should be defined")
-function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, from_cache=nothing) where T 
-    L, rem = materialize_with(ws, parent(Lt), from_cache)
+materialize_with(::Workspace, ::AbstractLazyMatrix, ::Union{Nothing, <:AbstractMatrix}) = error("should be defined")
+function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, ::Nothing) where T
+    L, rem = materialize_with(ws, parent(Lt), nothing)
+    return transpose(L), rem
+end
+function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, skeleton::AbstractMatrix) where T
+    L, rem = materialize_with(ws, parent(Lt), transpose(skeleton))
     return transpose(L), rem
 end
 # this function should return the workspace size for the matrix itself (prod(size(⋅)) AND the workspace size that is needed for the matrix to materialize
@@ -85,7 +89,15 @@ end
 required_workspace(::typeof(mul_with!), A::AbstractMatrix) = 0
 
 # materialize_with(ws::Workspace, A::AbstractMatrix, ::Nothing) = A, ws
-materialize_with(ws::Workspace, A::AbstractMatrix, from_cache) = if !isnothing(from_cache) error("cannot take from cache") else return A, ws end
+function materialize_with(ws::Workspace, A::AbstractMatrix, ::Nothing)
+    return A, ws
+end
+
+function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix)
+    skeleton .= A
+    return M_mat, ws
+end
+        
 required_workspace(::typeof(materialize_with), A::AbstractMatrix) = 0
 
 materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
@@ -253,30 +265,32 @@ function take_ws(ws::Workspace, (n, m)::Tuple{<:Integer, <:Integer})
     return reshape(@view(ws.workspace[1:n*m]), (n, m)), Workspace(@view(ws.workspace[n*m+1:end]), ws.cache)
 end
 
-function structured_from_ws(ws::Workspace, L::AbstractLazyMatrix, from_cache)
-    if !isnothing(from_cache) && !haskey(ws.cache, from_cache) error("$(from_cache |> typeof) with $(string(from_cache, base=16)) not in cache") end
-    if isdiagonal(L)
-        if !isnothing(from_cache)
-            _, L_cache = ws.cache[from_cache]
-            structured_L = Diagonal(@view(L_cache[1:only_unique(size(L))]))
-            return structured_L, ws
-        else
-            memory, rem = take_ws(ws, only_unique(size(L)))
-            structured_L = Diagonal(memory)
-            return structured_L, rem
-        end
+
+function mat_view(v::AbstractVector, m::Integer, n::Integer)
+    return reshape(@view(v[1:m*n]), (m, n))
+end
+
+function structured_mat_view(v::AbstractVector, M::AbstractMatrix)
+    if isdiagonal(M)
+        return Diagonal(@view(v[1:only_unique(size(M))]))
+    else
+        return reshape(@view(v[1:prod(size(M))]), size(M))
     end
-    if !isnothing(from_cache)
-        _, L_cache = ws.cache[from_cache]
-        structured_L = reshape(@view(L_cache[1:prod(size(L))]), size(L))
-        return structured_L, ws
+end
+    
+
+function structured_from_ws(ws::Workspace, L::AbstractMatrix)
+    if isdiagonal(L)
+        memory, rem = take_ws(ws, only_unique(size(L)))
+        structured_L = Diagonal(memory)
+        return structured_L, rem
     else
         return take_ws(ws, size(L))
     end
 end
 
-function structured_from_ws(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, from_cache) where T
-    L, ws = structured_from_ws(ws, parent(Lt), from_cache)
+function structured_from_ws(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T
+    L, ws = structured_from_ws(ws, parent(Lt))
     return transpose(L), ws
 end
 

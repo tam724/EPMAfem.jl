@@ -88,7 +88,7 @@ end
 do_materialize(A::EPMAfem.AbstractLazyMatrixOrTranspose) = do_materialize(EPMAfem.materialize(A))
 function do_materialize(M::EPMAfem.MaterializedMatrix)
     ws = EPMAfem.create_workspace(EPMAfem.materialize_with, M, rand_vec)
-    M_mat, _ = EPMAfem.materialize_with(ws, M)
+    M_mat, _ = EPMAfem.materialize_with(ws, M, nothing)
     return M_mat
 end
 
@@ -179,6 +179,84 @@ end
     end
 end
 
+# first call should cache, the second should use the cache (check result)
+# before the last call, we modify the cache without invalidation -> wrong result
+function test_cached_LK_K(LK, K)
+    x = rand(size(LK, 2))
+    y = rand(size(LK, 1))
+    ws = EPMAfem.create_workspace(EPMAfem.mul_with!, LK, rand_vec)
+    EPMAfem.mul_with!(ws, y, LK, x, true, false)
+    @test y ≈ K * x
+    EPMAfem.mul_with!(ws, y, LK, x, true, false)
+    @test y ≈ K * x
+    for (id, (valid, mem)) in ws.cache
+        @test valid[]
+        mem .= rand(size(mem))
+    end
+    EPMAfem.mul_with!(ws, y, LK, x, true, false)
+    @test !(y ≈ K * x)
+end
+
+@testset "Cached Matrix" begin
+    A = rand_mat(5, 5)
+    B = rand_mat(5, 5)
+
+    LA = lazy(A)
+    LB = lazy(B)
+
+    K = A + B
+    LK = LA + LB
+    x = rand(size(LK, 2))
+    @test LK * x ≈ K * x
+
+    K = 2.0 * (A + B)
+    LK = 2.0 * (LA + LB)
+    x = rand(size(LK, 2))
+    @test LK * x ≈ K * x
+
+    K = transpose(A + B)
+    LK = transpose(LA + LB)
+    x = rand(size(LK, 2))
+    @test LK * x ≈ K * x
+
+    K = transpose(2.0 * (A + B))
+    LK = transpose(2.0 * (LA + LB))
+    x = rand(size(LK, 2))
+    @test LK * x ≈ K * x
+
+    K = 2.0 * transpose(A + B)
+    LK = 2.0 * transpose(LA + LB)
+    x = rand(size(LK, 2))
+    @test LK * x ≈ K * x
+
+    # now cached
+    K = A + B
+    LK = EPMAfem.cache(LA + LB)
+    x = rand(size(LK, 2))
+    test_cached_LK_K(LK, K)
+
+    K = 2.0 * (A + B)
+    LK =  EPMAfem.cache(2.0 * (LA + LB))
+    x = rand(size(LK, 2))
+    test_cached_LK_K(LK, K)
+
+    K = transpose(A + B)
+    LK =  EPMAfem.cache(transpose(LA + LB))
+    x = rand(size(LK, 2))
+    test_cached_LK_K(LK, K)
+
+    K = transpose(2.0 * (A + B))
+    LK =  EPMAfem.cache(transpose(2.0 * (LA + LB)))
+    x = rand(size(LK, 2))
+    test_cached_LK_K(LK, K)
+
+    K = 2.0 * transpose(A + B)
+    LK =  EPMAfem.cache(2.0 * transpose(LA + LB))
+    x = rand(size(LK, 2))
+    test_cached_LK_K(LK, K)
+end
+
+
 @testset "Cached Matrix" begin
     A = rand_mat(5, 5)
     B = rand_mat(5, 5)
@@ -192,60 +270,45 @@ end
 
     K = A + B
     LK = EPMAfem.cache(LA + LB)
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    test_LK_K(LK, K)
 
     K = 2.0 * transpose(A)
     LK = EPMAfem.cache(2.0 * transpose(LA))
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
-
+    test_LK_K(LK, K)
 
     K = transpose(transpose(A) + B)
     LK = EPMAfem.cache(transpose(transpose(LA) + LB))
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    test_LK_K(LK, K)
 
     K = A * B
     LK = EPMAfem.cache(LA * LB)
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    test_LK_K(LK, K)
 
     K = kron(A, B)
     LK = EPMAfem.cache(kron(LA, LB))
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    test_LK_K(LK, K)
 
     K = 2.0 * kron(A, B)
     LK = EPMAfem.cache(2.0 * kron(LA, LB))
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    test_LK_K(LK, K)
 
     K = 2.0 * transpose(kron(A, B))
     LK = EPMAfem.cache(2.0 * transpose(kron(LA, LB)))
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
-
-    # ws = EPMAfem.create_workspace(EPMAfem.mul_with!, LK, rand_vec)
-    # @enter EPMAfem.mul_with!(ws, zeros(25), LK, x, true, false)
-    
+    test_LK_K(LK, K)
 
     K = 1.0 * A + 2.0 * B
     LK = EPMAfem.cache(1.0 * LA + 2.0 * LB)
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    test_LK_K(LK, K)
 
     K = 1.0 * A * 2.0 * B * C
     LK = EPMAfem.cache(1.0 * LA * 2.0 * LB * LC)
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    test_LK_K(LK, K)
 
     K = A * B * C * D  * A * B * C * D 
     LK = EPMAfem.cache(LA * LB * LC * LD) * EPMAfem.cache(LA * LB * LC * LD)
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, LK, rand_vec)
     @test length(ws.cache) == 1
-    x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    test_LK_K(LK, K)
 end
 
 @testset "Complex Computational Graph Cached" begin
@@ -322,6 +385,57 @@ end
         may_m(M) = rand() < m_fac ? EPMAfem.materialize(M) : M
 
         LM1 = kron(LA, may_m((LA + α*LB) * may_m(LC - LD))) + β * kron(LE, LF)
+        LM2 = may_m(kron(LG + γ*LH, LE*LF) + δ * kron(LA, LB))
+        LM3 = may_m(transpose(LM1) * LM2) + may_m(LJ * LM1 * transpose(LJ))
+        LM4 = EPMAfem.blockmatrix(LM1, LM2, LM3)
+
+        x = rand_vec(size(LM4, 2))
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
+        ws = EPMAfem.create_workspace(ws_size, rand_vec)
+        y = rand_vec(size(LM4, 1))
+        EPMAfem.mul_with!(ws, y, LM4, x, true, false)
+        @test y ≈ M4 * x
+
+        x = rand_vec(size(LM4, 1))
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
+        ws = EPMAfem.create_workspace(ws_size, rand_vec)
+        y = rand_vec(size(LM4, 2))
+        EPMAfem.mul_with!(ws, y, transpose(LM4), x, true, false)
+        @test y ≈ transpose(M4) * x
+
+        @test Matrix(LM4) ≈ Matrix(M4)
+    end
+end
+
+@testset "Another Complex Computational Graph Cached" begin
+    # Random base matrices
+    A = rand_mat(3, 3)
+    B = rand_mat(3, 3)
+    C = rand_mat(3, 3)
+    D = rand_mat(3, 3)
+    E = rand_mat(3, 3)
+    F = rand_mat(3, 3)
+    G = rand_mat(3, 3)
+    H = rand_mat(3, 3)
+    J = rand_mat(9, 9)
+    α = rand_scal()
+    β = rand_scal()
+    γ = rand_scal()
+    δ = rand_scal()
+
+    # Lazy wrappers
+    LA, LB, LC, LD, LE, LF, LG, LH, LJ = lazy.((A, B, C, D, E, F, G, H, J))
+
+    M1 = kron(A, (A + α*B) * (C - D)) + β * kron(E, F)
+    M2 = kron(G + γ*H, E*F) + δ * kron(A, B)
+    M3 = transpose(M1) * M2 + J * M1 * transpose(J)
+    M4 = EPMAfem.blockmatrix(M1, M2, M3)
+
+
+    for m_fac in 0:0.1:1
+        may_m(M) = rand() < m_fac ? EPMAfem.cache(M) : M
+
+        LM1 = kron(LA, may_m((LA + α*LB) * may_m(LC  + scal(-1)*LD))) + β * kron(LE, LF)
         LM2 = may_m(kron(LG + γ*LH, LE*LF) + δ * kron(LA, LB))
         LM3 = may_m(transpose(LM1) * LM2) + may_m(LJ * LM1 * transpose(LJ))
         LM4 = EPMAfem.blockmatrix(LM1, LM2, LM3)
@@ -728,22 +842,22 @@ end
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM2, rand_vec)
     @show length(ws.workspace)
-    MM2_mat, _ = EPMAfem.materialize_with(ws, MM2)
+    MM2_mat, _ = EPMAfem.materialize_with(ws, MM2, nothing)
     @test MM2_mat ≈ M2_ref
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM3, rand_vec)
     @show length(ws.workspace)
-    MM3_mat, _ = EPMAfem.materialize_with(ws, MM3)
+    MM3_mat, _ = EPMAfem.materialize_with(ws, MM3, nothing)
     @test MM3_mat ≈ M3_ref
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM4, rand_vec)
     @show length(ws.workspace)
-    MM4_mat, _ = EPMAfem.materialize_with(ws, MM4)
+    MM4_mat, _ = EPMAfem.materialize_with(ws, MM4, nothing)
     @test MM4_mat ≈ M4_ref
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM5, rand_vec)
     @show length(ws.workspace)
-    MM5_mat, _ = EPMAfem.materialize_with(ws, MM5)
+    MM5_mat, _ = EPMAfem.materialize_with(ws, MM5, nothing)
     @test MM5_mat ≈ M5_ref
 end
 
@@ -769,7 +883,7 @@ end
     MM = EPMAfem.materialize(M)
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM, rand_vec)
-    MM_mat, rem = EPMAfem.materialize_with(ws, MM)
+    MM_mat, rem = EPMAfem.materialize_with(ws, MM, nothing)
     @test MM_mat ≈ M_ref
 end
 
@@ -811,7 +925,7 @@ end
     MM = EPMAfem.materialize(M)
     ws = EPMAfem.create_workspace(EPMAfem.materialize_with, MM, rand_vec)
 
-    MM_mat, rem = EPMAfem.materialize_with(ws, MM)
+    MM_mat, rem = EPMAfem.materialize_with(ws, MM, nothing)
 
     @test MM_mat ≈ M_ref
 end
@@ -915,7 +1029,7 @@ end
     ws = EPMAfem.create_workspace(EPMAfem.materialize_with, D, rand_vec)
 
     @test ws.workspace |> length == 25
-    D_mat, rem_ws = EPMAfem.materialize_with(ws, D)
+    D_mat, rem_ws = EPMAfem.materialize_with(ws, D, nothing)
     @test D_mat isa Diagonal
     @test D_mat.diag ≈ kron(A_, B_).diag
 
@@ -924,8 +1038,8 @@ end
 
     ws.workspace |> length
 
-    D_big_mat, rem_ws = EPMAfem.materialize_with(ws, D_big)
-    EPMAfem.materialize_with(ws, D_big)
+    D_big_mat, rem_ws = EPMAfem.materialize_with(ws, D_big, nothing)
+    EPMAfem.materialize_with(ws, D_big, nothing)
 
     @test D_big_mat isa Diagonal
     @test D_big_mat.diag ≈ kron(kron(A_, B_), scal(3.0) * kron(A_, B_)).diag

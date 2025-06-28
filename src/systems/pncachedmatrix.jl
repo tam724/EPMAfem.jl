@@ -10,19 +10,19 @@ lazy_getindex(M::MaterializedOrCachedMatrix{T}, idx::Vararg{<:Integer}) where T 
 lazy_objectid(M::MaterializedOrCachedMatrix) = lazy_objectid(A(M))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, M::MaterializedOrCachedMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    materialized_M, _ = materialize_with(ws, M)
+    materialized_M, _ = materialize_with(ws, M, nothing)
     mul!(Y, materialized_M, X, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
-    materialized_M, _ = materialize_with(ws, parent(Mt))
+    materialized_M, _ = materialize_with(ws, parent(Mt), nothing)
     mul!(Y, transpose(materialized_M), X, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::MaterializedOrCachedMatrix, α::Number, β::Number)
-    materialized_M, _ = materialize_with(ws, M)
+    materialized_M, _ = materialize_with(ws, M, nothing)
     mul!(Y, X, materialized_M, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, α::Number, β::Number) where T
-    materialized_M, _ = materialize_with(ws, parent(Mt))
+    materialized_M, _ = materialize_with(ws, parent(Mt), nothing)
     mul!(Y, X, transpose(materialized_M), α, β)
 end
 # this may be extended to multiplications of multiple materialized matrices.. (we are good with only one now..)
@@ -31,23 +31,20 @@ required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix) = require
 
 # the materialize_with is different for MaterializeMatrix and CachedMatrix though...
 ##### MaterializedMatrix
-materialize_with(ws::Workspace, M::MaterializedMatrix, from_cache=nothing) = materialize_with(broadcast_materialize(A(M)), ws, M, from_cache)
-function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, from_cache)
+materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::Nothing) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton)
+materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton)
+function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, ::Nothing)
     bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
-    A_, rem = structured_from_ws(ws, A(M), from_cache)
+    A_, rem = structured_from_ws(ws, A(M))
     M_ = Base.Broadcast.materialize!(A_, bcd)
     return M_, rem
-    # if isdiagonal(M) #ideally the compiler can proof this, we could also implement a trait for that.. if the compiler can proof, this is type stable..
-    #     ws_M, rem = take_ws(ws, only_unique(size(M)))
-    #     materialized_M = Base.Broadcast.materialize!(Diagonal(ws_M), bcd)
-    #     return materialized_M, rem
-    # end
-    # ws_M, rem = take_ws(ws, size(M))
-
-    # materialized_M = Base.Broadcast.materialize!(ws_M, bcd)
-    # return materialized_M, rem
 end
-materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, from_cache) = materialize_with(ws, A(M), from_cache)
+function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix)
+    bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
+    Base.Broadcast.materialize!(skeleton, bcd)
+    return skeleton, ws
+end
+materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton) = materialize_with(ws, A(M), skeleton)
 
 # simply pass through the broadcast materialize calls.. 
 broadcast_materialize(S::MaterializedMatrix) = broadcast_materialize(A(S))
@@ -63,18 +60,20 @@ end
 materialize(M::Union{MaterializedMatrix{T}, Transpose{T, <:MaterializedMatrix{T}}}) where T = M
 
 ##### CachedMatrix
-function materialize_with(ws::Workspace, C::CachedMatrix, from_cache=nothing)
-    valid, _ = ws.cache[lazy_objectid(A(C))]
+function materialize_with(ws::Workspace, C::CachedMatrix, ::Nothing)
+    valid, memory = ws.cache[lazy_objectid(A(C))]
+    C_cached = structured_mat_view(memory, C)
     if !valid[]
-        materialize_with(ws, materialize(A(C)), lazy_objectid(A(C)))
+        C_cached, _ = materialize_with(ws, materialize(A(C)), C_cached)
         valid[] = true
     end
-    return structured_from_ws(ws, A(C), lazy_objectid(A(C)))
+    return C_cached, ws
 end
+materialize_with(ws::Workspace, C::CachedMatrix, skeleton::AbstractMatrix) = error("TODO")
 
 # simply pass through the broadcast materialize calls.. 
 broadcast_materialize(::CachedMatrix) = ShouldBroadcastMaterialize()
-materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C))
+materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C, nothing))
 
 function required_workspace(::typeof(materialize_with), C::CachedMatrix)
     if isdiagonal(A(C)) #  we only track diagonal (thats the only thing we will need this for, not general though..)
