@@ -1,71 +1,44 @@
-# @concrete struct ReshapeableMatrix{T} <: AbstractPNMatrix{T}
-#     A # not a AbstractPNMatrix
-#     mA
-#     nA
-#     o
-# end
 
-# function ReshapeableMatrix(A)
-#     T = eltype(A)
-#     o = Observable(nothing)
-#     if A isa AbstractPNMatrix error("ReshapeableMatrix needs a `base` Matrix") end
-#     mA_o, nA_o = Observable.(size(A))
-#     onany((args...) -> notify(o), mA_o, nA_o)
-#     return ReshapeableMatrix{T}(A, mA_o, nA_o, o)
-# end
+@concrete struct LazyReshapeMatrix{T, MT<:AbstractMatrix{T}} <: AbstractLazyMatrix{T}
+    A::MT# not a AbstractLazyArray
+    size::Tuple{Base.RefValue{Int}, Base.RefValue{Int}}
+end
 
-# size_string(R::ReshapeableMatrix{T}) where T = "$(size(R, 1))x$(size(R, 2)) ReshapeableMatrix{$(T)}"
-# content_string(R::ReshapeableMatrix) = "[$(R.A[1, 1])  $(R.A[1, 2])  ...]"
+_reshape_view(R::LazyReshapeMatrix) = reshape(@view(R.A[1:prod(size(R))]), size(R))
+function reshape!(R, (m, n)::Tuple{<:Integer, <:Integer})
+    if size(R.A, 1) < m || size(R.A, 2) < n
+        error("size too big!")
+    end
+    R.size[1][] = m
+    R.size[2][] = n
+    return R
+end
 
-# function cache_with!(ws::WorkspaceCache, cached, R::ReshapeableMatrix, α::Number, β::Number)
-#     R_ = get_view(R)
-#     cached .= α .* R_ .+ β .* cached
-# end
+Base.copyto!(R::LazyReshapeMatrix, vals::AbstractArray) = copyto!(_reshape_view(R), vals)
+@inline A(R::LazyReshapeMatrix) = _reshape_view(R)
+Base.size(R::LazyReshapeMatrix) = (R.size[1][], R.size[2][])
+max_size(R::LazyReshapeMatrix) = size(R.A)
+lazy_getindex(R::LazyReshapeMatrix, i::Integer, j::Integer) = getindex(_reshape_view(R), i, j)
+@inline isdiagonal(R::LazyReshapeMatrix) = false
 
-# Base.size(R::ReshapeableMatrix) = (R.mA[], R.nA[])
-# max_size(R::ReshapeableMatrix) = size(R.A) # maybe: (length(R.A), length(R.A)) depends on how the user reshapes
+# for ScaleMatrix (fused) the mul_with! simply calls back into mul!
+mul_with!(::Workspace, Y::AbstractVecOrMat, S::LazyReshapeMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul!(Y, A(S), X, α, β)
+mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::LazyReshapeMatrix, α::Number, β::Number) = mul!(Y, X, A(S), α, β)
+mul_with!(::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:LazyReshapeMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul!(Y, transpose(A(parent(St))), X, α, β)
+mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:LazyReshapeMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), α, β)
+required_workspace(::typeof(mul_with!), S::LazyReshapeMatrix) = 0
 
-# required_workspace_cache(::Union{ReshapeableMatrix, Transpose{T, <:ReshapeableMatrix{T}}}) where T = WorkspaceCache(nothing, (mul_with=0, cache_with=0))
-# function invalidate_cache!(::ReshapeableMatrix) end
+required_workspace(::typeof(materialize_with), S::LazyReshapeMatrix) = 0
 
-# function get_view(R::ReshapeableMatrix)
-#     return reshape(@view(R.A[1:R.mA[]*R.nA[]]), (R.mA[], R.nA[]))
-# end
+function materialize_with(ws::Workspace, R::LazyReshapeMatrix, ::Nothing)
+    return _reshape_view(R), ws
+end
 
-# function reshape!(R::ReshapeableMatrix, (mA, nA))
-#     @assert size(R.A, 1) >= mA && size(R.A, 2) >= nA # could maybe be relaxed
-#     R.mA[] = mA
-#     R.nA[] = nA
-# end
+function materialize_with(ws::Workspace, R::LazyReshapeMatrix, skeleton::AbstractMatrix)
+    skeleton .= _reshape_view(R)
+    return skeleton, ws
+end
 
-# function set!(R::ReshapeableMatrix, A)
-#     @assert size(R.A, 1) >= size(A, 1) && size(R.A, 2) >= size(A, 2)
-#     R.mA[] = size(A, 1)
-#     R.nA[] = size(A, 2)
-#     R_ = get_view(R)
-#     R_ .= A
-# end
-
-# function mul_with!(::WorkspaceCache, Y::AbstractVecOrMat, R::ReshapeableMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-#     R_ = get_view(R)
-#     mul!(Y, R_, X, α, β)
-# end
-
-# function mul_with!(::WorkspaceCache, Y::AbstractVecOrMat, X::AbstractVecOrMat, R::ReshapeableMatrix, α::Number, β::Number)
-#     R_ = get_view(R)
-#     mul!(Y, X, R_, α, β)
-# end
-
-# # transpose ReshapeableMatrix
-# size_string(Rt::Transpose{T, <:ReshapeableMatrix{T}}) where T = "$(size(Rt, 1))x$(size(Rt, 2)) transpose(::ReshapeableMatrix{$(T)})"
-# content_string(Rt::Transpose{T, <:ReshapeableMatrix{T}}) where T = "[$(Rt.A[1, 1])  $(Rt.A[2, 1])  ...]"
-
-# function mul_with!(::WorkspaceCache, y::AbstractVecOrMat, Rt::Transpose{T, <:ReshapeableMatrix{T}}, x::AbstractVecOrMat, α::Number, β::Number) where T
-#     R_ = get_view(parent(Rt))
-#     mul!(Y, transpose(R_), X, α, β)
-# end
-
-# function mul_with!(::WorkspaceCache, y::AbstractVecOrMat, x::AbstractVecOrMat, Rt::Transpose{T, <:ReshapeableMatrix{T}}, α::Number, β::Number) where T
-#     R_ = get_view(parent(Rt))
-#     mul!(Y, X, transpose(R_), α, β)
-# end
+broadcast_materialize(::ReshapeableMatrix) = ShouldBroadcastMaterialize()
+materialize_broadcasted(::Workspace, R::ScaleMatrix) = _reshape_view(R)
+required_workspace(::typeof(materialize_with), S::ScaleMatrix) = r0
