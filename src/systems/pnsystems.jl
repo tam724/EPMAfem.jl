@@ -5,7 +5,7 @@ include("pnsummatrix.jl")
 include("pnprodmatrix.jl")
 include("pnblockmatrix.jl")
 include("pncachedmatrix.jl")
-include("pnreshapeablematrix.jl")
+include("pnresizematrix.jl")
 
 
 include("pnexplicitimplicitmatrix.jl")

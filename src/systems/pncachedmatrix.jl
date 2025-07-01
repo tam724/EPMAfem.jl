@@ -14,16 +14,16 @@ function mul_with!(ws::Workspace, Y::AbstractVecOrMat, M::MaterializedOrCachedMa
     mul!(Y, materialized_M, X, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
-    materialized_M, _ = materialize_with(ws, parent(Mt), nothing)
-    mul!(Y, transpose(materialized_M), X, α, β)
+    materialized_Mt, _ = materialize_with(ws, parent(Mt), nothing)
+    mul!(Y, transpose(materialized_Mt), X, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::MaterializedOrCachedMatrix, α::Number, β::Number)
     materialized_M, _ = materialize_with(ws, M, nothing)
     mul!(Y, X, materialized_M, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, α::Number, β::Number) where T
-    materialized_M, _ = materialize_with(ws, parent(Mt), nothing)
-    mul!(Y, X, transpose(materialized_M), α, β)
+    materialized_Mt, _ = materialize_with(ws, parent(Mt), nothing)
+    mul!(Y, X, transpose(materialized_Mt), α, β)
 end
 # this may be extended to multiplications of multiple materialized matrices.. (we are good with only one now..)
 required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix) = required_workspace(materialize_with, M)
@@ -51,11 +51,7 @@ broadcast_materialize(S::MaterializedMatrix) = broadcast_materialize(A(S))
 materialize_broadcasted(ws::Workspace, S::MaterializedMatrix) = materialize_broadcasted(ws, A(S))
 
 function required_workspace(::typeof(materialize_with), M::MaterializedMatrix)
-    if isdiagonal(A(M)) #  we only track diagonal (thats the only thing we will need this for, not general though..)
-        return only_unique(max_size(M)) + required_workspace(materialize_with, A(M))
-    else
-        return prod(max_size(M)) + required_workspace(materialize_with, A(M))
-    end
+    return required_workspace(structured_from_ws, A(M)) + required_workspace(materialize_with, A(M))
 end
 materialize(M::Union{MaterializedMatrix{T}, Transpose{T, <:MaterializedMatrix{T}}}) where T = M
 
@@ -76,10 +72,9 @@ broadcast_materialize(::CachedMatrix) = ShouldBroadcastMaterialize()
 materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C, nothing))
 
 function required_workspace(::typeof(materialize_with), C::CachedMatrix)
-    if isdiagonal(A(C)) #  we only track diagonal (thats the only thing we will need this for, not general though..)
-        return WorkspaceSize(0, Dict(lazy_objectid(C) => only_unique(max_size(C)))) + required_workspace(materialize_with, A(C))
-    else
-        return WorkspaceSize(0, Dict(lazy_objectid(C) =>  prod(max_size(C)))) + required_workspace(materialize_with, A(C))
-    end
+    cache_size = required_workspace(structured_from_ws, A(C))
+    return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(materialize_with, materialize(A(C)))
 end
+
+# TODO: does this make sense?
 materialize(M::Union{CachedMatrix{T}, Transpose{T, <:CachedMatrix{T}}}) where T = M

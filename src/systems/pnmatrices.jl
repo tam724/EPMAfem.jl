@@ -218,6 +218,7 @@ LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTran
 materialize(A::AbstractLazyMatrixOrTranspose) = lazy(materialize, unwrap(A))
 blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C)
 cache(A::AbstractLazyMatrixOrTranspose) = lazy(cache, unwrap(A))
+LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(LinearAlgebra.inv!, unwrap(A))
 
 # workspace implementation
 function create_workspace(::typeof(mul_with!), L::AbstractLazyMatrixOrTranspose, allocate)
@@ -277,7 +278,6 @@ function structured_mat_view(v::AbstractVector, M::AbstractMatrix)
         return reshape(@view(v[1:prod(size(M))]), size(M))
     end
 end
-    
 
 function structured_from_ws(ws::Workspace, L::AbstractMatrix)
     if isdiagonal(L)
@@ -289,10 +289,20 @@ function structured_from_ws(ws::Workspace, L::AbstractMatrix)
     end
 end
 
+function required_workspace(::typeof(structured_from_ws), L::AbstractLazyMatrix)
+    if isdiagonal(L) #  we only track diagonal (thats the only thing we will need this for, not general though..)
+        return only_unique(max_size(L))
+    else
+        return prod(max_size(L))
+    end
+end
+
 function structured_from_ws(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T
     L, ws = structured_from_ws(ws, parent(Lt))
     return transpose(L), ws
 end
+
+required_workspace(::typeof(structured_from_ws), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(structured_from_ws, parent(Lt))
 
 # function structured_from_cache(ws::Workspace, L::AbstractLazyMatrix)
 #     valid, L_cache = ws.cache[lazy_objectid(L)]

@@ -13,6 +13,11 @@ function LinearAlgebra.kron!(C::Diagonal, A::Diagonal, B::Diagonal)
     return C
 end
 
+function LinearAlgebra.inv!(D::Diagonal{T})  where T
+    D.diag .= inv.(D.diag)
+    return D
+end
+
 lazy(A) = EPMAfem.lazy(A)
 
 ###### CPU TESTING
@@ -92,23 +97,113 @@ function do_materialize(M::EPMAfem.MaterializedMatrix)
     return M_mat
 end
 
+# first call should cache, the second should use the cache (check result)
+# before the last call, we modify the cache without invalidation -> wrong result
+function test_cached_LK_K(LK, K)
+    x = rand(size(LK, 2))
+    y = rand(size(LK, 1))
+    ws = EPMAfem.create_workspace(EPMAfem.mul_with!, LK, rand_vec)
+    EPMAfem.mul_with!(ws, y, LK, x, true, false)
+    @test y ≈ K * x
+    EPMAfem.mul_with!(ws, y, LK, x, true, false)
+    @test y ≈ K * x
+    for (id, (valid, mem)) in ws.cache
+        @test valid[]
+        mem .= rand(size(mem))
+    end
+    EPMAfem.mul_with!(ws, y, LK, x, true, false)
+    @test !(y ≈ K * x)
+end
 
-@testset "ReshapeMatrix" begin
+
+V = EPMAfem.LazyResizeMatrix(rand(30, 30), (Ref(30), Ref(30)))
+A = kron(EPMAfem.cache(transpose(V)*lazy(sprand(30, 30, 0.2) + Diagonal(rand(30)))*V), lazy(Diagonal(rand(20))))
+B = kron(EPMAfem.cache(transpose(V)*lazy(sprand(30, 35, 0.2))), lazy(sprand(20, 25, 0.2)))
+C = kron(lazy(Diagonal(rand(35))), lazy(Diagonal(rand(25))))
+
+BM = EPMAfem.blockmatrix(A, B, C)
+SC = EPMAfem.schur_complement(BM);
+
+EPMAfem.resize!(V, (30, 30))
+BMd = sparse(BM)
+
+x = rand(size(BM, 2))
+y = rand(size(BM, 1))
+y2 = rand(size(BM, 1))
+
+ws = EPMAfem.create_workspace(EPMAfem.mul_with!, BM, zeros)
+@time EPMAfem.mul_with!(ws, y, BM, x, true, false);
+@time mul!(y2, BMd, x, true, false);
+
+@profview @btime EPMAfem.mul_with!($ws, $y, $BM, $x, $true, $false);
+@btime mul!($y2, $BMd, $x, $true, $false);
+
+
+y ≈ y2
+
+
+
+A = Diagonal(rand(5))
+B = rand(5, 6)
+C = Diagonal(rand(6))
+
+AL = lazy(A)
+BL = lazy(B)
+CL = lazy(C)
+
+BM = EPMAfem.blockmatrix(AL, BL, CL)
+
+EPMAfem.A(BM)
+
+KL = EPMAfem.schur_complement(BM)
+K = A - B * inv(C) * transpose(B)
+
+x = rand(size(K, 2))
+KL * x ≈ K * x
+
+@enter KL * x
+
+
+@testset "InplaceInverseMatrix" begin
+    D = Diagonal(rand(5))
+    E = Diagonal(rand(5))
+
+    DL = lazy(D)
+    EL = lazy(E)
+
+    K = LinearAlgebra.inv!(kron(D + E, E))
+    KL = LinearAlgebra.inv!(kron(DL + EL, EL))
+
+    x = rand(size(KL, 2))
+
+    KL * x ≈ K * x
+    KL * x ≈ kron(D + E, E) \ x
+
+    X = rand(size(KL, 2), 4)
+    KL * X ≈ K * X
+    KL * X ≈ kron(D + E, E) \ X
+
+    X = rand(4, size(KL, 1))
+    X * KL ≈ X * K
+    X * KL ≈ X * inv(kron(D + E, E))
+end
+
+@testset "ResizeMatrix" begin
     A = rand(10, 3)
     B = rand(11, 6)
     C = rand(10, 10)
     D = rand(11, 11)
 
-    AL = EPMAfem.LazyReshapeMatrix(rand(15, 15), (Ref(10), Ref(5)))
-    BL = EPMAfem.LazyReshapeMatrix(rand(15, 15), (Ref(11), Ref(5)))
+    AL = EPMAfem.LazyResizeMatrix(rand(15, 15), (Ref(10), Ref(5)))
+    BL = EPMAfem.LazyResizeMatrix(rand(15, 15), (Ref(11), Ref(5)))
     CL = C |> lazy
     DL = D |> lazy
     XL = EPMAfem.materialize(transpose(AL) * CL * AL)
     YL = EPMAfem.cache(transpose(BL) * DL * BL)
     KL = kron(XL, YL)
 
-    EPMAfem.reshape!(AL, (10, 3))
-    EPMAfem.reshape!(BL, (11, 6))
+    EPMAfem.resize!(AL, (10, 3))
+    EPMAfem.resize!(BL, (11, 6))
 
     K = kron(transpose(A)*C*A, transpose(B)*D*B)
 
@@ -265,24 +360,6 @@ end
     end
 end
 
-# first call should cache, the second should use the cache (check result)
-# before the last call, we modify the cache without invalidation -> wrong result
-function test_cached_LK_K(LK, K)
-    x = rand(size(LK, 2))
-    y = rand(size(LK, 1))
-    ws = EPMAfem.create_workspace(EPMAfem.mul_with!, LK, rand_vec)
-    EPMAfem.mul_with!(ws, y, LK, x, true, false)
-    @test y ≈ K * x
-    EPMAfem.mul_with!(ws, y, LK, x, true, false)
-    @test y ≈ K * x
-    for (id, (valid, mem)) in ws.cache
-        @test valid[]
-        mem .= rand(size(mem))
-    end
-    EPMAfem.mul_with!(ws, y, LK, x, true, false)
-    @test !(y ≈ K * x)
-end
-
 @testset "Cached Matrix" begin
     A = rand_mat(5, 5)
     B = rand_mat(5, 5)
@@ -356,45 +433,45 @@ end
 
     K = A + B
     LK = EPMAfem.cache(LA + LB)
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = 2.0 * transpose(A)
     LK = EPMAfem.cache(2.0 * transpose(LA))
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = transpose(transpose(A) + B)
     LK = EPMAfem.cache(transpose(transpose(LA) + LB))
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = A * B
     LK = EPMAfem.cache(LA * LB)
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = kron(A, B)
     LK = EPMAfem.cache(kron(LA, LB))
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = 2.0 * kron(A, B)
     LK = EPMAfem.cache(2.0 * kron(LA, LB))
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = 2.0 * transpose(kron(A, B))
     LK = EPMAfem.cache(2.0 * transpose(kron(LA, LB)))
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = 1.0 * A + 2.0 * B
     LK = EPMAfem.cache(1.0 * LA + 2.0 * LB)
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = 1.0 * A * 2.0 * B * C
     LK = EPMAfem.cache(1.0 * LA * 2.0 * LB * LC)
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 
     K = A * B * C * D  * A * B * C * D 
     LK = EPMAfem.cache(LA * LB * LC * LD) * EPMAfem.cache(LA * LB * LC * LD)
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, LK, rand_vec)
     @test length(ws.cache) == 1
-    test_LK_K(LK, K)
+    test_cached_LK_K(LK, K)
 end
 
 @testset "Complex Computational Graph Cached" begin
