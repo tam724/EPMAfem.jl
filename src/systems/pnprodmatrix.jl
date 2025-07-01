@@ -140,20 +140,20 @@ end
 const ProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{Vararg{<:AbstractMatrix{T}}}}
 @inline As(M::ProdMatrix) = M.args
 function Base.size(M::ProdMatrix)
-    for i in firstindex(As(M)) : lastindex(As(M))-1
-        if size(As(M)[i], 2) != size(As(M)[i+1], 1)
-            error("size mismatch")
-        end
-    end
-    return (size(As(M)[1], 1), size(As(M)[end], 2))
+    size(first(As(M)), 1), _product_matrix_size(size, As(M)...)
 end
 function max_size(M::ProdMatrix)
-    for i in firstindex(As(M)) : lastindex(As(M))-1
-        if max_size(As(M)[i], 2) != max_size(As(M)[i+1], 1)
-            error("size mismatch")
-        end
-    end
-    return (max_size(As(M)[1], 1), max_size(As(M)[end], 2))
+    max_size(first(As(M)), 1), _product_matrix_size(max_size, As(M)...)
+end
+
+function _product_matrix_size(size_op::Function, (a, b, rest...)::Vararg{<:AbstractMatrix})
+    if size_op(a, 2) != size_op(b, 1) error("size mismatch") end
+    return _product_matrix_size(size_op, b, rest...)
+end
+
+function _product_matrix_size(size_op::Function, (a, b)::Vararg{<:AbstractMatrix, 2})
+    if size_op(a, 2) != size_op(b, 1) error("size mismatch") end
+    return size_op(b, 2)
 end
 
 function lazy_getindex(M::ProdMatrix, i::Int, j::Int)
