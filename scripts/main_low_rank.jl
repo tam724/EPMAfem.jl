@@ -8,6 +8,20 @@ using BenchmarkTools
 using SparseArrays
 # include("plot_overloads.jl")
 
+
+# from julia 1.12
+ # these make eachrow(A') produce simpler views
+@inline Base.unsafe_view(A::Transpose{<:Number, <:AbstractMatrix}, i::Integer, j::AbstractArray) =
+    Base.unsafe_view(parent(A), j, i)
+@inline Base.unsafe_view(A::Transpose{<:Number, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
+    Base.unsafe_view(parent(A), j, i)
+
+@inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::Integer, j::AbstractArray) =
+    Base.unsafe_view(parent(A), j, i)
+@inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
+    Base.unsafe_view(parent(A), j, i)
+
+
 function LinearAlgebra.kron!(C::Diagonal, A::Diagonal, B::Diagonal)
     kron!(C.diag, A.diag, B.diag)
     return C
@@ -122,9 +136,13 @@ B = kron(EPMAfem.cache(transpose(V)*lazy(sprand(30, 35, 0.2))), lazy(sprand(20, 
 C = kron(lazy(Diagonal(rand(35))), lazy(Diagonal(rand(25))))
 
 BM = EPMAfem.blockmatrix(A, B, C)
-SC = EPMAfem.schur_complement(BM);
 
-EPMAfem.resize!(V, (30, 30))
+
+
+# SC = EPMAfem.schur_complement(BM);
+
+# EPMAfem.resize!(V, (30, 30))
+
 BMd = sparse(BM)
 
 x = rand(size(BM, 2))
@@ -135,13 +153,21 @@ ws = EPMAfem.create_workspace(EPMAfem.mul_with!, BM, zeros)
 @time EPMAfem.mul_with!(ws, y, BM, x, true, false);
 @time mul!(y2, BMd, x, true, false);
 
-@profview @btime EPMAfem.mul_with!($ws, $y, $BM, $x, $true, $false);
-@btime mul!($y2, $BMd, $x, $true, $false);
+@benchmark EPMAfem.mul_with!($ws, $y, $BM, $x, $true, $false)
+
+@profview @benchmark EPMAfem.mul_with!($ws, $y, $BM, $x, $true, $false)
+@benchmark mul!($y2, $BMd, $x, $true, $false)
+@profview @benchmark mul!($y2, $BMd, $x, $true, $false)
+
+Base.copyto_unaliased!
 
 
 y ≈ y2
 
 
+A = EPMAfem.lazy(*, (lazy(rand(4, 4)) for _ in 1:5)...)
+
+A
 
 A = Diagonal(rand(5))
 B = rand(5, 6)
