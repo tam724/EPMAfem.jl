@@ -13,6 +13,8 @@ using UnsafeArrays
 using Zygote
 using ChainRulesCore
 
+include("hacky_overwrites.jl")
+
 include("special_matrices/sparse3tensor.jl")
 using EPMAfem.Sparse3Tensor
 include("special_matrices/blockedmatrices.jl")
@@ -27,7 +29,6 @@ using EPMAfem.SphericalHarmonicsModels
 include("space_model/space.jl")
 using EPMAfem.SpaceModels
 
-include("redefine_rmul.jl")
 include("utils.jl")
 
 include("abstracttypes.jl")

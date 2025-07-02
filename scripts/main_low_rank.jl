@@ -8,30 +8,6 @@ using BenchmarkTools
 using SparseArrays
 # include("plot_overloads.jl")
 
-
-# from julia 1.12
- # these make eachrow(A') produce simpler views
-@inline Base.unsafe_view(A::Transpose{<:Number, <:AbstractMatrix}, i::Integer, j::AbstractArray) =
-    Base.unsafe_view(parent(A), j, i)
-@inline Base.unsafe_view(A::Transpose{<:Number, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
-    Base.unsafe_view(parent(A), j, i)
-
-@inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::Integer, j::AbstractArray) =
-    Base.unsafe_view(parent(A), j, i)
-@inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
-    Base.unsafe_view(parent(A), j, i)
-
-
-function LinearAlgebra.kron!(C::Diagonal, A::Diagonal, B::Diagonal)
-    kron!(C.diag, A.diag, B.diag)
-    return C
-end
-
-function LinearAlgebra.inv!(D::Diagonal{T})  where T
-    D.diag .= inv.(D.diag)
-    return D
-end
-
 lazy(A) = EPMAfem.lazy(A)
 
 ###### CPU TESTING
