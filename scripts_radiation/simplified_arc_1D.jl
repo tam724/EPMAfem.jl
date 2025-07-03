@@ -4,20 +4,12 @@ using Gridap
 using LinearAlgebra
 using Plots
 using Distributions
-include("../plot_overloads.jl")
+include("../scripts/plot_overloads.jl")
 include("analytical_simplified_arc_1D.jl")
 Makie.inline!(false)
 
-# Define Parameters
-σ = 5.670374 * 10^-8 # Stefan Boltzmann constant
-T_i = 1000
-T_o = 300
-T_w = 300
-beta_i = 10^3
-beta_o = 10^-1
-
 # Define one-dimensional electric arc equations
-@concrete struct ElectricArc1DPNEquations <: EPMAfem.AbstractMonochromPNEquations end
+struct ElectricArc1DPNEquations <: EPMAfem.AbstractMonochromPNEquations end
 EPMAfem.number_of_elements(eq::ElectricArc1DPNEquations) = 1
 EPMAfem.scattering_coefficient(eq::ElectricArc1DPNEquations, e) = 0.0
 EPMAfem.scattering_kernel(eq::ElectricArc1DPNEquations, e) = μ -> 0.0
@@ -25,19 +17,19 @@ EPMAfem.absorption_coefficient(eq::ElectricArc1DPNEquations, e) = 1.0
 function EPMAfem.mass_concentrations(eq::ElectricArc1DPNEquations, e, x)
     if x[1] <= 0.01 && x[1] >= -0.01
         # println("in")
-        return float(beta_i)
+        return float(β_i)
     else
         # println("out")
-        return float(beta_o)
+        return float(β_o)
     end
 end
 
 # Define Source Term and boundary conditions
 function qx(z)
     if z[1]<=0.01 && z[1]>=-0.01
-        return beta_i * σ/π * T_i^4
+        return β_i * σ/π * T_i^4
     else
-        return beta_o * σ/π * T_o^4
+        return β_o * σ/π * T_o^4
     end
 end
 function qΩ(Ω)
@@ -61,7 +53,7 @@ end
 # solve whole problem for given N (PN order)
 function solve_problem(N)
     eq = ElectricArc1DPNEquations()
-    space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.03, 0.03), 1000))
+    space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.03, 0.03), 100))
     direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
     model = EPMAfem.DiscreteMonochromPNModel(space_model, direction_model)
 
@@ -75,7 +67,7 @@ function solve_problem(N)
     rhs_bc_left = EPMAfem.discretize_rhs(bc_left, model, EPMAfem.cpu())
     rhs_bc_right = EPMAfem.discretize_rhs(bc_right, model, EPMAfem.cpu())
 
-    system = EPMAfem.system(problem, EPMAfem.PNSchurSolver)
+    system = EPMAfem.system(problem, EPMAfem.PNDirectSolver)
 
     x_all = EPMAfem.allocate_solution_vector(system)
     # x_source = EPMAfem.allocate_solution_vector(system)
@@ -101,17 +93,36 @@ end
 interpolable_1 = solve_problem(1)
 interpolable_3 = solve_problem(3)
 interpolable_7 = solve_problem(7)
-# interpolable_21 = solve_problem(21)
+interpolable_21 = solve_problem(21)
+interpolable_27 = solve_problem(27)
 
 
-plot(-0.03:0.001:0.03, z -> interpolable_1(VectorValue(z)), label="1")
-plot!(-0.03:0.001:0.03, z -> interpolable_3(VectorValue(z)), label="3")
-plot!(-0.03:0.001:0.03, z -> interpolable_7(VectorValue(z)), label="7")
-# plot!(0:0.001:0.03, z -> interpolable_21(VectorValue(z)), label="21")
+scaling_factor = interpolable_27(VectorValue(0.0))/slab_zeroth_moment(0.0)
+
+# plot(0:0.001:0.03, z -> interpolable_1(VectorValue(z)), label="P1", size=(800, 500))
+# plot!(-0.03:0.001:0.03, z -> interpolable_3(VectorValue(z)), label="P3")
+# plot!(-0.03:0.001:0.03, z -> interpolable_7(VectorValue(z)), label="P7")
+# plot!(0:0.001:0.03, z -> interpolable_21(VectorValue(z)), label="P21")
 
 
 # plot!(0:0.001:0.03, z -> interpolable_source(VectorValue(z)), label="Only Source")
-plot!(-0.03:0.0003:0.03, z -> scaled_zeroth_moment(z, interpolable_1(VectorValue(z))), label="Analytical")
+# plot!(0:0.0003:0.03, z -> scaling_factor*zeroth_moment(z), label="Analytical")
 # p2 = plot(0:0.0003:0.03, z -> qx(z))
-plot(-0.03:0.0003:0.03, z -> zeroth_moment(z), label="Analytical", ylim=(-10000,230000))
+plot(0.0:0.0003:0.03, z -> zeroth_moment(z), label="Analytical, 1D in radius", size=(800, 500))
+plot!(0.0:0.0003:0.03, z -> slab_zeroth_moment(z), label="Analytical, 1D in x", size=(800, 500))
 
+## brute force the scaling scaling
+plot!(0:0.0003:0.03, z -> 1/scaling_factor*interpolable_1(VectorValue(z)), label="P1")
+plot!(0:0.0003:0.03, z -> 1/scaling_factor*interpolable_3(VectorValue(z)), label="P3")
+plot!(0:0.0003:0.03, z -> 1/scaling_factor*interpolable_21(VectorValue(z)), label="P21")
+plot!(0:0.0003:0.03, z -> 1/scaling_factor*interpolable_27(VectorValue(z)), label="P27")
+
+
+# plot(0.0:0.0003:0.03, z -> scaling_factor*zeroth_moment(z), label="Analytical", size=(800, 500))
+# plot!(0.0:0.0003:0.03, z -> scaling_factor*slab_zeroth_moment(z), label="Analytical", size=(800, 500))
+
+# ## brute force the scaling scaling
+# plot!(0:0.0003:0.03, z -> interpolable_1(VectorValue(z)), label="P1")
+# plot!(0:0.0003:0.03, z -> interpolable_3(VectorValue(z)), label="P3")
+# plot!(0:0.0003:0.03, z -> interpolable_21(VectorValue(z)), label="P21")
+# plot!(0:0.0003:0.03, z -> interpolable_27(VectorValue(z)), label="P27")

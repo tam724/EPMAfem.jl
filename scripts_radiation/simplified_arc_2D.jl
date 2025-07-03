@@ -5,7 +5,7 @@ using LinearAlgebra
 using Plots
 using Distributions
 using ConcreteStructs
-include("plot_overloads.jl")
+include("../scripts/plot_overloads.jl")
 Makie.inline!(false)
 
 # parameters
