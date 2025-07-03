@@ -1,14 +1,14 @@
-const ScaleMatrixL{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{T, M}}
-const ScaleMatrixR{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{M, T}}
+const ScaleMatrixL{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{Base.RefValue{T}, M}}
+const ScaleMatrixR{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{M, Base.RefValue{T}}}
 const ScaleMatrix{T, M <: AbstractMatrix{T}} = Union{ScaleMatrixL{T, M}, ScaleMatrixR{T, M}}
 # ScaleMatricex where M is a "normal" Matrix type should support the 5-arg mul! -> when mul_with!(::ScaleMatrix) we simply fuse the coefficient into a mul!( with α = a(S)*α_)
 const NotFusedScaleMatrix{T} = ScaleMatrix{T, <:AbstractLazyMatrixOrTranspose{T}}
 # we cannot do this for ScaleMatrices where the M is a LazyMatrix -> NonFusedScaleMatrix
 # somewhat that copies what we do with ShouldBroadcastMaterialize, maybe there is duplicate information here (TODO: figure this out..)
 
-@inline a(S::ScaleMatrixL) = S.args[1]
+@inline a(S::ScaleMatrixL) = S.args[1][]
 @inline A(S::ScaleMatrixL) = S.args[2]
-@inline a(S::ScaleMatrixR) = S.args[2]
+@inline a(S::ScaleMatrixR) = S.args[2][]
 @inline A(S::ScaleMatrixR) = S.args[1]
 Base.size(S::ScaleMatrix) = size(A(S))
 max_size(S::ScaleMatrix) = max_size(A(S))

@@ -1351,8 +1351,8 @@ end
     L = rand_mat(2, 3)
     R = rand_mat(2, 3)
 
-    SL = EPMAfem.lazy(*, l, L)
-    SR = EPMAfem.lazy(*, R, r)
+    SL = EPMAfem.lazy(*, Ref(l), L)
+    SR = EPMAfem.lazy(*, R, Ref(r))
 
     SL_ref = l*L
     SR_ref = R*r

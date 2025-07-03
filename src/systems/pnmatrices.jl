@@ -166,8 +166,8 @@ end
 
 # so normal * (mul) works
 function Base.similar(L::LazyOpMatrix{T}, TS::Type, (m, n)::Tuple{Int, Int}) where T
-    # TODO: HACK! so scalemat works
-    if first(L.args) isa T 
+    # TODO: HACK! so scalemat works (kinda, only if the internal type is not a lazymatrix,)
+    if first(L.args) isa Base.Ref{T} 
         return similar(L.args[2], TS, (m, n))
     else
         return similar(L.args[1], TS, (m, n))
@@ -203,8 +203,8 @@ LinearAlgebra.transpose(L::Lazy) = lazy(transpose(L.A))
 
 
 
-Base.:*(L::AbstractLazyMatrixOrTranspose, α::Number) = lazy(*, unwrap(L), α)
-Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose) = lazy(*, α, unwrap(L))
+Base.:*(L::AbstractLazyMatrixOrTranspose, α::Number) = lazy(*, unwrap(L), Ref(α))
+Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose) = lazy(*, Ref(α), unwrap(L))
 
 Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(*, unwrap(A), unwrap(B))
 Base.:*(As::Vararg{<:AbstractLazyMatrixOrTranspose}) = lazy(*, unwrap.(As)...)
