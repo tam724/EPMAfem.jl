@@ -1272,13 +1272,13 @@ end
 
 # stich KronMatrix and BlockMatrix together
 @testset "KronMatrix + BlockMatrix" begin
-    KA = EPMAfem.lazy(kron, rand_mat(10, 10), rand_mat(11, 11))
+    KA = EPMAfem.lazy(EPMAfem.kron_AXB, rand_mat(10, 10), rand_mat(11, 11))
     KA_ref = do_materialize(KA)
 
-    KB = EPMAfem.lazy(kron, rand_mat(10, 9), rand_mat(12, 11))
+    KB = EPMAfem.lazy(EPMAfem.kron_AXB, rand_mat(10, 9), rand_mat(12, 11))
     KB_ref = do_materialize(KB)
 
-    KC = EPMAfem.lazy(kron, rand_mat(9, 9), rand_mat(12, 12))
+    KC = EPMAfem.lazy(EPMAfem.kron_AXB, rand_mat(9, 9), rand_mat(12, 12))
     KC_ref = do_materialize(KC)
 
     B = EPMAfem.blockmatrix(KA, KB, KC)
@@ -1318,7 +1318,7 @@ end
     S2_ref = do_materialize(S2)
 
     K1 = EPMAfem.lazy(kron, S1, S2)
-    K1_ref = kron(transpose(S2_ref), S1_ref)
+    K1_ref = kron(S1_ref, S2_ref)
     @test do_materialize(K1) ≈ K1_ref
 
     x = rand_vec(size(K1, 2))
@@ -1331,7 +1331,7 @@ end
     S4_ref = do_materialize(S4)
 
     K2 = EPMAfem.lazy(kron, S3, S4)
-    K2_ref = kron(transpose(S4_ref), S3_ref)
+    K2_ref = kron(S3_ref, S4_ref)
 
     K = EPMAfem.lazy(+, K1, K2)
     K_ref = K1_ref .+ K2_ref 
@@ -1438,7 +1438,7 @@ end
     B = rand_mat(12, 13)
 
     K = EPMAfem.lazy(kron, A, B)
-    K_ref = kron(transpose(B), A)
+    K_ref = kron(A, B)
     if cpu @test Matrix(K) ≈ K_ref end
     # @test K_ref_ ≈ K_ref
 

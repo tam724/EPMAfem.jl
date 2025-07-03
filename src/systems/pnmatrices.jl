@@ -204,7 +204,9 @@ LinearAlgebra.transpose(L::Lazy) = lazy(transpose(L.A))
 
 
 Base.:*(L::AbstractLazyMatrixOrTranspose, α::Number) = lazy(*, unwrap(L), Ref(α))
+Base.:*(L::AbstractLazyMatrixOrTranspose, α::Base.RefValue{<:Number}) = lazy(*, unwrap(L), α)
 Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose) = lazy(*, Ref(α), unwrap(L))
+Base.:*(α::Base.RefValue{<:Number}, L::AbstractLazyMatrixOrTranspose) = lazy(*, α, unwrap(L))
 
 Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(*, unwrap(A), unwrap(B))
 Base.:*(As::Vararg{<:AbstractLazyMatrixOrTranspose}) = lazy(*, unwrap.(As)...)
@@ -214,7 +216,10 @@ Base.:+(A::AbstractMatrix, L::AbstractLazyMatrixOrTranspose) = lazy(+, A, unwrap
 Base.:+(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L), A)
 
 # damn I implemented a weird version of kron...
-LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = transpose(lazy(kron, transpose(unwrap(B)), unwrap(A)))
+LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = transpose(lazy(kron_AXB, transpose(unwrap(B)), unwrap(A)))
+lazy(::typeof(kron), A::AbstractMatrix, B::AbstractMatrix) = transpose(lazy(kron_AXB, transpose(unwrap(B)), unwrap(A)))
+kron_AXB(A::AbstractMatrix, B::AbstractMatrix) = kron(transpose(B), A)
+kron_AXB(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron_AXB, unwrap(A), unwrap(B))
 materialize(A::AbstractLazyMatrixOrTranspose) = lazy(materialize, unwrap(A))
 blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C)
 cache(A::AbstractLazyMatrixOrTranspose) = lazy(cache, unwrap(A))

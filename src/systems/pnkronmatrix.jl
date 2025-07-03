@@ -1,4 +1,4 @@
-const KronMatrix{T} = LazyOpMatrix{T, typeof(kron), <:Tuple{AbstractMatrix{T}, AbstractMatrix{T}}}
+const KronMatrix{T} = LazyOpMatrix{T, typeof(kron_AXB), <:Tuple{AbstractMatrix{T}, AbstractMatrix{T}}}
 @inline A(K::KronMatrix) = K.args[1]
 @inline B(K::KronMatrix) = K.args[2]
 Base.size(K::KronMatrix) = (size(A(K), 1)*size(B(K), 2), size(A(K), 2)*size(B(K), 1))
