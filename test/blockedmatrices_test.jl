@@ -67,4 +67,30 @@ end
 test_blocked_matrix_matmul(20, 30, 40, 5)
 test_blocked_matrix_matmul(100, 100, 100, 40)
 
+function test_blocked_matrix_matmul_noncontig(m, n, k, n_blocks)
+    A = random_blocked_matrix(m, n, n_blocks)
+    B = rand(n, k)
+    C1 = zeros(m, k)
+    C2 = zeros(m, k)
+
+    mul!(C1, B, A, true, false)
+    mul!(C2, B, A |> collect, true, false)
+
+    @test C1 ≈ C2
+
+    # also test transpose
+    AT = transpose(A)
+    B = rand(m, k)
+    C1 = zeros(n, k)
+    C2 = zeros(n, k)
+
+    mul!(C1, B, AT, true, false)
+    mul!(C2, B, AT |> collect, true, false)
+
+    @test C1 ≈ C2
+end
+
+test_blocked_matrix_matmul(20, 30, 40, 5)
+test_blocked_matrix_matmul(100, 100, 100, 40)
+
 end
