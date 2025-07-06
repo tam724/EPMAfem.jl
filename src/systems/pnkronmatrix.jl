@@ -103,7 +103,6 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Kt::Transpose{T, <:KronMatr
     strategy = mul_strategy(K)
     if strategy == :A_XB # for transpose AtX_Bt
         WS, rem = take_ws(ws, (nA, nB))
-        @show size(X, 2)
         for i in 1:size(X, 2) # could be parallelized
             mul_with!(rem, WS, transpose(A(K)), @view(χ[:, :, i]), true, false)
             mul_with!(rem, @view(μ[:, :, i]),  WS, transpose(B(K)), α, β)
