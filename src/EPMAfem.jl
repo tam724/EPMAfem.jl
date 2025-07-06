@@ -20,6 +20,8 @@ using EPMAfem.Sparse3Tensor
 include("special_matrices/blockedmatrices.jl")
 using EPMAfem.BlockedMatrices
 
+include("special_matrices/twodiagonalmatrix.jl")
+
 include("space_dimensions.jl")
 using EPMAfem.Dimensions
 

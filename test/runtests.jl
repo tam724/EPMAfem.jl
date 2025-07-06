@@ -10,5 +10,6 @@ using Test
 @time @testset "ZMatrixTest" begin include("zmatrix_test.jl") end
 @time @testset "BlockSchurMatrixTest" begin include("block_schur_mat_test.jl") end
 @time @testset "EPMAfemLazyMatrix" begin include("pnsystem_test.jl") end
+@time @testset "TwoDiagMatrix" begin include("twodiagmatrix_test.jl") end
 
 end
