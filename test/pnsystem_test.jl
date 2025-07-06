@@ -1432,6 +1432,7 @@ end
     @test X * St_ref ≈ X * St_tuple
 end
 
+
 ## KronMatrix
 @testset "KronMatrix" begin
     A = rand_mat(10, 11)
@@ -1447,10 +1448,14 @@ end
     @test size(K) == size(K_ref)
 
     x = rand_vec(size(K)[2])
+    X = rand_mat(size(K, 2), 10)
     @test K * x ≈ K_ref * x
+    @test K * X ≈ K_ref * X
 
     y = rand_vec(size(K)[1])
+    Y = rand_mat(size(K)[1], 10)
     y_ref = copy(y)
+    Y_ref = copy(Y)
 
     α = rand_scal()
     β = rand_scal()
@@ -1458,21 +1463,33 @@ end
     mul!(y_ref, K_ref, x, α, β)
     @test y ≈ y_ref
 
+    mul!(Y, K, X, α, β)
+    mul!(Y_ref, K_ref, X, α, β)
+    @test Y ≈ Y_ref
+
     Kt = transpose(K)
     Kt_ref = transpose(K_ref)
 
     @test size(Kt) == size(Kt_ref)
 
     x = rand_vec(size(Kt)[2])
+    X = rand_mat(size(Kt, 2), 10)
     @test Kt * x ≈ Kt_ref * x
+    @test Kt * X ≈ Kt_ref * X
 
     y = rand_vec(size(Kt)[1])
+    Y = rand_mat(size(Kt)[1], 10)
     y_ref = copy(y)
+    Y_ref = copy(Y)
     α = rand_scal()
     β = rand_scal()
     mul!(y, Kt, x, α, β)
     mul!(y_ref, Kt_ref, x, α, β)
     @test y ≈ y_ref
+
+    mul!(Y, Kt, X, α, β)
+    mul!(Y_ref, Kt_ref, X, α, β)
+    @test Y ≈ Y_ref
 
     # A = Diagonal(create_rand_vec(10))
     # B = Diagonal(create_rand_vec(11))
@@ -1569,7 +1586,5 @@ end
     x = rand(4)
     @test v * x ≈ Matrix(v_ref) * x
 end
-
-
 
 end

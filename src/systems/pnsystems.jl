@@ -6,6 +6,7 @@ include("pnprodmatrix.jl")
 include("pnblockmatrix.jl")
 include("pncachedmatrix.jl")
 include("pnresizematrix.jl")
+include("pnmatrixinterface.jl")
 
 
 include("pnexplicitimplicitmatrix.jl")

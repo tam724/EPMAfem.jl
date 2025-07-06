@@ -1,3 +1,4 @@
+kron_AXB(A::AbstractMatrix, B::AbstractMatrix) = kron(transpose(B), A)
 const KronMatrix{T} = LazyOpMatrix{T, typeof(kron_AXB), <:Tuple{AbstractMatrix{T}, AbstractMatrix{T}}}
 @inline A(K::KronMatrix) = K.args[1]
 @inline B(K::KronMatrix) = K.args[2]
@@ -63,12 +64,70 @@ function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KronMatr
     end
     return
 end
+
+function mul_with!(ws::Workspace, Y::AbstractMatrix, K::KronMatrix, X::AbstractMatrix, α::Number, β::Number)
+    mA, nA = size(A(K))
+    mB, nB = size(B(K))
+
+    @assert size(Y, 2) == size(X, 2)
+    χ = reshape(@view(X[:]), (nA, mB, size(X, 2)))
+    μ = reshape(@view(Y[:]), (mA, nB, size(Y, 2)))
+
+    strategy = mul_strategy(K)
+    if strategy == :A_XB
+        WS, rem = take_ws(ws, (nA, nB))
+        @show size(X, 2)
+        for i in 1:size(X, 2) # should be parallelized
+            mul_with!(rem, WS, @view(χ[:, :, i]), B(K), true, false)
+            mul_with!(rem, @view(μ[:, :, i]), A(K), WS, α, β)
+        end
+    else # strategy == :AX_B
+        WS, rem = take_ws(ws, (mA, mB))
+        @show size(X, 2)
+        for i in 1:size(X, 2)
+            mul_with!(rem, WS, A(K), @view(χ[:, :, i]), true, false)
+            mul_with!(rem, @view(μ[:, :, i]), WS, B(K), α, β)
+        end
+    end
+    return
+end
+function mul_with!(ws::Workspace, Y::AbstractMatrix, Kt::Transpose{T, <:KronMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
+    K = parent(Kt)
+    mA, nA = size(A(K))
+    mB, nB = size(B(K))
+
+    @assert size(Y, 2) == size(X, 2)
+    χ = reshape(@view(X[:]), (mA, nB, size(X, 2)))
+    μ = reshape(@view(Y[:]), (nA, mB, size(Y, 2)))
+
+    strategy = mul_strategy(K)
+    if strategy == :A_XB # for transpose AtX_Bt
+        WS, rem = take_ws(ws, (nA, nB))
+        @show size(X, 2)
+        for i in 1:size(X, 2) # could be parallelized
+            mul_with!(rem, WS, transpose(A(K)), @view(χ[:, :, i]), true, false)
+            mul_with!(rem, @view(μ[:, :, i]),  WS, transpose(B(K)), α, β)
+        end
+    else # strategy == :AX_B then for transpose At_XBt
+        WS, rem = take_ws(ws, (mA, mB))
+        @show size(X, 2)
+        for i in 1:size(X, 2)
+            mul_with!(rem, WS, @view(χ[:, :, i]), transpose(B(K)), true, false)
+            mul_with!(rem, @view(μ[:, :, i]), transpose(A(K)), WS, α, β)
+        end
+    end
+    return
+end
+
 function required_workspace(::typeof(mul_with!), K::KronMatrix)
     mA, nA = max_size(A(K))
     mB, nB = max_size(B(K))
 
+    strategy = mul_strategy(K)
+    inner_ws = (strategy == :A_XB) ? nA*nB : mA*mB
+
     # we can do min here, because we choose the right mul_strategy
-    return min(nA*nB, mA*mB) + max(required_workspace(mul_with!, A(K)), required_workspace(mul_with!, B(K)))
+    return inner_ws + max(required_workspace(mul_with!, A(K)), required_workspace(mul_with!, B(K)))
 end
 
 function materialize_with(ws::Workspace, K::KronMatrix, ::Nothing)
