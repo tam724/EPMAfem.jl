@@ -44,6 +44,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, K::KronMatrix, x::AbstractV
     end
     return
 end
+
 function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KronMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
     K = parent(Kt)
     mA, nA = size(A(K))
@@ -74,23 +75,34 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, K::KronMatrix, X::AbstractM
     μ = reshape(@view(Y[:]), (mA, nB, size(Y, 2)))
 
     strategy = mul_strategy(K)
-    if strategy == :A_XB
-        WS, rem = take_ws(ws, (nA, nB))
-        @show size(X, 2)
-        for i in 1:size(X, 2) # should be parallelized
-            mul_with!(rem, WS, @view(χ[:, :, i]), B(K), true, false)
-            mul_with!(rem, @view(μ[:, :, i]), A(K), WS, α, β)
+    if has_batched_mul!(A(K)) && has_batched_mul!(B(K))
+        if strategy == :A_XB
+            WS, rem = take_ws(ws, (nA, nB, size(X, 2)))
+            batched_mul!(WS, χ, B(K), true, false)
+            batched_mul!(μ, A(K), WS, α, β)
+        else # strategy == :AX_B
+            WS, rem = take_ws(ws, (mA, mB, size(X, 2)))
+            batched_mul!(WS, A(K), χ, true, false)
+            batched_mul!(μ, WS, B(K), α, β)
         end
-    else # strategy == :AX_B
-        WS, rem = take_ws(ws, (mA, mB))
-        @show size(X, 2)
-        for i in 1:size(X, 2)
-            mul_with!(rem, WS, A(K), @view(χ[:, :, i]), true, false)
-            mul_with!(rem, @view(μ[:, :, i]), WS, B(K), α, β)
+    else
+        if strategy == :A_XB
+            WS, rem = take_ws(ws, (nA, nB))
+            for i in 1:size(X, 2) # should be parallelized
+                mul_with!(rem, WS, @view(χ[:, :, i]), B(K), true, false)
+                mul_with!(rem, @view(μ[:, :, i]), A(K), WS, α, β)
+            end
+        else # strategy == :AX_B
+            WS, rem = take_ws(ws, (mA, mB))
+            for i in 1:size(X, 2)
+                mul_with!(rem, WS, A(K), @view(χ[:, :, i]), true, false)
+                mul_with!(rem, @view(μ[:, :, i]), WS, B(K), α, β)
+            end
         end
     end
     return
 end
+
 function mul_with!(ws::Workspace, Y::AbstractMatrix, Kt::Transpose{T, <:KronMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
     K = parent(Kt)
     mA, nA = size(A(K))
@@ -101,22 +113,46 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Kt::Transpose{T, <:KronMatr
     μ = reshape(@view(Y[:]), (nA, mB, size(Y, 2)))
 
     strategy = mul_strategy(K)
-    if strategy == :A_XB # for transpose AtX_Bt
-        WS, rem = take_ws(ws, (nA, nB))
-        for i in 1:size(X, 2) # could be parallelized
-            mul_with!(rem, WS, transpose(A(K)), @view(χ[:, :, i]), true, false)
-            mul_with!(rem, @view(μ[:, :, i]),  WS, transpose(B(K)), α, β)
+    if has_batched_mul!(A(K)) && has_batched_mul!(B(K))
+        if strategy == :A_XB # for transpose AtX_Bt
+            WS, rem = take_ws(ws, (nA, nB, size(X, 2)))
+            batched_mul!(WS, transpose(A(K)), χ, true, false)
+            batched_mul!(μ,  WS, transpose(B(K)), α, β)
+        else # strategy == :AX_B then for transpose At_XBt
+            WS, rem = take_ws(ws, (mA, mB, size(X, 2)))
+            batched_mul!(WS, χ, transpose(B(K)), true, false)
+            batched_mul!(μ, transpose(A(K)), WS, α, β)
         end
-    else # strategy == :AX_B then for transpose At_XBt
-        WS, rem = take_ws(ws, (mA, mB))
-        @show size(X, 2)
-        for i in 1:size(X, 2)
-            mul_with!(rem, WS, @view(χ[:, :, i]), transpose(B(K)), true, false)
-            mul_with!(rem, @view(μ[:, :, i]), transpose(A(K)), WS, α, β)
+    else
+        if strategy == :A_XB # for transpose AtX_Bt
+            WS, rem = take_ws(ws, (nA, nB))
+            for i in 1:size(X, 2) # could be parallelized
+                mul_with!(rem, WS, transpose(A(K)), @view(χ[:, :, i]), true, false)
+                mul_with!(rem, @view(μ[:, :, i]),  WS, transpose(B(K)), α, β)
+            end
+        else # strategy == :AX_B then for transpose At_XBt
+            WS, rem = take_ws(ws, (mA, mB))
+            for i in 1:size(X, 2)
+                mul_with!(rem, WS, @view(χ[:, :, i]), transpose(B(K)), true, false)
+                mul_with!(rem, @view(μ[:, :, i]), transpose(A(K)), WS, α, β)
+            end
         end
     end
     return
 end
+
+# hacky: define default
+required_workspace(::typeof(mul_with!), A::AbstractMatrix, size) = required_workspace(mul_with!, A)
+has_batched_mul!(A::TwoDiagonalMatrix) = true
+has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true
+has_batched_mul!(A) = false
+
+# required matmuls
+# strategy A_XB: B: (nA, mB), A: (nA, nB)
+# strategy A_XB: B: (nA, nB), A: (mA, nB)
+
+# strategy AX_B: B: (mA, mB), A: (nA, mB)
+# strategy AX_B: B: (mA, nB), A: (mA, mB)
 
 function required_workspace(::typeof(mul_with!), K::KronMatrix)
     mA, nA = max_size(A(K))
@@ -125,8 +161,39 @@ function required_workspace(::typeof(mul_with!), K::KronMatrix)
     strategy = mul_strategy(K)
     inner_ws = (strategy == :A_XB) ? nA*nB : mA*mB
 
-    # we can do min here, because we choose the right mul_strategy
-    return inner_ws + max(required_workspace(mul_with!, A(K)), required_workspace(mul_with!, B(K)))
+    if strategy == :A_XB
+        size_A = (max(nA, mA), nB)
+        size_B = (nA, max(nB, mB))
+    else
+        size_A = (max(nA, mA), mB)
+        size_B = (mA, max(nB, mB))
+    end
+
+    return inner_ws + max(required_workspace(mul_with!, A(K), size_A), required_workspace(mul_with!, B(K), size_B))
+end
+
+function required_workspace(::typeof(mul_with!), K::KronMatrix, (mx, nx))
+    # @assert mx == max_size(K, 2)
+    mA, nA = max_size(A(K))
+    mB, nB = max_size(B(K))
+
+    strategy = mul_strategy(K)
+    if has_batched_mul!(A(K)) && has_batched_mul!(B(K))
+        inner_ws = (strategy == :A_XB) ? nA*nB*nx : mA*mB*nx
+        return inner_ws # the batched_mul! does not need workspace right now..
+    end
+
+    if strategy == :A_XB
+        size_A = (max(nA, mA), nB)
+        size_B = (nA, max(nB, mB))
+    else
+        size_A = (max(nA, mA), mB)
+        size_B = (mA, max(nB, mB))
+    end
+
+
+    inner_ws = (strategy == :A_XB) ? nA*nB : mA*mB
+    return inner_ws + max(required_workspace(mul_with!, A(K), size_A), required_workspace(mul_with!, B(K), size_B))
 end
 
 function materialize_with(ws::Workspace, K::KronMatrix, ::Nothing)

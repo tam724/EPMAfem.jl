@@ -95,6 +95,10 @@ function take_ws(ws::Workspace, (n, m)::Tuple{<:Integer, <:Integer})
     return reshape(@view(ws.workspace[1:n*m]), (n, m)), Workspace(@view(ws.workspace[n*m+1:end]), ws.cache)
 end
 
+function take_ws(ws::Workspace, (n, m, k)::Tuple{<:Integer, <:Integer, <:Integer})
+    return reshape(@view(ws.workspace[1:n*m*k]), (n, m, k)), Workspace(@view(ws.workspace[n*m*k+1:end]), ws.cache)
+end
+
 
 function mat_view(v::AbstractVector, m::Integer, n::Integer)
     return reshape(@view(v[1:m*n]), (m, n))
