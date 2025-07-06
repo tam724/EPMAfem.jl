@@ -17,18 +17,19 @@ end
 ## AX
 
 @kernel function AX_mul_kernel!(Y, αa, αb, @Const(X))
-    i, j = @index(Global, NTuple)
-    @inbounds Y[i, j] = Base.muladd(αa, X[i, j], αb * X[i+1, j])
+    i, j, k = @index(Global, NTuple)
+    @inbounds Y[i, j, k] = Base.muladd(αa, X[i, j, k], αb * X[i+1, j, k])
 end
 
 @kernel function AX_mulβ_kernel!(Y, αa, αb, β, @Const(X))
-    i, j = @index(Global, NTuple)
-    @inbounds Y[i, j] = Base.muladd(αa, X[i, j], Base.muladd(αb, X[i+1, j], β * Y[i, j]))
+    i, j, k = @index(Global, NTuple)
+    @inbounds Y[i, j, k] = Base.muladd(αa, X[i, j, k], Base.muladd(αb, X[i+1, j, k], β * Y[i, j, k]))
 end
 
-function LinearAlgebra.mul!(Y::AbstractMatrix{T}, A::TwoDiagonalMatrix{T}, X::AbstractMatrix{T}, α::Number, β::Number) where T
+function batched_mul!(Y::AbstractArray{T, 3}, A::TwoDiagonalMatrix{T}, X::AbstractArray{T, 3}, α::Number, β::Number) where T
     @assert size(Y, 1) + 1 == size(X, 1) == A.n
     @assert size(Y, 2) == size(X, 2)
+    @assert size(Y, 3) == size(X, 3)
 
     αa = T(α * A.a)
     αb = T(α * A.b)
@@ -44,40 +45,46 @@ function LinearAlgebra.mul!(Y::AbstractMatrix{T}, A::TwoDiagonalMatrix{T}, X::Ab
     return Y
 end
 
+function LinearAlgebra.mul!(Y::AbstractMatrix{T}, A::TwoDiagonalMatrix{T}, X::AbstractMatrix{T}, α::Number, β::Number) where T
+    batched_mul!(reshape(Y, (size(Y)..., 1)), A, reshape(X, (size(X)..., 1)), α, β)
+    return Y
+end
+
 ## XA
 @kernel function XA1_mul_kernel!(Y, αa, @Const(X))
-    i = @index(Global)
-    @inbounds Y[i, 1] = αa * X[i, 1]
+    i, k = @index(Global, NTuple)
+    @inbounds Y[i, 1, k] = αa * X[i, 1, k]
 end
 
 @kernel function XA1_mulβ_kernel!(Y, αa, β, @Const(X))
-    i = @index(Global)
-    @inbounds Y[i, 1] = Base.muladd(αa, X[i, 1], β * Y[i, 1])
+    i, k = @index(Global, NTuple)
+    @inbounds Y[i, 1, k] = Base.muladd(αa, X[i, 1, k], β * Y[i, 1, k])
 end
 
 @kernel function XAn_mul_kernel!(Y, n, αb, @Const(X))
-    i = @index(Global)
-    @inbounds Y[i, n] = αb * X[i, n-1]
+    i, k = @index(Global, NTuple)
+    @inbounds Y[i, n, k] = αb * X[i, n-1, k]
 end
 
 @kernel function XAn_mulβ_kernel!(Y, n, αb, β, @Const(X))
-    i = @index(Global)
-    @inbounds Y[i, n] = Base.muladd(αb, X[i, n-1], β * Y[i, n])
+    i, k = @index(Global, NTuple)
+    @inbounds Y[i, n, k] = Base.muladd(αb, X[i, n-1, k], β * Y[i, n, k])
 end
 
 @kernel function XA_mul_kernel!(Y, αa, αb, @Const(X))
-    i, j = @index(Global, NTuple)
-    @inbounds Y[i, j+1] = Base.muladd(αa, X[i, j+1], αb * X[i, j])
+    i, j, k = @index(Global, NTuple)
+    @inbounds Y[i, j+1, k] = Base.muladd(αa, X[i, j+1, k], αb * X[i, j, k])
 end
 
 @kernel function XA_mulβ_kernel!(Y, αa, αb, β, @Const(X))
-    i, j = @index(Global, NTuple)
-    @inbounds Y[i, j+1] = Base.muladd(αa, X[i, j+1], Base.muladd(αb, X[i, j], β * Y[i, j+1]))
+    i, j, k = @index(Global, NTuple)
+    @inbounds Y[i, j+1, k] = Base.muladd(αa, X[i, j+1, k], Base.muladd(αb, X[i, j, k], β * Y[i, j+1, k]))
 end
 
-function LinearAlgebra.mul!(Y::AbstractMatrix{T}, X::AbstractMatrix{T}, A::TwoDiagonalMatrix{T}, α::Number, β::Number) where T
+function batched_mul!(Y::AbstractArray{T}, X::AbstractArray{T}, A::TwoDiagonalMatrix{T}, α::Number, β::Number) where T
     @assert size(Y, 2) == size(X, 2) + 1 == A.n
     @assert size(Y, 1) == size(X, 1)
+    @assert size(Y, 3) == size(X, 3)
 
     αa = T(α * A.a)
     αb = T(α * A.b)
@@ -85,57 +92,63 @@ function LinearAlgebra.mul!(Y::AbstractMatrix{T}, X::AbstractMatrix{T}, A::TwoDi
     backend = get_backend(Y)
     if iszero(β)
         kernel! = XA1_mul_kernel!(backend)
-        kernel!(Y, αa, X, ndrange=(size(Y, 1)))
+        kernel!(Y, αa, X, ndrange=(size(Y, 1), size(Y, 3)))
         kernel! = XA_mul_kernel!(backend)
-        kernel!(Y, αa, αb, X, ndrange=(size(Y, 1), size(Y, 2)-2))
+        kernel!(Y, αa, αb, X, ndrange=(size(Y, 1), size(Y, 2)-2, size(Y, 3)))
         kernel! = XAn_mul_kernel!(backend)
-        kernel!(Y, A.n, αb, X, ndrange=(size(Y, 1)))
+        kernel!(Y, A.n, αb, X, ndrange=(size(Y, 1), size(Y, 3)))
     else
         kernel! = XA1_mulβ_kernel!(backend)
-        kernel!(Y, αa, β, X, ndrange=(size(Y, 1)))
+        kernel!(Y, αa, β, X, ndrange=(size(Y, 1), size(Y, 3)))
         kernel! = XA_mulβ_kernel!(backend)
-        kernel!(Y, αa, αb, β, X, ndrange=(size(Y, 1), size(Y, 2)-2))
+        kernel!(Y, αa, αb, β, X, ndrange=(size(Y, 1), size(Y, 2)-2, size(Y, 3)))
         kernel! = XAn_mulβ_kernel!(backend)
-        kernel!(Y, A.n, αb, β, X, ndrange=(size(Y, 1)))
+        kernel!(Y, A.n, αb, β, X, ndrange=(size(Y, 1), size(Y, 3)))
     end
+    return Y
+end
+
+function LinearAlgebra.mul!(Y::AbstractMatrix{T}, X::AbstractMatrix{T}, A::TwoDiagonalMatrix{T}, α::Number, β::Number) where T
+    batched_mul!(reshape(Y, (size(Y)..., 1)), reshape(X, (size(X)..., 1)), A, α, β)
     return Y
 end
 
 # AtX
 @kernel function AtX1_mul_kernel!(Y, αa, @Const(X))
-    j = @index(Global)
-    @inbounds Y[1, j] = αa * X[1, j]
+    j, k = @index(Global, NTuple)
+    @inbounds Y[1, j, k] = αa * X[1, j, k]
 end
 
 @kernel function AtX1_mulβ_kernel!(Y, αa, β, @Const(X))
-    j = @index(Global)
-    @inbounds Y[1, j] = Base.muladd(αa, X[1, j], β * Y[1, j])
+    j, k = @index(Global, NTuple)
+    @inbounds Y[1, j, k] = Base.muladd(αa, X[1, j, k], β * Y[1, j, k])
 end
 
 @kernel function AtXn_mul_kernel!(Y, n, αb, @Const(X))
-    j = @index(Global)
-    @inbounds Y[n, j] = αb * X[n-1, j]
+    j, k = @index(Global, NTuple)
+    @inbounds Y[n, j, k] = αb * X[n-1, j, k]
 end
 
 @kernel function AtXn_mulβ_kernel!(Y, n, αb, β, @Const(X))
-    j = @index(Global)
-    @inbounds Y[n, j] = Base.muladd(αb, X[n-1, j], β * Y[n, j])
+    j, k = @index(Global, NTuple)
+    @inbounds Y[n, j, k] = Base.muladd(αb, X[n-1, j, k], β * Y[n, j, k])
 end
 
 @kernel function AtX_mul_kernel!(Y, αa, αb, @Const(X))
-    i, j = @index(Global, NTuple)
-    @inbounds Y[i+1, j] = αa * X[i+1, j] + αb * X[i, j]
+    i, j, k = @index(Global, NTuple)
+    @inbounds Y[i+1, j, k] = αa * X[i+1, j, k] + αb * X[i, j, k]
 end
 
 @kernel function AtX_mulβ_kernel!(Y, αa, αb, β, @Const(X))
-    i, j = @index(Global, NTuple)
-    @inbounds Y[i+1, j] = Base.muladd(αa, X[i+1, j], Base.muladd(αb, X[i, j], β * Y[i+1, j]))
+    i, j, k = @index(Global, NTuple)
+    @inbounds Y[i+1, j, k] = Base.muladd(αa, X[i+1, j, k], Base.muladd(αb, X[i, j, k], β * Y[i+1, j, k]))
 end
 
-function LinearAlgebra.mul!(Y::AbstractMatrix{T}, At::Transpose{T,<:TwoDiagonalMatrix{T}}, X::AbstractMatrix{T}, α::Number, β::Number) where T
+function batched_mul!(Y::AbstractArray{T}, At::Transpose{T,<:TwoDiagonalMatrix{T}}, X::AbstractArray{T}, α::Number, β::Number) where T
     n = parent(At).n
     @assert size(Y, 1) == size(X, 1) + 1 == n
     @assert size(Y, 2) == size(X, 2)
+    @assert size(Y, 3) == size(X, 3)
 
     # on CPU launching 3 kernels is faster than branching in kernel (on GPU same runtime)
     αa = T(α * parent(At).a)
@@ -144,42 +157,48 @@ function LinearAlgebra.mul!(Y::AbstractMatrix{T}, At::Transpose{T,<:TwoDiagonalM
     backend = get_backend(Y)
     if iszero(β)
         kernel! = AtX1_mul_kernel!(backend)
-        kernel!(Y, αa, X, ndrange=(size(Y, 2)))
+        kernel!(Y, αa, X, ndrange=(size(Y, 2), size(Y, 3)))
 
         kernel! = AtX_mul_kernel!(backend)
-        kernel!(Y, αa, αb, X, ndrange=(size(Y, 1) - 2, size(Y, 2)))
+        kernel!(Y, αa, αb, X, ndrange=(size(Y, 1) - 2, size(Y, 2), size(Y, 3)))
 
         kernel! = AtXn_mul_kernel!(backend)
-        kernel!(Y, n, αb, X, ndrange=(size(Y, 2)))
+        kernel!(Y, n, αb, X, ndrange=(size(Y, 2), size(Y, 3)))
     else
         kernel! = AtX1_mulβ_kernel!(backend)
-        kernel!(Y, αa, β, X, ndrange=(size(Y, 2)))
+        kernel!(Y, αa, β, X, ndrange=(size(Y, 2), size(Y, 3)))
 
         kernel! = AtX_mulβ_kernel!(backend)
-        kernel!(Y, αa, αb, β, X, ndrange=(size(Y, 1) - 2, size(Y, 2)))
+        kernel!(Y, αa, αb, β, X, ndrange=(size(Y, 1) - 2, size(Y, 2), size(Y, 3)))
 
         kernel! = AtXn_mulβ_kernel!(backend)
-        kernel!(Y, n, αb, β, X, ndrange=(size(Y, 2)))
+        kernel!(Y, n, αb, β, X, ndrange=(size(Y, 2), size(Y, 3)))
     end
+    return Y
+end
+
+function LinearAlgebra.mul!(Y::AbstractMatrix{T}, At::Transpose{T,<:TwoDiagonalMatrix{T}}, X::AbstractMatrix{T}, α::Number, β::Number) where T
+    batched_mul!(reshape(Y, (size(Y)..., 1)), At, reshape(X, (size(X)..., 1)), α, β)
     return Y
 end
 
 ## XAt
 
 @kernel function XAt_mul_kernel!(Y, αa, αb, @Const(X))
-    i, j = @index(Global, NTuple)
-    @inbounds Y[i, j] = Base.muladd(αa, X[i, j], αb * X[i, j+1])
+    i, j, k = @index(Global, NTuple)
+    @inbounds Y[i, j, k] = Base.muladd(αa, X[i, j, k], αb * X[i, j+1, k])
 end
 
 @kernel function XAt_mulβ_kernel!(Y, αa, αb, β, @Const(X))
-    i, j = @index(Global, NTuple)
-    @inbounds Y[i, j] = Base.muladd(αa, X[i, j], Base.muladd(αb, X[i, j+1], β * Y[i, j]))
+    i, j, k = @index(Global, NTuple)
+    @inbounds Y[i, j, k] = Base.muladd(αa, X[i, j, k], Base.muladd(αb, X[i, j+1, k], β * Y[i, j, k]))
 end
 
-function LinearAlgebra.mul!(Y::AbstractMatrix{T}, X::AbstractMatrix{T}, At::Transpose{T, <:TwoDiagonalMatrix{T}}, α::Number, β::Number) where T
+function batched_mul!(Y::AbstractArray{T}, X::AbstractArray{T}, At::Transpose{T, <:TwoDiagonalMatrix{T}}, α::Number, β::Number) where T
     n = parent(At).n
     @assert size(Y, 2) + 1 == size(X, 2) == n
     @assert size(Y, 1) == size(X, 1)
+    @assert size(Y, 3) == size(X, 3)
 
     αa = T(α * parent(At).a)
     αb = T(α * parent(At).b)
@@ -195,3 +214,7 @@ function LinearAlgebra.mul!(Y::AbstractMatrix{T}, X::AbstractMatrix{T}, At::Tran
     return Y
 end
 
+function LinearAlgebra.mul!(Y::AbstractMatrix{T}, X::AbstractMatrix{T}, At::Transpose{T, <:TwoDiagonalMatrix{T}}, α::Number, β::Number) where T
+    batched_mul!(reshape(Y, (size(Y)..., 1)), reshape(X, (size(X)..., 1)), At, α, β)
+    return Y
+end
