@@ -143,8 +143,6 @@ end
 
 # hacky: define default
 required_workspace(::typeof(mul_with!), A::AbstractMatrix, size) = required_workspace(mul_with!, A)
-has_batched_mul!(A::TwoDiagonalMatrix) = true
-has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true
 has_batched_mul!(A) = false
 
 # required matmuls

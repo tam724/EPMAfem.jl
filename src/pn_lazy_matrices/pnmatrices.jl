@@ -117,7 +117,7 @@ materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
 # LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix) where T = mul!(y, At, X, true, false)
 
 function LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
-    ws = create_workspace(EPMAfem.mul_with!, A, zeros)
+    ws = create_workspace(mul_with!, A, zeros)
     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
     mul_with!(ws, y, A, x, α, β)
     return y
@@ -125,7 +125,7 @@ end
 
 function LinearAlgebra.mul!(Y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix, α::Number, β::Number) where T
     @warn "Not build for this, but we try anyways..."
-    ws = create_workspace(EPMAfem.mul_with!, A, zeros)
+    ws = create_workspace(mul_with!, A, zeros)
     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
     mul_with!(ws, Y, A, X, α, β)
     return Y
@@ -133,14 +133,14 @@ end
 
 function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::AbstractLazyMatrix{T}, α::Number, β::Number) where T
     @warn "Not build for this, but we try anyways..."
-    ws = create_workspace(EPMAfem.mul_with!, A, zeros)
+    ws = create_workspace(mul_with!, A, zeros)
     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
     mul_with!(ws, Y, X, A, α, β)
     return Y
 end
 
 function LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-    ws = create_workspace(EPMAfem.mul_with!, parent(At), zeros)
+    ws = create_workspace(mul_with!, parent(At), zeros)
     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
     mul_with!(ws, y, At, x, α, β)
     return y
@@ -148,7 +148,7 @@ end
 
 function LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
     @warn "Not build for this, but we try anyways..."
-    ws = create_workspace(EPMAfem.mul_with!, parent(At), zeros)
+    ws = create_workspace(mul_with!, parent(At), zeros)
     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
     mul_with!(ws, y, At, X, α, β)
     return y
@@ -156,7 +156,7 @@ end
 
 function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, α::Number, β::Number) where T
     @warn "Not build for this, but we try anyways..."
-    ws = create_workspace(EPMAfem.mul_with!, parent(At), zeros)
+    ws = create_workspace(mul_with!, parent(At), zeros)
     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
     mul_with!(ws, Y, X, At, α, β)
     return Y

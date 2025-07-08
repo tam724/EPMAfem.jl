@@ -6,6 +6,7 @@ using LinearAlgebra
 using BenchmarkTools
 using SparseArrays
 
+const PNLazyMatrices = EPMAfem.PNLazyMatrices
 # ### CUDA TESTING
 # begin
 #     rand_mat(m, n) = rand(m, n) |> cu
@@ -77,10 +78,10 @@ rand_scal() = rand(cpu_T)
 scal(v) = cpu_T(v)
 cpu = true
 
-do_materialize(A::EPMAfem.AbstractLazyMatrixOrTranspose) = do_materialize(EPMAfem.materialize(A))
-function do_materialize(M::EPMAfem.MaterializedMatrix)
-    ws = EPMAfem.create_workspace(EPMAfem.materialize_with, M, rand_vec)
-    M_mat, _ = EPMAfem.materialize_with(ws, M, nothing)
+do_materialize(A::PNLazyMatrices.AbstractLazyMatrixOrTranspose) = do_materialize(EPMAfem.materialize(A))
+function do_materialize(M::PNLazyMatrices.MaterializedMatrix)
+    ws = EPMAfem.create_workspace(PNLazyMatrices.materialize_with, M, rand_vec)
+    M_mat, _ = PNLazyMatrices.materialize_with(ws, M, nothing)
     return M_mat
 end
 
@@ -134,16 +135,16 @@ end
     C = rand(10, 10)
     D = rand(11, 11)
 
-    AL = EPMAfem.LazyResizeMatrix(rand(15, 15), (Ref(10), Ref(5)))
-    BL = EPMAfem.LazyResizeMatrix(rand(15, 15), (Ref(11), Ref(5)))
+    AL = PNLazyMatrices.LazyResizeMatrix(rand(15, 15), (Ref(10), Ref(5)))
+    BL = PNLazyMatrices.LazyResizeMatrix(rand(15, 15), (Ref(11), Ref(5)))
     CL = C |> lazy
     DL = D |> lazy
     XL = EPMAfem.materialize(transpose(AL) * CL * AL)
     YL = EPMAfem.cache(transpose(BL) * DL * BL)
     KL = kron(XL, YL)
 
-    EPMAfem.resize!(AL, (10, 3))
-    EPMAfem.resize!(BL, (11, 6))
+    PNLazyMatrices.resize!(AL, (10, 3))
+    PNLazyMatrices.resize!(BL, (11, 6))
 
     K = kron(transpose(A)*C*A, transpose(B)*D*B)
 
@@ -810,7 +811,7 @@ end
 
     B_ = 10.0 * A_
     B = 10.0 * A
-    @test B isa EPMAfem.AbstractLazyMatrix
+    @test B isa PNLazyMatrices.AbstractLazyMatrix
     @test B_ ≈ B
     @test B_ ≈ do_materialize(B)
     x = rand_vec(size(B, 2))
@@ -1126,7 +1127,7 @@ end
     B = lazy(B_)
 
     D = EPMAfem.materialize(kron(A, B))
-    @test EPMAfem.isdiagonal(D)
+    @test PNLazyMatrices.isdiagonal(D)
 
     ws = EPMAfem.create_workspace(EPMAfem.materialize_with, D, rand_vec)
 
@@ -1269,7 +1270,7 @@ end
 
     S = α*A - β*B*inv(δ*D)*γ*C
 
-    Sl = EPMAfem.schur_complement(BMl)
+    Sl = PNLazyMatrices.schur_complement(BMl)
 
     @test S ≈ Sl
     
@@ -1423,7 +1424,7 @@ end
     A1 = rand_mat(10, 11)
     A2 = rand_mat(10, 11)
     A3 = rand_mat(10, 11)
-    S = EPMAfem.LazyOpMatrix{eltype(A1)}(+, [A1, A2, A3])
+    S = PNLazyMatrices.LazyOpMatrix{eltype(A1)}(+, [A1, A2, A3])
     S_tuple = EPMAfem.lazy(+, A1, A2, A3)
 
     S_ref = A1 .+ A2 .+ A3
