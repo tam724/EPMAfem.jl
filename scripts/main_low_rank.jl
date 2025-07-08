@@ -1,109 +1,136 @@
 using Revise
 using EPMAfem
+using EPMAfem.Gridap
 using LinearAlgebra
-using Test
-using CUDA
-using ConcreteStructs
-using BenchmarkTools
-using SparseArrays
-# include("plot_overloads.jl")
+include("plot_overloads.jl")
 
 lazy(A) = EPMAfem.lazy(A)
+kron_AXB = EPMAfem.kron_AXB
 
-###### CPU TESTING
-begin
-    cpu_T = Float64
-    rand_mat(m, n) = rand(cpu_T, m, n)
-    rand_spmat(m, n, d) = sprand(cpu_T, m, n, d)
-    rand_vec(n) = rand(cpu_T, n)
-    ones_vec(n) = ones(cpu_T, n)
-    rand_scal() = rand(cpu_T)
-    scal(v) = cpu_T(v)
-    cpu = true
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (10, 10, 10)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(5, 3)
+
+# space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), 10))
+# direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(5, 1)
+
+equations = EPMAfem.PNEquations()
+model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
+
+problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
+
+system = EPMAfem.implicit_midpoint(problem, EPMAfem.PNKrylovMinresSolver)
+
+## switch off the coefficients in A
+system.A.sym[] = false
+system.A.Δ[] = 1.0
+system.A.γ[] = 1.0
+system.A.δ[] = 1.0
+system.A.δT[] = 1.0
+
+function build_blockmatrix(problem)
+    nd, ne, nσ = EPMAfem.n_sums(problem)
+    T = EPMAfem.base_type(problem.arch)
+    coeff_a = [Ref(zero(T)) for _ in 1:ne]
+    coeff_c = [[Ref(zero(T)) for _ in 1:nσ] for _ in 1:ne]
+    coeff_b = [Ref(zero(T)) for _ in 1:nd]
+
+    lz = EPMAfem.lazy
+
+    ρp = lz.(problem.space_discretization.ρp)
+    ρm = lz.(problem.space_discretization.ρm)
+    ∇pm = lz.(problem.space_discretization.∇pm)
+    ∂p = lz.(problem.space_discretization.∂p)
+
+    Ip = lz(problem.direction_discretization.Ip)
+    Im = lz(problem.direction_discretization.Im)
+    kp = [lz.(problem.direction_discretization.kp[i]) for i in 1:ne]
+    km = [lz.(problem.direction_discretization.km[i]) for i in 1:ne]
+
+    Ωpm = lz.(identity.(problem.direction_discretization.Ωpm))
+    absΩp = lz.(identity.(problem.direction_discretization.absΩp))
+
+
+    U = lz(rand(size(ρp[1], 1), 10))
+    Ut = transpose(U)
+    V = lz(rand(size(Ip, 1), 10))
+    Vt = transpose(V)
+
+    kron_aXb(A, B) = kron_AXB(B, A)
+    m(A) = EPMAfem.materialize(A)
+    c(A) = EPMAfem.cache(A)
+
+    A = sum(kron_aXb(c(Ut*∂p[i]*U), c(Vt*absΩp[i]*V)) for i in 1:nd) + sum(kron_aXb(c(Ut*ρp[i]*U), c(Vt*(coeff_a[i]*Ip + sum(coeff_c[i][j]*kp[i][j] for j in 1:nσ))*V)) for i in 1:ne)
+    C = sum(kron_aXb(ρm[i], m(coeff_a[i]*Im + sum(coeff_c[i][j]*km[i][j] for j in 1:nσ))) for i in 1:ne)
+    B = transpose(sum(kron_aXb(Ut*∇pm[i], Ωpm[i]*V) for i in 1:nd))
+
+    # A = sum(kron_aXb(∂p[i], absΩp[i]) for i in 1:nd) + sum(kron_aXb(ρp[i], coeff_a[i]*Ip + sum(coeff_c[i][j]*kp[i][j] for j in 1:nσ)) for i in 1:ne)
+    # C = sum(kron_aXb(ρm[i], coeff_a[i]*Im + sum(coeff_c[i][j]*km[i][j] for j in 1:nσ)) for i in 1:ne)
+    # B = transpose(sum(kron_aXb(∇pm[i], Ωpm[i]) for i in 1:nd))
+    return EPMAfem.blockmatrix(A, B, C), (a=coeff_a, b=coeff_b, c=coeff_c)
 end
 
-do_materialize(A::EPMAfem.AbstractLazyMatrixOrTranspose) = do_materialize(EPMAfem.materialize(A))
-function do_materialize(M::EPMAfem.MaterializedMatrix)
-    ws = EPMAfem.create_workspace(EPMAfem.materialize_with, M, rand_vec)
-    M_mat, _ = EPMAfem.materialize_with(ws, M, nothing)
-    return M_mat
-end
+B, coeffs = build_blockmatrix(problem)
 
-# first call should cache, the second should use the cache (check result)
-# before the last call, we modify the cache without invalidation -> wrong result
-function test_cached_LK_K(LK, K)
-    x = rand(size(LK, 2))
-    y = rand(size(LK, 1))
-    ws = EPMAfem.create_workspace(EPMAfem.mul_with!, LK, rand_vec)
-    EPMAfem.mul_with!(ws, y, LK, x, true, false)
-    @test y ≈ K * x
-    EPMAfem.mul_with!(ws, y, LK, x, true, false)
-    @test y ≈ K * x
-    for (id, (valid, mem)) in ws.cache
-        @test valid[]
-        mem .= rand(size(mem))
+for i in 1:ne
+    system.coeffs.a[i] = rand()
+    coeffs.a[i][] = system.coeffs.a[i]
+    for j in 1:nσ
+        system.coeffs.c[i][j] = rand()
+        coeffs.c[i][j][] = system.coeffs.c[i][j]
     end
-    EPMAfem.mul_with!(ws, y, LK, x, true, false)
-    @test !(y ≈ K * x)
 end
 
 
-V = EPMAfem.LazyResizeMatrix(rand(30, 30), (Ref(30), Ref(30)))
-A = kron(EPMAfem.cache(transpose(V)*lazy(sprand(30, 30, 0.2) + Diagonal(rand(30)))*V), lazy(Diagonal(rand(20))))
-B = kron(EPMAfem.cache(transpose(V)*lazy(sprand(30, 35, 0.2))), lazy(sprand(20, 25, 0.2)))
-C = kron(lazy(Diagonal(rand(35))), lazy(Diagonal(rand(25))))
+function lazy_kron!(Y, A, B, X, temp)
+    X_r = reshape(X, 100, 100, 500)
+    Y_r = reshape(Y, 100, 100, 500)
+    for i in 1:500
+        mul!(temp, @view(X_r[:, :, i]), transpose(A))
+        mul!(@view(Y_r[:, :, i]), B, temp)
+        # Y_r[:, :, i] .= B * X_r[:, :, i] * transpose(A)
+    end
+end
 
-BM = EPMAfem.blockmatrix(A, B, C)
+A = sprand(100, 100, 0.05)
+B = sprand(100, 100, 0.05)
 
+AkronB = kron(A, B)
 
+X = rand(100*100, 500)
+Y1 = zeros(100*100, 500)
+Y2 = zeros(100*100, 500)
 
-# SC = EPMAfem.schur_complement(BM);
+temp = zeros(100, 100)
 
-# EPMAfem.resize!(V, (30, 30))
+mul!(Y1, AkronB, X)
+lazy_kron!(Y2, A, B, X, temp)
 
-BMd = sparse(BM)
+using BenchmarkTools
 
-x = rand(size(BM, 2))
-y = rand(size(BM, 1))
-y2 = rand(size(BM, 1))
+@profview @benchmark mul!($Y1, $AkronB, $X)
+@profview @benchmark lazy_kron!($Y2, $A, $B, $X, $temp)
 
-ws = EPMAfem.create_workspace(EPMAfem.mul_with!, BM, zeros)
-@time EPMAfem.mul_with!(ws, y, BM, x, true, false);
-@time mul!(y2, BMd, x, true, false);
+Y1 ≈ Y2
 
-@benchmark EPMAfem.mul_with!($ws, $y, $BM, $x, $true, $false)
+maximum(abs.(Y .- AkronB*X))
 
-@profview @benchmark EPMAfem.mul_with!($ws, $y, $BM, $x, $true, $false)
-@benchmark mul!($y2, $BMd, $x, $true, $false)
-@profview @benchmark mul!($y2, $BMd, $x, $true, $false)
-
-Base.copyto_unaliased!
-
-
-y ≈ y2
-
-
-A = EPMAfem.lazy(*, (lazy(rand(4, 4)) for _ in 1:5)...)
-
-A
-
-A = Diagonal(rand(5))
-B = rand(5, 6)
-C = Diagonal(rand(6))
+A = sprand(100, 100, 0.02)
+B = Diagonal(rand(100))
 
 AL = lazy(A)
 BL = lazy(B)
-CL = lazy(C)
 
-BM = EPMAfem.blockmatrix(AL, BL, CL)
+X = rand(10000, 30)
+Y1 = rand(10000, 30)
+Y2 = rand(10000, 30)
 
-EPMAfem.A(BM)
+KL = kron(lazy(A), lazy(B))
+KL2 = kron(lazy(Matrix(A)), lazy(Matrix(B)))
 
-KL = EPMAfem.schur_complement(BM)
-K = A - B * inv(C) * transpose(B)
+ws = EPMAfem.create_workspace(EPMAfem.required_workspace(EPMAfem.mul_with!, KL), zeros)
+@benchmark EPMAfem.mul_with!(ws, Y1, transpose(KL), X, true, false)
+@benchmark EPMAfem.mul_with!(ws, Y1, transpose(KL2), X, true, false)
+Kd = transpose(kron(A, B))
+@benchmark mul!(Y2, Kd, X)
 
-x = rand(size(K, 2))
-KL * x ≈ K * x
-
-@enter KL * x
-
+Y2 ≈ Y1
