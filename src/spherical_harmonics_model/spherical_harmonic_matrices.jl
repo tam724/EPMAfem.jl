@@ -205,10 +205,20 @@ function assemble_bilinear(integral::Union{Val{:∫S²_Ωzuv}, Val{:∫S²_Ωxuv
 end
 
 function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_absΩxuv}, Val{:∫S²_absΩyuv}}, model, U, V, ::exact_quadrature)
-    A = zeros(length(V), length(U))
-    for (i, m1) in enumerate(V)
-        for (j, m2) in enumerate(U)
-            A[i, j] = get_cached_boundary_coefficient(m1, m2, dim(integral))
+    try
+        A = zeros(length(V), length(U))
+        for (i, m1) in enumerate(V)
+            for (j, m2) in enumerate(U)
+                A[i, j] = get_cached_boundary_coefficient(m1, m2, dim(integral))
+            end
+        end
+        return A
+    catch e
+        if e isa DomainError
+            @warn "Boundary Matrix Value not precomputed, falling back to numerical quadrature"
+            return assemble_bilinear(integral, model, U, V)
+        else
+            error("whats wrong here?")
         end
     end
     return A
