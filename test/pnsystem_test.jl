@@ -481,7 +481,7 @@ end
     M1 = kron(A, (A + α*B) * (C - D)) + β * kron(E, F)
     M2 = kron(G + γ*H, E*F) + δ * kron(A, B)
     M3 = transpose(M1) * M2 + J * M1 * transpose(J)
-    M4 = EPMAfem.blockmatrix(M1, M2, M3)
+    M4 = EPMAfem.blockmatrix(M1, M2, transpose(M2), M3)
 
 
     for m_fac in 0:0.1:1
@@ -490,7 +490,7 @@ end
         LM1 = kron(LA, may_m((LA + α*LB) * may_m(LC - LD))) + β * kron(LE, LF)
         LM2 = may_m(kron(LG + γ*LH, LE*LF) + δ * kron(LA, LB))
         LM3 = may_m(transpose(LM1) * LM2) + may_m(LJ * LM1 * transpose(LJ))
-        LM4 = EPMAfem.blockmatrix(LM1, LM2, LM3)
+        LM4 = EPMAfem.blockmatrix(LM1, LM2, transpose(LM2), LM3)
 
         x = rand_vec(size(LM4, 2))
         ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
@@ -532,7 +532,7 @@ end
     M1 = kron(A, (A + α*B) * (C - D)) + β * kron(E, F)
     M2 = kron(G + γ*H, E*F) + δ * kron(A, B)
     M3 = transpose(M1) * M2 + J * M1 * transpose(J)
-    M4 = EPMAfem.blockmatrix(M1, M2, M3)
+    M4 = EPMAfem.blockmatrix(M1, M2, transpose(M2), M3)
 
 
     for m_fac in 0:0.1:1
@@ -541,7 +541,7 @@ end
         LM1 = kron(LA, may_m((LA + α*LB) * may_m(LC  + scal(-1)*LD))) + β * kron(LE, LF)
         LM2 = may_m(kron(LG + γ*LH, LE*LF) + δ * kron(LA, LB))
         LM3 = may_m(transpose(LM1) * LM2) + may_m(LJ * LM1 * transpose(LJ))
-        LM4 = EPMAfem.blockmatrix(LM1, LM2, LM3)
+        LM4 = EPMAfem.blockmatrix(LM1, LM2, transpose(LM2), LM3)
 
         x = rand_vec(size(LM4, 2))
         ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
@@ -772,8 +772,8 @@ end
     L_ = rand_mat(10, 10)
     L = L_ |> lazy
 
-    M_ = EPMAfem.blockmatrix(K_, L_, I_)
-    M = EPMAfem.blockmatrix(K, L, I);
+    M_ = EPMAfem.blockmatrix(K_, L_, transpose(L_), I_)
+    M = EPMAfem.blockmatrix(K, L, transpose(L_), I);
     @test M_ ≈ M
     # currently not implemented, but multiplication is!
     # @test M_ ≈ do_materialize(M)
@@ -863,8 +863,8 @@ end
     L_ = rand_mat(2, 10)
     L = L_ |> lazy
 
-    M_ = EPMAfem.blockmatrix(K_, L_, I_)
-    M = EPMAfem.blockmatrix(K, L, I)
+    M_ = EPMAfem.blockmatrix(K_, L_, transpose(L_), I_)
+    M = EPMAfem.blockmatrix(K, L, transpose(L), I)
     @test M_ ≈ M
     # currently not implemented, but multiplication is!
     # @test M_ ≈ do_materialize(M)
@@ -1247,13 +1247,44 @@ end
 #     # EPMAfem.mul_with!(wsM, yM, KM, x, true, false)
 # end
 
+@testset "Blockmatrix + Schur Complement" begin
+    A = rand(10, 10) |> x -> x * transpose(x) 
+    B = rand(10, 11)
+    C = rand(11, 10)
+    D = Diagonal(rand(11))
+
+    α, β, γ, δ = rand(), rand(), rand(), rand()
+
+    Al, Bl, Cl, Dl = lazy.((A, B, C, D))
+
+    BM = EPMAfem.blockmatrix(α*A, β*B, γ*C, δ*D)
+    @test BM isa Matrix
+    BMl = EPMAfem.blockmatrix(α*Al, β*Bl, γ*Cl, δ*Dl)
+
+    @test BM ≈ BMl
+
+    x = rand(size(BMl, 2))
+    @test BM * x ≈ BMl * x
+    @test transpose(BM) * x ≈ transpose(BMl) * x
+
+    S = α*A - β*B*inv(δ*D)*γ*C
+
+    Sl = EPMAfem.schur_complement(BMl)
+
+    @test S ≈ Sl
+    
+    x = rand(size(Sl, 2))
+    @test S * x ≈ Sl*x
+    @test transpose(S) * x ≈ transpose(Sl)*x
+end
+
 # BlockMatrix
 @testset "BlockMatrix" begin
     a = rand_mat(10, 10)
     b = rand_mat(10, 15)
     c = rand_mat(15, 15)
 
-    B = EPMAfem.lazy(EPMAfem.blockmatrix, a, b, c)
+    B = EPMAfem.lazy(EPMAfem.blockmatrix, a, b, transpose(b), c)
     B_ref = [
         a b
         transpose(b) c
@@ -1281,8 +1312,8 @@ end
     KC = EPMAfem.lazy(EPMAfem.kron_AXB, rand_mat(9, 9), rand_mat(12, 12))
     KC_ref = do_materialize(KC)
 
-    B = EPMAfem.blockmatrix(KA, KB, KC)
-    B_ref = EPMAfem.blockmatrix(KA_ref, KB_ref, KC_ref)
+    B = EPMAfem.blockmatrix(KA, KB, transpose(KB), KC)
+    B_ref = EPMAfem.blockmatrix(KA_ref, KB_ref, transpose(KB_ref), KC_ref)
 
     x = rand_vec(size(B, 2))
     @test B*x ≈ B_ref*x
@@ -1565,8 +1596,8 @@ end
     d = rand_vec(6)
     D = lazy(Diagonal(d))
     # Block diagonal
-    B = EPMAfem.blockmatrix(D, D, D)
-    B_ref = EPMAfem.blockmatrix(Diagonal(d), Diagonal(d), Diagonal(d))
+    B = EPMAfem.blockmatrix(D, D, transpose(D), D)
+    B_ref = EPMAfem.blockmatrix(Diagonal(d), Diagonal(d), transpose(Diagonal(d)), Diagonal(d))
     x = rand_vec(size(B, 2))
     @test B * x ≈ B_ref * x
     # Diagonal + scalar

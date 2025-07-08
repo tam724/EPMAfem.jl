@@ -1,29 +1,30 @@
 # now this is special code for EPMA
-function blockmatrix(A, B, C)
+function blockmatrix(A, B, C, D)
     # weird hack: # TODO!
-    if any(A -> A isa CUDA.CUSPARSE.CuSparseMatrixCSC, (A, B, C, transpose(A), transpose(B), transpose(C)))
-        B_ = collect(B)
-        return sparse([collect(A) B_
-            transpose(B_) collect(C)]) |> cu
+    if any(A -> A isa CUDA.CUSPARSE.CuSparseMatrixCSC, (A, B, C, D, transpose(A), transpose(B), transpose(C), transpose(D)))
+        A_, B_, C_, D_ = collect.((A, B, C, D))
+        return sparse([ A_ B_
+                        C_ D_]) |> cu
     end
-    return [A               B
-            transpose(B)    C]
+    return [A B
+            C D]
 end
 
-const BlockMatrix{T} = LazyOpMatrix{T, typeof(blockmatrix), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}}
+const BlockMatrix{T} = LazyOpMatrix{T, typeof(blockmatrix), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}}
 A(BM::BlockMatrix) = BM.args[1]
 B(BM::BlockMatrix) = BM.args[2]
 C(BM::BlockMatrix) = BM.args[3]
+D(BM::BlockMatrix) = BM.args[4]
 
 block_size(BM::BlockMatrix) = (
-    only_unique((size(A(BM), 1), size(A(BM), 2), size(B(BM), 1))), 
-    only_unique((size(C(BM), 1), size(C(BM), 2), size(B(BM), 2)))
+    only_unique((size(A(BM), 1), size(A(BM), 2), size(B(BM), 1), size(C(BM), 2))), 
+    only_unique((size(D(BM), 1), size(D(BM), 2), size(B(BM), 2), size(C(BM), 1)))
 )
 
 # may be weaker
 max_block_size(BM::BlockMatrix) = (
-    only_unique((max_size(A(BM), 1), max_size(A(BM), 2), max_size(B(BM), 1))), 
-    only_unique((max_size(C(BM), 1), max_size(C(BM), 2), max_size(B(BM), 2)))
+    only_unique((max_size(A(BM), 1), max_size(A(BM), 2), max_size(B(BM), 1), max_size(C(BM), 2))), 
+    only_unique((max_size(D(BM), 1), max_size(D(BM), 2), max_size(B(BM), 2), max_size(C(BM), 1)))
 )
 
 duplicate(x) = (x, x)
@@ -39,9 +40,9 @@ function lazy_getindex(BM::BlockMatrix, i::Int, j::Int)
     elseif i <= mA && j > nA
         return B(BM)[i, j - nA]
     elseif i > mA && j <= nA
-        return B(BM)[j, i - mA] # transpose(B)
+        return C(BM)[i - mA, j]
     else
-        return C(BM)[i - mA, j - nA]
+        return D(BM)[i - mA, j - nA]
     end
 end
 
@@ -57,8 +58,8 @@ function mul_with!(ws::Workspace, y::AbstractVector, BM::BlockMatrix, x::Abstrac
     mul_with!(ws, y1, A(BM), x1, α, β)
     mul_with!(ws, y1, B(BM), x2, α, true)
 
-    mul_with!(ws, y2, transpose(B(BM)), x1, α, β)
-    mul_with!(ws, y2, C(BM), x2, α, true)
+    mul_with!(ws, y2, C(BM), x1, α, β)
+    mul_with!(ws, y2, D(BM), x2, α, true)
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, BMt::Transpose{T, <:BlockMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
@@ -71,13 +72,13 @@ function mul_with!(ws::Workspace, y::AbstractVector, BMt::Transpose{T, <:BlockMa
     y2 = @view(y[n1+1:n1+n2])
 
     mul_with!(ws, y1, transpose(A(parent(BMt))), x1, α, β)
-    mul_with!(ws, y1, B(parent(BMt)), x2, α, true)
+    mul_with!(ws, y1, transpose(C(parent(BMt))), x2, α, true)
 
     mul_with!(ws, y2, transpose(B(parent(BMt))), x1, α, β)
-    mul_with!(ws, y2, transpose(C(parent(BMt))), x2, α, true)
+    mul_with!(ws, y2, transpose(D(parent(BMt))), x2, α, true)
 end
 
-required_workspace(::typeof(mul_with!), BM::BlockMatrix) = maximum(required_workspace(mul_with!, A_) for A_ in (A(BM), B(BM), C(BM)))
+required_workspace(::typeof(mul_with!), BM::BlockMatrix) = maximum(required_workspace(mul_with!, A_) for A_ in (A(BM), B(BM), C(BM), D(BM)))
 
 function materialize_with(ws::Workspace, BM::BlockMatrix)
     error("not implemented...")
@@ -134,8 +135,8 @@ end
 required_workspace(::typeof(materialize_with), I::InplaceInverseMatrix) = required_workspace(materialize_with, A(S))
 
 function schur_complement(BM::BlockMatrix)
-    C⁻¹ = lazy(LinearAlgebra.inv!, C(BM))
-    BC⁻¹Bt = lazy(*, B(BM), C⁻¹, transpose(B(BM)))
-    mBC⁻¹Bt = lazy(*, -one(eltype(BM)), BC⁻¹Bt)
-    return lazy(+, A(BM), mBC⁻¹Bt)
+    D⁻¹ = lazy(LinearAlgebra.inv!, D(BM))
+    BD⁻¹C = lazy(*, B(BM), D⁻¹, C(BM))
+    mBD⁻¹C = lazy(*, Ref(-one(eltype(BM))), BD⁻¹C)
+    return lazy(+, A(BM), mBD⁻¹C)
 end
