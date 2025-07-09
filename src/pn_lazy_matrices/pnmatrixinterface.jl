@@ -43,9 +43,16 @@ lazy(::typeof(kron), A::AbstractMatrix, B::AbstractMatrix) = transpose(lazy(kron
 
 kron_AXB(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron_AXB, unwrap(A), unwrap(B))
 materialize(A::AbstractLazyMatrixOrTranspose) = lazy(materialize, unwrap(A))
-blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose, D::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C, D)
 cache(A::AbstractLazyMatrixOrTranspose) = lazy(cache, unwrap(A))
 LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(LinearAlgebra.inv!, unwrap(A))
+
+blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose, D::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C, D)
+function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, Ms::Vararg{<:AbstractLazyMatrixOrTranspose, 4})
+    @assert sizes[1] == 2
+    @assert sizes[2] == 2
+    A, B, C, D = Ms
+    return blockmatrix(A, B, C, D)
+end
 
 @concrete struct NotSoLazy{T} <: AbstractMatrix{T}
     A
