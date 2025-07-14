@@ -32,7 +32,7 @@ function get_cached_boundary_coefficient(m1, m2, dim)
     elseif haskey(boundary_matrix_dict, (D, (l_, k_), (l, k)))
         return boundary_matrix_dict[(D, (l_, k_), (l, k))]
     else
-        @error "Boundary matrix value $((D, (l, k), (l_, k_))) not precomputed!"
+        throw(DomainError("Boundary matrix value $((D, (l, k), (l_, k_))) not precomputed!"))
     end
 end
     
