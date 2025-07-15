@@ -122,7 +122,7 @@ function test_sparse3tensor_gridap_assembly()
     gdΓ = Measure(g∂R, 5)
 
     ga(u, v, w) = ∫(u*v*w)gdx
-    a(u, v, (dims, R, dx, ∂R, dΓ, n)) = ∫(u*v)dx
+    a(u, v, (dims, dx, ∂R, dΓ, n)) = ∫(u*v)dx
 
     tensor = SM.assemble_trilinear(a, model, SM.even(model), SM.even(model))
 

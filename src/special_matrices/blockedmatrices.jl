@@ -73,6 +73,31 @@ function Base.collect(AT::Transpose{T, <:BlockedMatrix{T}}) where T
     return AT_full
 end
 
+function LinearAlgebra.mul!(C::AbstractMatrix, A::BlockedMatrix, B::AbstractMatrix, α::Number, β::Number)
+    Ct = transpose(C)
+    Bt = transpose(B)
+    for i in eachindex(A.blocks)
+        inds = A.indices[i]
+        block = A.blocks[i]
+        # mul!(@view(C[inds[1], :]), block, @view(B[inds[2], :]), α, β)
+        # mul!(transpose(@view(C[inds[1], :])), transpose(@view(B[inds[2], :])), transpose(block), α, β)
+
+        mul!(@view(Ct[:, inds[1]]), @view(Bt[:, inds[2]]), transpose(block), α, β)
+    end
+    return C
+end
+
+function LinearAlgebra.mul!(C::AbstractMatrix, At::Transpose{T, <:BlockedMatrix{T}}, B::AbstractMatrix, α::Number, β::Number) where T
+    A = At.parent
+    for i in eachindex(A.blocks)
+        inds = A.indices[i]
+        block = A.blocks[i]
+        # mul!(@view(C[inds[2], :]), transpose(block), @view(B[inds[1], :]), α, β)
+        mul!(transpose(@view(C[inds[2], :])), transpose(@view(B[inds[1], :])), block, α, β)
+    end
+    return C
+end
+
 function LinearAlgebra.mul!(C::AbstractMatrix, B::AbstractMatrix, A::BlockedMatrix, α::Number, β::Number)
     for i in eachindex(A.blocks)
         inds = A.indices[i]

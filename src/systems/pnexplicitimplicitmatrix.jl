@@ -28,7 +28,7 @@ end
 
 """
 computes
-    Y = α*(∑I A_i * X + (γ_i B + ∑J δ_ij C_ij)) + β*Y
+    Y = α*(∑I A_i * X * (γ_i B + ∑J δ_ij C_ij)) + β*Y
 """
 @concrete struct ZMatrix2{T}
     A # AbstractVector (size I) of matrices of size nA1 x nA2

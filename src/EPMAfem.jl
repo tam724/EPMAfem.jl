@@ -13,10 +13,14 @@ using UnsafeArrays
 using Zygote
 using ChainRulesCore
 
+include("hacky_overwrites.jl")
+
 include("special_matrices/sparse3tensor.jl")
 using EPMAfem.Sparse3Tensor
 include("special_matrices/blockedmatrices.jl")
 using EPMAfem.BlockedMatrices
+
+include("special_matrices/twodiagonalmatrix.jl")
 
 include("space_dimensions.jl")
 using EPMAfem.Dimensions
@@ -27,7 +31,12 @@ using EPMAfem.SphericalHarmonicsModels
 include("space_model/space.jl")
 using EPMAfem.SpaceModels
 
-include("redefine_rmul.jl")
+include("pn_lazy_matrices/pnlazymatrices.jl")
+using EPMAfem.PNLazyMatrices
+
+PNLazyMatrices.has_batched_mul!(A::TwoDiagonalMatrix) = true
+PNLazyMatrices.has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true
+
 include("utils.jl")
 
 include("abstracttypes.jl")

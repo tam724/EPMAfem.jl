@@ -75,8 +75,8 @@ function full_schur_solve_test()
     A__ = randn(n1, n1)
     A = (A__ + transpose(A__)) / 2
     B = randn(n1, n2)
-    C = Diagonal(randn(n2))
-    D = Diagonal(randn(n1))
+    C = Diagonal(randn(n2) .+ 1.0)
+    D = Diagonal(randn(n1) .+ 1.0)
 
     δ = randn()
     M = EPMAfem.BlockMat2{Float64}(A, B, C, D, n1, n2, Ref(randn()), Ref(δ), Ref(-δ), Ref(0.1), Ref(true))

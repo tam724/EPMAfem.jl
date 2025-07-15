@@ -59,7 +59,7 @@ function source(eq::OnlyEnergyEquations, ϵ)
     return -exp(-α*(ϵ-β)^2)
 end
 
-function EPMAfem.discretize_problem(eq::OnlyEnergyEquations, mdl::EPMAfem.DiscretePNModel, arch::PNArchitecture)
+function EPMAfem.discretize_problem(eq::OnlyEnergyEquations, mdl::EPMAfem.DiscretePNModel, arch::EPMAfem.PNArchitecture)
     T = base_type(arch)
 
     ϵs = energy_model(mdl)
@@ -86,10 +86,13 @@ function EPMAfem.discretize_problem(eq::OnlyEnergyEquations, mdl::EPMAfem.Discre
     absΩp = [zeros(1, 1) for _ in 1:1] |> arch
     Ωpm = [zeros(1, 1) for _ in 1:1] |> arch
 
-    DiscretePNProblem(mdl, arch, s, τ, σ, ρp, ρm, ∂p, ∇pm, Ip, Im, kp, km, absΩp, Ωpm)
+    space_discretization = EPMAfem.SpaceDiscretization(EPMAfem.space_model(mdl), arch, ρp, ρm, ∂p, ∇pm)
+    direction_discretization = EPMAfem.DirectionDiscretization(EPMAfem.direction_model(mdl), arch, Ip, Im, kp, km, absΩp, Ωpm)
+
+    DiscretePNProblem(mdl, arch, s, τ, σ, space_discretization, direction_discretization)
 end
 
-function EPMAfem.discretize_rhs(eq::OnlyEnergyEquations, mdl, arch::PNArchitecture)
+function EPMAfem.discretize_rhs(eq::OnlyEnergyEquations, mdl, arch::EPMAfem.PNArchitecture)
     T = base_type(arch)
 
     ϵs = energy_model(mdl)
@@ -101,7 +104,7 @@ function EPMAfem.discretize_rhs(eq::OnlyEnergyEquations, mdl, arch::PNArchitectu
     return Rank1DiscretePNVector(false, mdl, arch, gϵ, gxp, gΩp)
 end
 
-function discretize_adjoint_rhs(eq::OnlyEnergyEquations, mdl, arch::PNArchitecture)
+function discretize_adjoint_rhs(eq::OnlyEnergyEquations, mdl, arch::EPMAfem.PNArchitecture)
     T = base_type(arch)
 
     ϵs = energy_model(mdl)

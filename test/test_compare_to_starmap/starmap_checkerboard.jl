@@ -12,10 +12,10 @@ EPMAfem.scattering_kernel(eq::CheckerboardEquations, e, i) = μ -> 1.0/4π
 lattice((x, y)) = (ceil(Int, x), ceil(Int, y))
 function EPMAfem.mass_concentrations(::CheckerboardEquations, e, (x, y))
     if lattice((x, y)) in [   (2, 6),                         (6, 6),
-                            (3, 5),         (5, 5),
-                    (2, 4),                         (6, 4),
-                            (3, 3),         (5, 3),
-                    (2, 2),         (4, 2),         (6, 2)]
+                                      (3, 5),         (5, 5),
+                              (2, 4),                         (6, 4),
+                                      (3, 3),         (5, 3),
+                              (2, 2),         (4, 2),         (6, 2)]
         # absorbing material
         return e == 1 ? 1.0 : 0.0
     else
