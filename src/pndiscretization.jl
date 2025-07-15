@@ -24,6 +24,9 @@ end
     ∇pm
 end
 
+lazy_space_matrices(space_discretization::SpaceDiscretization) = lazy.(space_discretization.ρp), lazy.(space_discretization.ρm), lazy.(space_discretization.∂p), lazy.(space_discretization.∇pm)
+
+
 @concrete struct DirectionDiscretization
     direction_model
     arch
@@ -35,6 +38,9 @@ end
     absΩp
     Ωpm
 end
+
+lazy_direction_matrices(direction_discretization::DirectionDiscretization) = lazy(direction_discretization.Ip), lazy(direction_discretization.Im), direction_discretization.kp .|> x -> lazy.(x), direction_discretization.km .|> x -> lazy.(x), lazy.(direction_discretization.absΩp), lazy.(direction_discretization.Ωpm)
+
 
 
 function discretize_space(pn_eq::Union{AbstractPNEquations, AbstractMonochromPNEquations, AbstractDegeneratePNEquations}, space_mdl::SpaceModels.GridapSpaceModel, arch::PNArchitecture)

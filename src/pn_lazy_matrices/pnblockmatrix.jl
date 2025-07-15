@@ -87,10 +87,15 @@ end
 
 required_workspace(::typeof(mul_with!), BM::BlockMatrix) = maximum(required_workspace(mul_with!, A_) for A_ in (A(BM), B(BM), C(BM), D(BM)))
 
-function materialize_with(ws::Workspace, BM::BlockMatrix)
-    error("not implemented...")
+function materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatrix)
+    n1, n2 = block_size(BM)
+    materialize_with(ws, A(BM), @view(skeleton[1:n1, 1:n1]))
+    materialize_with(ws, B(BM), @view(skeleton[1:n1, n1+1:n1+n2]))
+    materialize_with(ws, C(BM), @view(skeleton[n1+1:n1+n2, 1:n1]))
+    materialize_with(ws, D(BM), @view(skeleton[n1+1:n1+n2, n1+1:n1+n2]))
+    return skeleton, ws
 end
-required_workspace(::typeof(materialize_with), BM::BlockMatrix) = Inf
+required_workspace(::typeof(materialize_with), BM::BlockMatrix) = maximum(A -> required_workspace(materialize_with, A), blocks(BM))
 
 ### INPLACE INV MATRIX
 const InplaceInverseMatrix{T} = LazyOpMatrix{T, typeof(LinearAlgebra.inv!), <:Tuple{<:AbstractMatrix}}

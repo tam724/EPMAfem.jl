@@ -20,9 +20,10 @@ Base.show(io::IO, p::DiscretePNProblem) = print(io, "PNProblem [$(n_basis(p)) an
 Base.show(io::IO, ::MIME"text/plain", p::DiscretePNProblem) = show(io, p)
 
 space_matrices(problem::DiscretePNProblem) = problem.space_discretization.ρp, problem.space_discretization.ρm, problem.space_discretization.∂p, problem.space_discretization.∇pm
-lazy_space_matrices(problem::DiscretePNProblem) = lazy.(problem.space_discretization.ρp), lazy.(problem.space_discretization.ρm), lazy.(problem.space_discretization.∂p), lazy.(problem.space_discretization.∇pm)
+lazy_space_matrices(problem::DiscretePNProblem) = lazy_space_matrices(problem.space_discretization)
+
 direction_matrices(problem::DiscretePNProblem) = problem.direction_discretization.Ip, problem.direction_discretization.Im, problem.direction_discretization.kp, problem.direction_discretization.km, problem.direction_discretization.absΩp, problem.direction_discretization.Ωpm
-lazy_direction_matrices(problem::DiscretePNProblem) = lazy(problem.direction_discretization.Ip), lazy(problem.direction_discretization.Im), problem.direction_discretization.kp .|> x -> lazy.(x), problem.direction_discretization.km .|> x -> lazy.(x), lazy.(problem.direction_discretization.absΩp), lazy.(problem.direction_discretization.Ωpm)
+lazy_direction_matrices(problem::DiscretePNProblem) = lazy_direction_matrices(problem.direction_discretization)
 
 # this is more or less "activity tracking" for the derivative
 @concrete struct UpdatableDiscretePNProblem

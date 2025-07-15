@@ -20,10 +20,11 @@ problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 
 system = EPMAfem.implicit_midpoint(problem, EPMAfem.PNKrylovMinresSolver)
 systemm1 = EPMAfem.implicit_midpoint(problem, EPMAfem.PNSchurSolver)
+
 system2 = EPMAfem.implicit_midpoint2(problem, Krylov.minres)
 system3 = EPMAfem.implicit_midpoint2(problem, Krylov.gmres)
 system4 = EPMAfem.implicit_midpoint2(problem, \)
-system5 = EPMAfem.implicit_midpoint2(problem, EPMAfem.pnschur, Krylov.minres)
+system5 = EPMAfem.implicit_midpoint2(problem, (PNLazyMatrices.schur_complement, Krylov.minres))
 
 excitation = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [0.8], [VectorValue(-1.0, 0.0, 0.0)])
 extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
@@ -39,11 +40,13 @@ sol4 = system4 * discrete_rhs;
 sol5 = system5 * discrete_rhs;
 
 @time discrete_extr * (system * discrete_rhs)
+@profview discrete_extr * (systemm1 * discrete_rhs)
 @btime discrete_extr * (systemm1 * discrete_rhs)
 @time discrete_extr * (system2 * discrete_rhs)
 @time discrete_extr * (system3 * discrete_rhs)
-@btime discrete_extr * (system4 * discrete_rhs)
-@profview @btime discrete_extr * (system5 * discrete_rhs)
+@time discrete_extr * (system4 * discrete_rhs)
+@profview discrete_extr * (system5 * discrete_rhs)
+@btime discrete_extr * (system5 * discrete_rhs)
 
 @gif for ((i1, ψ1), (i2, ψ2), (i3, ψ3), (i4, ψ4), (i5, ψ5)) in zip(sol, sol2, sol3, sol4, sol5)
     ψp1, ψm1 = EPMAfem.pmview(ψ1, model)

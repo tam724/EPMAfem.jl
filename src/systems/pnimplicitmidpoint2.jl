@@ -32,7 +32,7 @@ function build_coeffs_and_mat_blocks(pbl::DiscretePNProblem)
     return coeffs, UL, UR, LL, LR
 end
 
-function implicit_midpoint2(pbl::DiscretePNProblem, solver::Union{typeof(Krylov.minres), typeof(Krylov.gmres), })
+function implicit_midpoint2(pbl::DiscretePNProblem, solver)
     arch = architecture(pbl)
 
     coeffs, UL, UR, LL, LR = build_coeffs_and_mat_blocks(pbl)
