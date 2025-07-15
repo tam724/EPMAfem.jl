@@ -1,12 +1,16 @@
 module PNSystemTest
 
+using Revise
+
 using Test
 using EPMAfem
 using LinearAlgebra
 using BenchmarkTools
 using SparseArrays
+using EPMAfem.Krylov
 
 const PNLazyMatrices = EPMAfem.PNLazyMatrices
+
 # ### CUDA TESTING
 # begin
 #     rand_mat(m, n) = rand(m, n) |> cu
@@ -104,6 +108,141 @@ function test_cached_LK_K(LK, K)
 end
 
 
+@testset "SchurMatrix + gmres & \\" begin
+    A = rand(2, 2)
+    D = rand(2, 2)
+    B = rand(2, 3)
+    Bt = rand(3, 2)
+    C = Diagonal(rand(3))
+
+    Al, Dl, Bl, Btl, Cl = lazy.((A, D, B, Bt, C))
+
+    BMl = [Al + Dl Bl
+    Btl Cl]
+
+    BM = [A + D B
+    Bt C]
+    
+    BMl_schur_gmres = EPMAfem.lazy((PNLazyMatrices.schur_complement, Krylov.gmres), BMl)
+
+    x = rand(size(BMl, 1))
+    y = rand(size(BMl, 2))
+
+    @test BM \ x ≈ BMl_schur_gmres * x
+    @test transpose(BM) \ x ≈ transpose(BMl_schur_gmres) * x
+
+    # backslash
+
+    BMl_schur_backslash = EPMAfem.lazy((PNLazyMatrices.schur_complement, \), BMl)
+
+    x = rand(size(BMl, 1))
+    y = rand(size(BMl, 2))
+
+    @test BM \ x ≈ BMl_schur_backslash * x
+    @test transpose(BM) \ x ≈ transpose(BMl_schur_backslash) * x
+    
+    # TODO: find out why the transpose need 6* the workspace compared to the non transpose
+end
+
+A, B, C, D = lazy.(PNLazyMatrices.blocks(PNLazyMatrices.BM(BMl_schur_backslash)))
+D⁻¹ = PNLazyMatrices.cache(PNLazyMatrices.inv!(D))
+B * D⁻¹
+test = PNLazyMatrices.inner_solver(BMl_schur_backslash)(A - B * D⁻¹ * C);
+
+test * rand(2)
+
+PNLazyMatrices.unlazy(test) * rand(2)
+
+@testset "SchurMatrix + minres" begin
+    A = rand(2, 2) |> x -> transpose(x)*x
+    D = rand(2, 2) |> x -> transpose(x)*x
+    B = rand(2, 3)
+    C = Diagonal(rand(3))
+
+    Al, Dl, Bl, Cl = lazy.((A, D, B, C))
+
+    BMl = [Al + Dl Bl
+    transpose(Bl) Cl]
+
+    BM = [A + D B
+    transpose(B) C]
+    
+    BMl_schur_minres = EPMAfem.lazy((PNLazyMatrices.schur_complement, Krylov.minres), BMl)
+
+    x = rand(size(BMl, 1))
+    y = rand(size(BMl, 2))
+
+    @test BM \ x ≈ BMl_schur_minres * x
+    @test transpose(BM) \ x ≈ transpose(BMl_schur_minres) * x
+end
+
+@testset "KrylovMinresMatrix" begin
+    # system must be symmetric (and non singular)
+    A = rand(2, 2) |> X -> X * transpose(X)
+    D = rand(2, 2) |> X -> X * transpose(X)
+    B = rand(2, 3)
+    C = rand(3, 3) |> X -> X * transpose(X)
+    
+    Al, Dl, Bl, Cl = lazy.((A, D, B, C))
+
+    BMl = [Al + Dl Bl
+    transpose(Bl) Cl]
+
+    BM = [A + D B
+    transpose(B) C]
+
+    BMl_minres = Krylov.minres(BMl)
+    BMlt_minres = transpose(Krylov.minres(BMl))
+
+    x = rand(size(BMl, 1))
+    y = rand(size(BMl, 2))
+
+    @test BM \ x ≈ BMl_minres * x
+
+    @test transpose(BM) \ x ≈ BMlt_minres * x
+end
+
+
+@testset "KrylovGmresMatrix" begin
+    A = rand(2, 2)
+    D = rand(2, 2)
+    B = rand(2, 3)
+    C = rand(3, 3)
+    
+    Al, Dl, Bl, Cl = lazy.((A, D, B, C))
+
+    BMl = [Al + Dl Bl
+    transpose(Bl) Cl]
+
+    BMl_gmres = Krylov.gmres(BMl)
+    BMlt_gmres = transpose(Krylov.gmres(BMl))
+
+    BM = [A + D B
+    transpose(B) C]
+
+    x = rand(size(BMl, 1))
+    y = rand(size(BMl, 2))
+
+    @test BM \ x ≈ BMl_gmres * x
+    @test transpose(BM) \ x ≈ BMlt_gmres * x
+end
+
+@testset "InverseMatrix" begin
+    A = rand(3, 3) 
+    Z = rand(3, 3) 
+    B = rand(3, 3)
+    D = Diagonal(rand(3))
+
+    Zl, Al, Dl, Bl = lazy.((Z, A, D, B))
+
+    C⁻¹l = \(Zl - Al*PNLazyMatrices.inv!(Dl)*Bl)
+    C = Z - A*inv(D)*B
+
+    x = rand(size(C, 1))
+
+    @test C \ x ≈ C⁻¹l * x
+    @test transpose(C) \ x ≈ transpose(C⁻¹l) * x
+end
 
 @testset "InplaceInverseMatrix" begin
     D = Diagonal(rand(5))

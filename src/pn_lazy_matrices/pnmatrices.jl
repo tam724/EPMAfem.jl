@@ -101,7 +101,7 @@ end
 
 function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix)
     skeleton .= A
-    return M_mat, ws
+    return skeleton, ws
 end
         
 required_workspace(::typeof(materialize_with), A::AbstractMatrix) = 0
@@ -118,7 +118,7 @@ materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
 
 function LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
     ws = create_workspace(mul_with!, A, zeros)
-    if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
+    if length(ws.workspace) > 0 error("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
     mul_with!(ws, y, A, x, α, β)
     return y
 end

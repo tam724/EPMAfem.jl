@@ -50,7 +50,7 @@ end
 
 broadcast_materialize(S::ScaleMatrix) = broadcast_materialize(A(S))
 materialize_broadcasted(ws::Workspace, S::ScaleMatrix) = Base.Broadcast.broadcasted(*, a(S), materialize_broadcasted(ws, A(S)))
-required_workspace(::typeof(materialize_with), S::ScaleMatrix) = required_workspace(materialize_with, A(S))
+required_workspace(::typeof(materialize_with), S::ScaleMatrix) = required_workspace(materialize_with, materialize(A(S)))
 
 # it seems as if now the fun starts :D this can be heavily optimized (matrix product chain, etc..) well only go for some simple heuristics here
 # let's start implementing this with only A*B (the general case follows later..)

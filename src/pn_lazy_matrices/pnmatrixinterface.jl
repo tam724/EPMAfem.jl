@@ -15,6 +15,7 @@ lazy(::typeof(*), A::ProdMatrix, B::ProdMatrix) = lazy(*, A.args..., B.args...)
 end
 
 lazy(A::AbstractMatrix{T}) where T = Lazy{T}(A)
+# lazy(At::Transpose{T, <:AbstractMatrix{T}}) where T = transpose(Lazy{T}(parent(At)))
 lazy(L::AbstractLazyMatrixOrTranspose) = L
 unwrap(A) = A
 unwrap(L::Lazy) = L.A
@@ -37,6 +38,10 @@ Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = 
 Base.:+(A::AbstractMatrix, L::AbstractLazyMatrixOrTranspose) = lazy(+, A, unwrap(L))
 Base.:+(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L), A)
 
+Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy(+, unwrap(L1), lazy(*, Ref(eltype(L2)(-1)), unwrap(L2)))
+Base.:-(A::AbstractMatrix, L::AbstractLazyMatrixOrTranspose) = lazy(+, A, lazy(*, Ref(eltype(L)(-1)), unwrap(L)))
+Base.:-(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L), lazy(*, Ref(eltype(A)(-1)), A))
+
 # damn I implemented a weird version of kron...
 LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = transpose(lazy(kron_AXB, transpose(unwrap(B)), unwrap(A)))
 lazy(::typeof(kron), A::AbstractMatrix, B::AbstractMatrix) = transpose(lazy(kron_AXB, transpose(unwrap(B)), unwrap(A)))
@@ -54,10 +59,17 @@ function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, Ms::Vararg{<:AbstractLazyMat
     return blockmatrix(A, B, C, D)
 end
 
+Krylov.minres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.minres, unwrap(A))
+Krylov.gmres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.gmres, unwrap(A))
+Base.:\(A::AbstractLazyMatrixOrTranspose) = lazy(\, unwrap(A))
+
 @concrete struct NotSoLazy{T} <: AbstractMatrix{T}
     A
     ws
 end
+
+notsolazy(A::AbstractLazyMatrix{T}, ws) where T = NotSoLazy{T}(A, ws)
+notsolazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws) where T = transpose(NotSoLazy{T}(parent(At), ws))
 
 function unlazy(A::AbstractLazyMatrix{T}, ws_alloc=zeros) where T
     ws_size = required_workspace(mul_with!, A)
@@ -69,6 +81,20 @@ end
 function unlazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws_alloc=zeros) where T
     transpose(unlazy(parent(At), ws_alloc))
 end
+
+function unlazy(As::NTuple{N, AbstractLazyMatrixOrTranspose}, ws_alloc=zeros) where N
+    ws_size = 0
+    for A in As
+        if A isa Transpose
+            ws_size = max(required_workspace(mul_with!, parent(A)), ws_size)
+        else
+            ws_size = max(required_workspace(mul_with!, A), ws_size)
+        end
+    end
+    ws = create_workspace(ws_size, ws_alloc)
+    return notsolazy.(As, Ref(ws))
+end
+    
 
 Base.getindex(A::NotSoLazy, i::Integer, j::Integer) = getindex(A.A, i, j)
 Base.size(A::NotSoLazy) = size(A.A)
@@ -82,3 +108,5 @@ function LinearAlgebra.mul!(Y::AbstractMatrix, A::NotSoLazy, X::AbstractMatrix, 
     mul_with!(A.ws, Y, A.A, X, α, β)
     return Y
 end
+
+invalidate_cache!(A::NotSoLazy) = invalidate_cache!(A.ws)

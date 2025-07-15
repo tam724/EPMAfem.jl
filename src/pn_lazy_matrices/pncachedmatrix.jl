@@ -44,7 +44,12 @@ function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::Materi
     Base.Broadcast.materialize!(skeleton, bcd)
     return skeleton, ws
 end
-materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton) = materialize_with(ws, A(M), skeleton)
+function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::Nothing)
+    A_, rem = structured_from_ws(ws, A(M))
+    materialize_with(rem, A(M), A_)
+    return A_, rem
+end
+materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix) = materialize_with(ws, A(M), skeleton)
 
 # simply pass through the broadcast materialize calls.. 
 broadcast_materialize(S::MaterializedMatrix) = broadcast_materialize(A(S))

@@ -1,17 +1,17 @@
 using Revise
 using EPMAfem
+
+using EPMAfem.PNLazyMatrices
+using EPMAfem.Krylov
 using EPMAfem.Gridap
 using LinearAlgebra
 include("plot_overloads.jl")
 
-lazy(A) = EPMAfem.lazy(A)
-kron_AXB = EPMAfem.kron_AXB
+# space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (50, 50)))
+# direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 2)
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (10, 10, 10)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(5, 3)
-
-# space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), 10))
-# direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(5, 1)
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), 100))
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 1)
 
 equations = EPMAfem.PNEquations()
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
@@ -19,57 +19,60 @@ model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 
 system = EPMAfem.implicit_midpoint(problem, EPMAfem.PNKrylovMinresSolver)
+systemm1 = EPMAfem.implicit_midpoint(problem, EPMAfem.PNSchurSolver)
+system2 = EPMAfem.implicit_midpoint2(problem, Krylov.minres)
+system3 = EPMAfem.implicit_midpoint2(problem, Krylov.gmres)
+system4 = EPMAfem.implicit_midpoint2(problem, \)
+system5 = EPMAfem.implicit_midpoint2(problem, EPMAfem.pnschur, Krylov.minres)
 
-## switch off the coefficients in A
-system.A.sym[] = false
-system.A.Δ[] = 1.0
-system.A.γ[] = 1.0
-system.A.δ[] = 1.0
-system.A.δT[] = 1.0
+excitation = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [0.8], [VectorValue(-1.0, 0.0, 0.0)])
+extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
 
-function build_blockmatrix(problem)
-    nd, ne, nσ = EPMAfem.n_sums(problem)
-    T = EPMAfem.base_type(problem.arch)
-    coeff_a = [Ref(zero(T)) for _ in 1:ne]
-    coeff_c = [[Ref(zero(T)) for _ in 1:nσ] for _ in 1:ne]
-    coeff_b = [Ref(zero(T)) for _ in 1:nd]
+discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cpu())[1]
+discrete_extr = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cpu())[1].vector
 
-    lz = EPMAfem.lazy
+sol = system * discrete_rhs;
+solm1 = systemm1 * discrete_rhs;
+sol2 = system2 * discrete_rhs;
+sol3 = system3 * discrete_rhs;
+sol4 = system4 * discrete_rhs;
+sol5 = system5 * discrete_rhs;
 
-    ρp = lz.(problem.space_discretization.ρp)
-    ρm = lz.(problem.space_discretization.ρm)
-    ∇pm = lz.(problem.space_discretization.∇pm)
-    ∂p = lz.(problem.space_discretization.∂p)
+@time discrete_extr * (system * discrete_rhs)
+@btime discrete_extr * (systemm1 * discrete_rhs)
+@time discrete_extr * (system2 * discrete_rhs)
+@time discrete_extr * (system3 * discrete_rhs)
+@btime discrete_extr * (system4 * discrete_rhs)
+@profview @btime discrete_extr * (system5 * discrete_rhs)
 
-    Ip = lz(problem.direction_discretization.Ip)
-    Im = lz(problem.direction_discretization.Im)
-    kp = [lz.(problem.direction_discretization.kp[i]) for i in 1:ne]
-    km = [lz.(problem.direction_discretization.km[i]) for i in 1:ne]
+@gif for ((i1, ψ1), (i2, ψ2), (i3, ψ3), (i4, ψ4), (i5, ψ5)) in zip(sol, sol2, sol3, sol4, sol5)
+    ψp1, ψm1 = EPMAfem.pmview(ψ1, model)
+    func1 = EPMAfem.SpaceModels.interpolable(ψp1[:, 1] |> collect, EPMAfem.space_model(model))
+    # p1 = heatmap(-1.0:0.01:0, -1:0.01:1, func1.interp, swapxy=true, aspect_ratio=:equal)
+    p1 = plot(-1.0:0.01:0, func1.interp, swapxy=true, aspect_ratio=:equal)
 
-    Ωpm = lz.(identity.(problem.direction_discretization.Ωpm))
-    absΩp = lz.(identity.(problem.direction_discretization.absΩp))
+    ψp2, ψm2 = EPMAfem.pmview(ψ2, model)
+    func2 = EPMAfem.SpaceModels.interpolable(ψp2[:, 1] |> collect, EPMAfem.space_model(model))
+    p2 = plot(-1.0:0.01:0, func2.interp, swapxy=true, aspect_ratio=:equal)
 
+    ψp3, ψm3 = EPMAfem.pmview(ψ3, model)
+    func3 = EPMAfem.SpaceModels.interpolable(ψp3[:, 1] |> collect, EPMAfem.space_model(model))
+    p3 = plot(-1.0:0.01:0, func3.interp, swapxy=true, aspect_ratio=:equal)
 
-    U = lz(rand(size(ρp[1], 1), 10))
-    Ut = transpose(U)
-    V = lz(rand(size(Ip, 1), 10))
-    Vt = transpose(V)
+    ψp4, ψm4 = EPMAfem.pmview(ψ4, model)
+    func4 = EPMAfem.SpaceModels.interpolable(ψp4[:, 1] |> collect, EPMAfem.space_model(model))
+    p4 = plot(-1.0:0.01:0, func4.interp, swapxy=true, aspect_ratio=:equal)
 
-    kron_aXb(A, B) = kron_AXB(B, A)
-    m(A) = EPMAfem.materialize(A)
-    c(A) = EPMAfem.cache(A)
-
-    A = sum(kron_aXb(c(Ut*∂p[i]*U), c(Vt*absΩp[i]*V)) for i in 1:nd) + sum(kron_aXb(c(Ut*ρp[i]*U), c(Vt*(coeff_a[i]*Ip + sum(coeff_c[i][j]*kp[i][j] for j in 1:nσ))*V)) for i in 1:ne)
-    C = sum(kron_aXb(ρm[i], m(coeff_a[i]*Im + sum(coeff_c[i][j]*km[i][j] for j in 1:nσ))) for i in 1:ne)
-    B = transpose(sum(kron_aXb(Ut*∇pm[i], Ωpm[i]*V) for i in 1:nd))
-
-    # A = sum(kron_aXb(∂p[i], absΩp[i]) for i in 1:nd) + sum(kron_aXb(ρp[i], coeff_a[i]*Ip + sum(coeff_c[i][j]*kp[i][j] for j in 1:nσ)) for i in 1:ne)
-    # C = sum(kron_aXb(ρm[i], coeff_a[i]*Im + sum(coeff_c[i][j]*km[i][j] for j in 1:nσ)) for i in 1:ne)
-    # B = transpose(sum(kron_aXb(∇pm[i], Ωpm[i]) for i in 1:nd))
-    return EPMAfem.blockmatrix(A, B, C), (a=coeff_a, b=coeff_b, c=coeff_c)
+    ψp5, ψm5 = EPMAfem.pmview(ψ5, model)
+    func5 = EPMAfem.SpaceModels.interpolable(ψp5[:, 1] |> collect, EPMAfem.space_model(model))
+    p5 = plot(-1.0:0.01:0, func5.interp, swapxy=true, aspect_ratio=:equal)
+    plot(p1, p2, p3, p4, p5)
 end
 
-B, coeffs = build_blockmatrix(problem)
+BM = unlazy(BMl)
+system = EPMAfem.implicit_midpoint(problem, EPMAfem.PNKrylovMinresSolver)
+system.A.sym[] = false
+nd, ne, nσ = EPMAfem.n_sums(problem)
 
 for i in 1:ne
     system.coeffs.a[i] = rand()
@@ -80,57 +83,11 @@ for i in 1:ne
     end
 end
 
+x = rand(size(BM, 2))
+y1 = rand(size(BM, 1))
+y2 = rand(size(BM, 1))
 
-function lazy_kron!(Y, A, B, X, temp)
-    X_r = reshape(X, 100, 100, 500)
-    Y_r = reshape(Y, 100, 100, 500)
-    for i in 1:500
-        mul!(temp, @view(X_r[:, :, i]), transpose(A))
-        mul!(@view(Y_r[:, :, i]), B, temp)
-        # Y_r[:, :, i] .= B * X_r[:, :, i] * transpose(A)
-    end
-end
+@time mul!(y1, system.A, x);
+@time mul!(y2, BM, x);
 
-A = sprand(100, 100, 0.05)
-B = sprand(100, 100, 0.05)
-
-AkronB = kron(A, B)
-
-X = rand(100*100, 500)
-Y1 = zeros(100*100, 500)
-Y2 = zeros(100*100, 500)
-
-temp = zeros(100, 100)
-
-mul!(Y1, AkronB, X)
-lazy_kron!(Y2, A, B, X, temp)
-
-using BenchmarkTools
-
-@profview @benchmark mul!($Y1, $AkronB, $X)
-@profview @benchmark lazy_kron!($Y2, $A, $B, $X, $temp)
-
-Y1 ≈ Y2
-
-maximum(abs.(Y .- AkronB*X))
-
-A = sprand(100, 100, 0.02)
-B = Diagonal(rand(100))
-
-AL = lazy(A)
-BL = lazy(B)
-
-X = rand(10000, 30)
-Y1 = rand(10000, 30)
-Y2 = rand(10000, 30)
-
-KL = kron(lazy(A), lazy(B))
-KL2 = kron(lazy(Matrix(A)), lazy(Matrix(B)))
-
-ws = EPMAfem.create_workspace(EPMAfem.required_workspace(EPMAfem.mul_with!, KL), zeros)
-@benchmark EPMAfem.mul_with!(ws, Y1, transpose(KL), X, true, false)
-@benchmark EPMAfem.mul_with!(ws, Y1, transpose(KL2), X, true, false)
-Kd = transpose(kron(A, B))
-@benchmark mul!(Y2, Kd, X)
-
-Y2 ≈ Y1
+y1 ≈ y2

@@ -16,20 +16,27 @@ B(BM::BlockMatrix) = BM.args[2]
 C(BM::BlockMatrix) = BM.args[3]
 D(BM::BlockMatrix) = BM.args[4]
 
-block_size(BM::BlockMatrix) = (
+A(BMt::Transpose{T, <:BlockMatrix{T}}) where T = transpose(A(parent(BMt)))
+B(BMt::Transpose{T, <:BlockMatrix{T}}) where T = transpose(C(parent(BMt)))
+C(BMt::Transpose{T, <:BlockMatrix{T}}) where T = transpose(B(parent(BMt)))
+D(BMt::Transpose{T, <:BlockMatrix{T}}) where T = transpose(D(parent(BMt)))
+
+block_size(BM::Union{BlockMatrix, Transpose{T, <:BlockMatrix{T}}}) where T = (
     only_unique((size(A(BM), 1), size(A(BM), 2), size(B(BM), 1), size(C(BM), 2))), 
     only_unique((size(D(BM), 1), size(D(BM), 2), size(B(BM), 2), size(C(BM), 1)))
 )
 
 # may be weaker
-max_block_size(BM::BlockMatrix) = (
+max_block_size(BM::Union{BlockMatrix, Transpose{T, <:BlockMatrix{T}}}) where T = (
     only_unique((max_size(A(BM), 1), max_size(A(BM), 2), max_size(B(BM), 1), max_size(C(BM), 2))), 
     only_unique((max_size(D(BM), 1), max_size(D(BM), 2), max_size(B(BM), 2), max_size(C(BM), 1)))
 )
 
+blocks(BM::Union{BlockMatrix, Transpose{T, <:BlockMatrix{T}}}) where T = A(BM), B(BM), C(BM), D(BM)
+
 duplicate(x) = (x, x)
 Base.size(BM::BlockMatrix) = duplicate(sum(block_size(BM)))
-max_size(BM::BlockMatrix) = duplicate(sum(max_block_size(BM)))
+max_size(BM::Union{BlockMatrix, Transpose{T, <:BlockMatrix{T}}}) where T = duplicate(sum(max_block_size(BM)))
 isdiagonal(BM::BlockMatrix) = false # would need B === 0
 
 function lazy_getindex(BM::BlockMatrix, i::Int, j::Int)
@@ -91,52 +98,37 @@ const InplaceInverseMatrix{T} = LazyOpMatrix{T, typeof(LinearAlgebra.inv!), <:Tu
 @inline A(I::InplaceInverseMatrix) = first(I.args)
 Base.size(I::InplaceInverseMatrix) = size(A(I))
 max_size(I::InplaceInverseMatrix) = max_size(A(I))
-lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{<:Integer}) = undef
+lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{<:Integer}) = NaN
 @inline isdiagonal(I::InplaceInverseMatrix) = isdiagonal(A(I))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, I::InplaceInverseMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    A_mat, rem = materialize_with(ws, materialize(A(I)), nothing)
+    skeleton, rem = structured_from_ws(ws, A(I))
+    A_mat, rem = materialize_with(rem, A(I), skeleton)
     I_mat = LinearAlgebra.inv!(A_mat)
     mul!(Y, I_mat, X, α, β)
 end
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:InplaceInverseMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
-    At_mat, rem = materialize_with(ws, materialize(A(parent(It))), nothing)
+    skeleton, rem = structured_from_ws(ws, A(parent(It)))
+    At_mat, rem = materialize_with(rem, A(parent(It)), skeleton)
     It_mat = LinearAlgebra.inv!(At_mat)
     mul!(Y, It_mat, X, α, β)
 end
 
-function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, I::InplaceInverseMatrix, α::Number, β::Number)
-    A_mat, rem = materialize_with(ws, materialize(A(I)), nothing)
-    I_mat = LinearAlgebra.inv!(A_mat)
-    mul!(Y, X, I_mat, α, β)
-end
-
-function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, It::Transpose{T, <:InplaceInverseMatrix{T}}, α::Number, β::Number) where T
-    At_mat, rem = materialize_with(ws, materialize(A(parent(It))), nothing)
-    It_mat = LinearAlgebra.inv!(At_mat)
-    mul!(Y, X, It_mat, α, β)
-end
-
-required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_workspace(materialize_with, materialize(A(I)))
+required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_workspace(structured_from_ws, A(I)) + required_workspace(materialize_with, materialize(A(I)))
 
 function materialize_with(ws::Workspace, I::InplaceInverseMatrix, ::Nothing)
-    A_mat, rem = materialize_with(ws, materialize(A(I)), nothing)
-    A_mat = inv!(A_mat)
+    skeleton, rem = structured_from_ws(ws, A(I))
+    A_mat, rem = materialize_with(rem, A(I), skeleton)
+    A_mat = LinearAlgebra.inv!(A_mat)
     return A_mat, rem
 end
 
-function materialize_with(ws::Workspace, S::InplaceInverseMatrix, skeleton::AbstractMatrix)
-    A_mat, _ = materialize_with(ws, materialize(A(S)), skeleton)
-    skeleton .= a(S) .* A_mat
+function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::AbstractMatrix)
+    skeleton2, rem = structured_from_ws(ws, A(I))
+    A_mat, _ = materialize_with(rem, materialize(A(I)), skeleton2)
+    skeleton .= LinearAlgebra.inv!(A_mat)
     return skeleton, ws
 end
 
-required_workspace(::typeof(materialize_with), I::InplaceInverseMatrix) = required_workspace(materialize_with, A(S))
-
-function schur_complement(BM::BlockMatrix)
-    D⁻¹ = lazy(LinearAlgebra.inv!, D(BM))
-    BD⁻¹C = lazy(*, B(BM), D⁻¹, C(BM))
-    mBD⁻¹C = lazy(*, Ref(-one(eltype(BM))), BD⁻¹C)
-    return lazy(+, A(BM), mBD⁻¹C)
-end
+required_workspace(::typeof(materialize_with), I::InplaceInverseMatrix) = required_workspace(structured_from_ws, A(I)) + required_workspace(materialize_with, A(I))

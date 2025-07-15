@@ -70,6 +70,14 @@ function structured_from_ws(ws::Workspace, L::AbstractMatrix)
     end
 end
 
+function required_workspace(::typeof(structured_from_ws), A::AbstractMatrix)
+    return prod(size(A))
+end
+
+function required_workspace(::typeof(structured_from_ws), A::Diagonal)
+    return only_unique(size(A))
+end
+
 function required_workspace(::typeof(structured_from_ws), L::AbstractLazyMatrix)
     if isdiagonal(L) #  we only track diagonal (thats the only thing we will need this for, not general though..)
         return only_unique(max_size(L))
@@ -85,3 +93,9 @@ end
 
 required_workspace(::typeof(structured_from_ws), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(structured_from_ws, parent(Lt))
 
+function invalidate_cache!(ws::Workspace)
+    for (_, val) in ws.cache
+        valid, _ = val
+        valid[] = false
+    end
+end
