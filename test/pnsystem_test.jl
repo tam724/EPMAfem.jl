@@ -194,7 +194,6 @@ end
     @test transpose(BM) \ x ≈ unlazy(BMlt_minres) * x
 end
 
-
 @testset "KrylovGmresMatrix" begin
     A = rand(2, 2)
     D = rand(2, 2)
@@ -218,7 +217,6 @@ end
     @test BM \ x ≈ unlazy(BMl_gmres) * x
     @test transpose(BM) \ x ≈ unlazy(BMlt_gmres) * x
 end
-
 @testset "InverseMatrix" begin
     A = rand(3, 3) 
     Z = rand(3, 3) 
@@ -245,7 +243,6 @@ end
     @test K \ x ≈ unlazy(K⁻¹l) * x
     @test transpose(K) \ x ≈ unlazy(transpose(K⁻¹l)) * x
 end
-
 @testset "InverseMatrix" begin
     A = rand(3, 3) 
     Z = rand(3, 3) 

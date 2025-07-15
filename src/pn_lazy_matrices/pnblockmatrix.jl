@@ -95,28 +95,21 @@ required_workspace(::typeof(materialize_with), BM::BlockMatrix) = Inf
 ### INPLACE INV MATRIX
 const InplaceInverseMatrix{T} = LazyOpMatrix{T, typeof(LinearAlgebra.inv!), <:Tuple{<:AbstractMatrix}}
 
-@inline A(I::InplaceInverseMatrix) = first(I.args)
+@inline A(I::InplaceInverseMatrix) = only(I.args)
 Base.size(I::InplaceInverseMatrix) = size(A(I))
 max_size(I::InplaceInverseMatrix) = max_size(A(I))
 lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{<:Integer}) = NaN
 @inline isdiagonal(I::InplaceInverseMatrix) = isdiagonal(A(I))
+LinearAlgebra.transpose(I::InplaceInverseMatrix) = lazy(LinearAlgebra.inv!, transpose(A(I)))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, I::InplaceInverseMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    skeleton, rem = structured_from_ws(ws, A(I))
-    A_mat, rem = materialize_with(rem, A(I), skeleton)
-    I_mat = LinearAlgebra.inv!(A_mat)
-    mul!(Y, I_mat, X, α, β)
+    A_mat, _ = materialize_with(ws, materialize(A(I)), nothing)
+    @assert !β
+    @assert α
+    ldiv!(Y, A_mat, X)
 end
 
-function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:InplaceInverseMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
-    skeleton, rem = structured_from_ws(ws, A(parent(It)))
-    At_mat, rem = materialize_with(rem, A(parent(It)), skeleton)
-    It_mat = LinearAlgebra.inv!(At_mat)
-    mul!(Y, It_mat, X, α, β)
-end
-
-# here we have to copy the inner matrix, hence we mimic the materializedmatrix
-required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_workspace(structured_from_ws, A(I)) + required_workspace(materialize_with, materialize(A(I)))
+required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_workspace(materialize_with, materialize(A(I)))
 
 function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::AbstractMatrix)
     A_mat, _ = materialize_with(ws, A(I), skeleton)
