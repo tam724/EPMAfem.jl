@@ -48,16 +48,6 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Tran
 end
 required_workspace(::typeof(mul_with!), S::SumMatrix) = maximum(required_workspace(mul_with!, A) for A in As(S))
 
-function materialize_with(ws::Workspace, S::SumMatrix, ::Nothing)
-    # what we do here is to wrap every component into a lazy(materialize, ) and then materialize the full matrix
-    S_mat, rem = structured_from_ws(ws, S)
-    S_mat .= zero(eltype(S_mat))
-    for A in As(S)
-        A_mat, _ = materialize_with(rem, materialize(A), nothing)
-        S_mat .+= A_mat
-    end
-    return S_mat, rem
-end
 function materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix)
     # what we do here is to wrap every component into a lazy(materialize, ) and then materialize the full matrix
     skeleton .= zero(eltype(skeleton))

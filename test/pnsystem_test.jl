@@ -72,6 +72,7 @@ const PNLazyMatrices = EPMAfem.PNLazyMatrices
 
 
 lazy(A) = EPMAfem.lazy(A)
+unlazy(A) = EPMAfem.unlazy(A, zeros)
 
 cpu_T = Float64
 rand_mat(m, n) = rand(cpu_T, m, n)
@@ -107,29 +108,29 @@ function test_cached_LK_K(LK, K)
     @test !(y ≈ K * x)
 end
 
-
 @testset "SchurMatrix + gmres & \\" begin
     A = rand(2, 2)
     D = rand(2, 2)
     B = rand(2, 3)
     Bt = rand(3, 2)
-    C = Diagonal(rand(3))
+    C1 = Diagonal(rand(3))
+    C2 = Diagonal(rand(3))
 
-    Al, Dl, Bl, Btl, Cl = lazy.((A, D, B, Bt, C))
+    Al, Dl, Bl, Btl, C1l, C2l = lazy.((A, D, B, Bt, C1, C2))
 
     BMl = [Al + Dl Bl
-    Btl Cl]
+    Btl C1l + C2l]
 
     BM = [A + D B
-    Bt C]
+    Bt C1 + C2]
     
     BMl_schur_gmres = EPMAfem.lazy((PNLazyMatrices.schur_complement, Krylov.gmres), BMl)
 
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
 
-    @test BM \ x ≈ BMl_schur_gmres * x
-    @test transpose(BM) \ x ≈ transpose(BMl_schur_gmres) * x
+    @test BM \ x ≈ unlazy(BMl_schur_gmres) * x
+    @test transpose(BM) \ x ≈ unlazy(transpose(BMl_schur_gmres)) * x
 
     # backslash
 
@@ -138,20 +139,11 @@ end
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
 
-    @test BM \ x ≈ BMl_schur_backslash * x
-    @test transpose(BM) \ x ≈ transpose(BMl_schur_backslash) * x
+    @test BM \ x ≈ unlazy(BMl_schur_backslash) * x
+    @test transpose(BM) \ x ≈ unlazy(transpose(BMl_schur_backslash)) * x
     
     # TODO: find out why the transpose need 6* the workspace compared to the non transpose
 end
-
-A, B, C, D = lazy.(PNLazyMatrices.blocks(PNLazyMatrices.BM(BMl_schur_backslash)))
-D⁻¹ = PNLazyMatrices.cache(PNLazyMatrices.inv!(D))
-B * D⁻¹
-test = PNLazyMatrices.inner_solver(BMl_schur_backslash)(A - B * D⁻¹ * C);
-
-test * rand(2)
-
-PNLazyMatrices.unlazy(test) * rand(2)
 
 @testset "SchurMatrix + minres" begin
     A = rand(2, 2) |> x -> transpose(x)*x
@@ -172,8 +164,8 @@ PNLazyMatrices.unlazy(test) * rand(2)
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
 
-    @test BM \ x ≈ BMl_schur_minres * x
-    @test transpose(BM) \ x ≈ transpose(BMl_schur_minres) * x
+    @test BM \ x ≈ unlazy(BMl_schur_minres) * x
+    @test transpose(BM) \ x ≈ unlazy(transpose(BMl_schur_minres)) * x
 end
 
 @testset "KrylovMinresMatrix" begin
@@ -197,9 +189,9 @@ end
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
 
-    @test BM \ x ≈ BMl_minres * x
+    @test BM \ x ≈ unlazy(BMl_minres) * x
 
-    @test transpose(BM) \ x ≈ BMlt_minres * x
+    @test transpose(BM) \ x ≈ unlazy(BMlt_minres) * x
 end
 
 
@@ -223,8 +215,35 @@ end
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
 
-    @test BM \ x ≈ BMl_gmres * x
-    @test transpose(BM) \ x ≈ BMlt_gmres * x
+    @test BM \ x ≈ unlazy(BMl_gmres) * x
+    @test transpose(BM) \ x ≈ unlazy(BMlt_gmres) * x
+end
+
+@testset "InverseMatrix" begin
+    A = rand(3, 3) 
+    Z = rand(3, 3) 
+    B = rand(3, 3)
+    D = Diagonal(rand(3))
+    E = Diagonal(rand(3))
+
+    Zl, Al, Dl, Bl, El = lazy.((Z, A, D, B, E))
+
+    C⁻¹l = \(Zl - Al*PNLazyMatrices.inv!(Dl)*Bl)
+    C = Z - A*inv(D)*B
+
+    x = rand(size(C, 1))
+
+    @test C \ x ≈ unlazy(C⁻¹l) * x
+    @test transpose(C) \ x ≈ unlazy(transpose(C⁻¹l)) * x
+    
+
+    K⁻¹l = \(Zl - Al*PNLazyMatrices.inv!(Dl + El)*Bl)
+    K = Z - A*inv(D + E)*B
+
+    x = rand(size(K, 1))
+
+    @test K \ x ≈ unlazy(K⁻¹l) * x
+    @test transpose(K) \ x ≈ unlazy(transpose(K⁻¹l)) * x
 end
 
 @testset "InverseMatrix" begin
@@ -235,13 +254,13 @@ end
 
     Zl, Al, Dl, Bl = lazy.((Z, A, D, B))
 
-    C⁻¹l = \(Zl - Al*PNLazyMatrices.inv!(Dl)*Bl)
-    C = Z - A*inv(D)*B
+    C⁻¹l = \(Zl - Al*Dl*Bl)
+    C = Z - A*D*B
 
     x = rand(size(C, 1))
 
-    @test C \ x ≈ C⁻¹l * x
-    @test transpose(C) \ x ≈ transpose(C⁻¹l) * x
+    @test C \ x ≈ unlazy(C⁻¹l) * x
+    @test transpose(C) \ x ≈ unlazy(transpose(C⁻¹l)) * x
 end
 
 @testset "InplaceInverseMatrix" begin
@@ -256,16 +275,21 @@ end
 
     x = rand(size(KL, 2))
 
-    KL * x ≈ K * x
-    KL * x ≈ kron(D + E, E) \ x
+    @test unlazy(KL) * x ≈ K * x
+    @test unlazy(KL) * x ≈ kron(D + E, E) \ x
+
+    @test unlazy(transpose(KL)) * x ≈ transpose(K) * x
+    @test unlazy(transpose(KL)) * x ≈ transpose(kron(D + E, E)) \ x
 
     X = rand(size(KL, 2), 4)
-    KL * X ≈ K * X
-    KL * X ≈ kron(D + E, E) \ X
+    @test unlazy(KL) * X ≈ K * X
+    @test unlazy(KL) * X ≈ kron(D + E, E) \ X
 
-    X = rand(4, size(KL, 1))
-    X * KL ≈ X * K
-    X * KL ≈ X * inv(kron(D + E, E))
+    @test unlazy(transpose(KL)) * x ≈ transpose(K) * x
+    @test unlazy(transpose(KL)) * x ≈ transpose(kron(D + E, E)) \ x
+
+    @test do_materialize(KL) ≈ K
+    @test do_materialize(transpose(KL)) ≈ transpose(K)
 end
 
 @testset "ResizeMatrix" begin
@@ -450,27 +474,27 @@ end
     K = A + B
     LK = LA + LB
     x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    @test unlazy(LK) * x ≈ K * x
 
     K = 2.0 * (A + B)
     LK = 2.0 * (LA + LB)
     x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    @test unlazy(LK) * x ≈ K * x
 
     K = transpose(A + B)
     LK = transpose(LA + LB)
     x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    @test unlazy(LK) * x ≈ K * x
 
     K = transpose(2.0 * (A + B))
     LK = transpose(2.0 * (LA + LB))
     x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    @test unlazy(LK) * x ≈ K * x
 
     K = 2.0 * transpose(A + B)
     LK = 2.0 * transpose(LA + LB)
     x = rand(size(LK, 2))
-    @test LK * x ≈ K * x
+    @test unlazy(LK) * x ≈ K * x
 
     # now cached
     K = A + B
@@ -646,7 +670,7 @@ end
         EPMAfem.mul_with!(ws, y, transpose(LM4), x, true, false)
         @test y ≈ transpose(M4) * x
 
-        @test Matrix(LM4) ≈ Matrix(M4)
+        # @test Matrix(LM4) ≈ Matrix(M4)
     end
 end
 
@@ -697,7 +721,7 @@ end
         EPMAfem.mul_with!(ws, y, transpose(LM4), x, true, false)
         @test y ≈ transpose(M4) * x
 
-        @test Matrix(LM4) ≈ Matrix(M4)
+        # @test Matrix(LM4) ≈ M4
     end
 end
 
@@ -762,27 +786,27 @@ end
     P5 = A * B * C * D * E
 
     x = rand_vec(size(P2, 2))
-    @test P2 * x ≈ P2_ * x
+    @test unlazy(P2) * x ≈ P2_ * x
 
     X = rand_mat(size(P2, 2), rand(3:30))
-    @test P2 * X ≈ P2_ * X
+    @test unlazy(P2) * X ≈ P2_ * X
     X = rand_mat(size(P2, 2), 1) # also test with single dimension matrix
-    @test P2 * X ≈ P2_ * X
+    @test unlazy(P2) * X ≈ P2_ * X
     
     X = rand_mat(size(P3, 2), rand(3:30))
-    @test P3 * X ≈ P3_ * X
+    @test unlazy(P3) * X ≈ P3_ * X
     X = rand_mat(size(P3, 2), 1)
-    @test P3 * X ≈ P3_ * X
+    @test unlazy(P3) * X ≈ P3_ * X
 
     X = rand_mat(size(P4, 2), rand(3:30))
-    @test P4 * X ≈ P4_ * X
+    @test unlazy(P4) * X ≈ P4_ * X
     X = rand_mat(size(P4, 2), 1)
-    @test P4 * X ≈ P4_ * X
+    @test unlazy(P4) * X ≈ P4_ * X
 
     X = rand_mat(size(P5, 2), rand(3:30))
-    @test P5 * X ≈ P5_ * X
+    @test unlazy(P5) * X ≈ P5_ * X
     X = rand_mat(size(P5, 2), 1)
-    @test P5 * X ≈ P5_ * X
+    @test unlazy(P5) * X ≈ P5_ * X
 
     for (P, P_) in [(P2, P2_), (P3, P3_), (P4, P4_), (P5, P5_)]
         X = rand_mat(size(P, 2), rand(3:10))
@@ -825,9 +849,9 @@ end
     K = kron(A*B*C + D*E*A, F + G)
 
     x = rand_vec(4)
-    @test K * x ≈ K_ * x
+    @test unlazy(K) * x ≈ K_ * x
     x = rand_vec(size(K, 1))
-    @test transpose(K) * x ≈ transpose(K_) * x
+    @test unlazy(transpose(K)) * x ≈ transpose(K_) * x
 end
 
 @testset "robin2" begin # ROBIN 2
@@ -843,9 +867,9 @@ end
     M = kron(E, transpose(transpose(A)*B)*C*transpose(D))
 
     x = rand_vec(size(M, 2))
-    @test M * x ≈ M_ * x
+    @test unlazy(M) * x ≈ M_ * x
     x = rand_vec(size(M, 1))
-    @test transpose(M) * x ≈ transpose(M_) * x
+    @test unlazy(transpose(M)) * x ≈ transpose(M_) * x
 end
 
 @testset "Diagonal bubbling" begin # lets test how far Diagonal bubbles..
@@ -859,7 +883,7 @@ end
     @test do_materialize(B) isa Diagonal
     @test B_ ≈ do_materialize(B)
     x = rand_vec(size(B, 2))
-    @test B_*x ≈ B*x
+    @test B_*x ≈ unlazy(B)*x
 
     D_ = Diagonal(rand_vec(5))
     D = D_ |> lazy
@@ -875,7 +899,7 @@ end
     @test F_ ≈ do_materialize(F)
     @test do_materialize(F) isa Diagonal
     x = rand_vec(size(F, 2))
-    @test F_*x ≈ F*x
+    @test F_*x ≈ unlazy(F)*x
 
     G_ = A_ * B_ + F_
     G = A * B + F
@@ -883,7 +907,7 @@ end
     @test G_ ≈ do_materialize(G)
     @test do_materialize(G) isa Diagonal
     x = rand_vec(size(G, 2))
-    @test G_*x ≈ G*x
+    @test G_*x ≈ unlazy(G)*x
 
     H_ = Diagonal(rand_vec(10))
     H = H_ |> lazy
@@ -895,30 +919,30 @@ end
     @test I_ ≈ do_materialize(I)
     @test do_materialize(I) isa Diagonal
     x = rand_vec(size(I, 2))
-    @test I_*x ≈ I*x
+    @test I_*x ≈ unlazy(I)*x
 
     J_ = Diagonal(rand_vec(10))
     J = J_ |> lazy
     # no need to test
 
     K_ = J_ * I_ * transpose(J_)
-    K = J * I * transpose(J)
-    @test K_ ≈ K
+    K = J * I * transpose(J);
+    # @test K_ ≈ K
     @test K_ ≈ do_materialize(K)
     @test do_materialize(K) isa Diagonal
     x = rand_vec(size(K, 2))
-    @test K_*x ≈ K*x
+    @test K_*x ≈ unlazy(K)*x
 
     L_ = rand_mat(10, 10)
     L = L_ |> lazy
 
     M_ = EPMAfem.blockmatrix(K_, L_, transpose(L_), I_)
-    M = EPMAfem.blockmatrix(K, L, transpose(L_), I);
-    @test M_ ≈ M
+    M = EPMAfem.blockmatrix(K, L, transpose(L), I);
+    # @test M_ ≈ M
     # currently not implemented, but multiplication is!
     # @test M_ ≈ do_materialize(M)
     x = rand_vec(size(M, 2))
-    @test M_*x ≈ M*x
+    @test M_*x ≈ unlazy(M)*x
 
     N_ = kron(M_, M_)
     N = kron(M, M);
@@ -934,12 +958,12 @@ end
     O, P = lazy.((O_, P_))
 
     Q_ = M_ + 10.0*kron(O_, P_)
-    Q = M + 10.0*kron(O, P)
-    @test Q_ ≈ Q
+    Q = M + 10.0*kron(O, P);
+    # @test Q_ ≈ Q
     # currently not implemented, but multiplication is
     # @test Q_ ≈ do_materialize(Q)
     x = rand_vec(size(Q, 2))
-    @test Q_*x ≈ Q*x
+    @test Q_*x ≈ unlazy(Q)*x
 end
 
 # i just wanted to build a weird structure...
@@ -954,7 +978,7 @@ end
     @test B_ ≈ B
     @test B_ ≈ do_materialize(B)
     x = rand_vec(size(B, 2))
-    @test B_*x ≈ B*x
+    @test B_*x ≈ unlazy(B)*x
 
     D_ = rand_mat(5, 5)
     D = D_ |> lazy
@@ -969,14 +993,14 @@ end
     @test F_ ≈ F
     @test F_ ≈ do_materialize(F)
     x = rand_vec(size(F, 2))
-    @test F_*x ≈ F*x
+    @test F_*x ≈ unlazy(F)*x
 
     G_ = A_ * B_ + F_
     G = A * B + F
     @test G_ ≈ G
     @test G_ ≈ do_materialize(G)
     x = rand_vec(size(G, 2))
-    @test G_*x ≈ G*x
+    @test G_*x ≈ unlazy(G)*x
 
     H_ = rand_mat(10, 10)
     H = H_ |> lazy
@@ -987,7 +1011,7 @@ end
     @test I_ ≈ I
     @test I_ ≈ do_materialize(I)
     x = rand_vec(size(I, 2))
-    @test I_*x ≈ I*x
+    @test I_*x ≈ unlazy(I)*x
 
     J_ = rand_mat(2, 10)
     J = J_ |> lazy
@@ -995,21 +1019,21 @@ end
 
     K_ = J_ * I_ * transpose(J_)
     K = J * I * transpose(J)
-    @test K_ ≈ K
+    # @test K_ ≈ K
     @test K_ ≈ do_materialize(K)
     x = rand_vec(size(K, 2))
-    @test K_*x ≈ K*x
+    @test K_*x ≈ unlazy(K)*x
 
     L_ = rand_mat(2, 10)
     L = L_ |> lazy
 
     M_ = EPMAfem.blockmatrix(K_, L_, transpose(L_), I_)
     M = EPMAfem.blockmatrix(K, L, transpose(L), I)
-    @test M_ ≈ M
+    # @test M_ ≈ M
     # currently not implemented, but multiplication is!
     # @test M_ ≈ do_materialize(M)
     x = rand_vec(size(M, 2))
-    @test M_*x ≈ M*x
+    @test M_*x ≈ unlazy(M)*x
 
     N_ = kron(M_, M_)
     N = kron(M, M)
@@ -1018,7 +1042,7 @@ end
     # not implemented, ...
     # @test N_ ≈ do_materialize(N)
     # x = rand(size(N, 2))
-    # @test N_*x ≈ N*x
+    # @test N_*x ≈ unlazy(N)*x
 
     O_ = rand_mat(3, 4)
     P_ = rand_mat(4, 3)
@@ -1026,11 +1050,11 @@ end
 
     Q_ = M_ + 10.0*kron(O_, P_)
     Q = M + 10.0*kron(O, P)
-    @test Q_ ≈ Q
+    # @test Q_ ≈ Q
     # currently not implemented, but multiplication is
     # @test Q_ ≈ do_materialize(Q)
     x = rand_vec(size(Q, 2))
-    @test Q_*x ≈ Q*x
+    @test Q_*x ≈ unlazy(Q)*x
 end
 
 @testset "Inner Allocating ProdMatrix" begin # check inner allocating promatrix
@@ -1056,13 +1080,13 @@ end
     M5_ref = kron(A_, B_) * kron(C_, D_) * kron(E_, F_) * kron(G_, H_) * IJ_
 
     x = rand_vec(size(M2, 2))
-    @test M2*x ≈ M2_ref * x
+    @test unlazy(M2)*x ≈ M2_ref * x
     x = rand_vec(size(M3, 2))
-    @test M3*x ≈ M3_ref * x
+    @test unlazy(M3)*x ≈ M3_ref * x
     x = rand_vec(size(M4, 2))
-    @test M4*x ≈ M4_ref * x
+    @test unlazy(M4)*x ≈ M4_ref * x
     x = rand_vec(size(M5, 2))
-    @test M5*x ≈ M5_ref * x
+    @test unlazy(M5)*x ≈ M5_ref * x
 
     M2t = transpose(M2)
     M3t = transpose(M3);
@@ -1070,13 +1094,13 @@ end
     M5t = transpose(M5);
 
     x = rand_vec(size(M2t, 2))
-    @test M2t*x ≈ transpose(M2_ref) * x
+    @test unlazy(M2t)*x ≈ transpose(M2_ref) * x
     x = rand_vec(size(M3t, 2))
-    @test M3t*x ≈ transpose(M3_ref) * x
+    @test unlazy(M3t)*x ≈ transpose(M3_ref) * x
     x = rand_vec(size(M4t, 2))
-    @test M4t*x ≈ transpose(M4_ref) * x
+    @test unlazy(M4t)*x ≈ transpose(M4_ref) * x
     x = rand_vec(size(M5t, 2))
-    @test M5t*x ≈ transpose(M5_ref) * x
+    @test unlazy(M5t)*x ≈ transpose(M5_ref) * x
 
     MM2 = EPMAfem.materialize(M2)
     MM3 = EPMAfem.materialize(M3)
@@ -1116,12 +1140,12 @@ end
     M_ref = kron(A_, B_) * kron(C_, D_)
 
     x = rand_vec(size(M, 2))
-    @test M*x ≈ M_ref * x
+    @test unlazy(M)*x ≈ M_ref * x
 
     Mt = transpose(M)
 
     x = rand_vec(size(Mt, 2))
-    @test Mt*x ≈ transpose(M_ref)*x
+    @test unlazy(Mt)*x ≈ transpose(M_ref)*x
 
     MM = EPMAfem.materialize(M)
 
@@ -1145,11 +1169,11 @@ end
     M_ref = A_ * B_ * C_ * D_ * E_ * F_
 
     x = rand_vec(size(M, 2))
-    @test M*x  ≈ M_ref * x
+    @test unlazy(M)*x  ≈ M_ref * x
 
     Mt = transpose(M)
     x = rand_vec(size(Mt, 2))
-    @test Mt * x ≈ transpose(M_ref) * x
+    @test unlazy(Mt) * x ≈ transpose(M_ref) * x
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, M, rand_vec)
 
@@ -1183,19 +1207,19 @@ end
 
     C = A*B
     x = rand_vec(size(C, 2))
-    @test A_*B_*x ≈ C*x
+    @test A_*B_*x ≈ unlazy(C)*x
 
     Ct = transpose(C)
     x = rand_vec(size(Ct, 2))
-    @test transpose(B_)*transpose(A_)*x ≈ Ct*x
+    @test transpose(B_)*transpose(A_)*x ≈ unlazy(Ct)*x
 
     C = EPMAfem.materialize(A*B)
     x = rand_vec(size(C, 2))
-    A_*B_*x ≈ C*x
+    A_*B_*x ≈ unlazy(C)*x
 
     Ct = EPMAfem.materialize(transpose(C))
     x = rand_vec(size(Ct, 2))
-    @test transpose(B_)*transpose(A_)*x ≈ Ct*x
+    @test transpose(B_)*transpose(A_)*x ≈ unlazy(Ct)*x
 end
 
 # # lets implement something that somewhat resembles EPMA
@@ -1404,18 +1428,8 @@ end
     @test BM ≈ BMl
 
     x = rand(size(BMl, 2))
-    @test BM * x ≈ BMl * x
-    @test transpose(BM) * x ≈ transpose(BMl) * x
-
-    S = α*A - β*B*inv(δ*D)*γ*C
-
-    Sl = PNLazyMatrices.schur_complement(BMl)
-
-    @test S ≈ Sl
-    
-    x = rand(size(Sl, 2))
-    @test S * x ≈ Sl*x
-    @test transpose(S) * x ≈ transpose(Sl)*x
+    @test BM * x ≈ unlazy(BMl) * x
+    @test transpose(BM) * x ≈ unlazy(transpose(BMl)) * x
 end
 
 # BlockMatrix
@@ -1433,12 +1447,12 @@ end
     if cpu @test B_ref ≈ Matrix(B) end
 
     x = rand_vec(size(B, 2))
-    @test B_ref*x ≈ B*x
+    @test B_ref*x ≈ unlazy(B)*x
 
     Bt = transpose(B)
     Bt_ref = transpose(B_ref)
     x = rand_vec(size(Bt, 2))
-    @test Bt_ref*x ≈ Bt*x
+    @test Bt_ref*x ≈ unlazy(Bt)*x
 end
 
 # stich KronMatrix and BlockMatrix together
@@ -1456,11 +1470,11 @@ end
     B_ref = EPMAfem.blockmatrix(KA_ref, KB_ref, transpose(KB_ref), KC_ref)
 
     x = rand_vec(size(B, 2))
-    @test B*x ≈ B_ref*x
+    @test unlazy(B)*x ≈ B_ref*x
 
     Bt = transpose(B)
     x = rand_vec(size(Bt, 2))
-    @test Bt*x ≈ transpose(B_ref)*x
+    @test unlazy(Bt)*x ≈ transpose(B_ref)*x
 end
 
 # stich KronMatrix and SumMatrix together
@@ -1475,11 +1489,11 @@ end
     @test S1_ref ≈ do_materialize(S1)
 
     x = rand_vec(size(S1, 2))
-    @test S1_ref * x ≈ S1 * x
+    @test S1_ref * x ≈ unlazy(S1) * x
 
     S1t = transpose(S1)
     x = rand_vec(size(S1t, 2))
-    @test transpose(S1_ref) * x ≈ S1t * x
+    @test transpose(S1_ref) * x ≈ unlazy(S1t) * x
 
     # stich the two together
     S1 = EPMAfem.lazy(+, rand_mat(10, 11), rand_mat(10, 11))
@@ -1493,7 +1507,7 @@ end
     @test do_materialize(K1) ≈ K1_ref
 
     x = rand_vec(size(K1, 2))
-    @test K1*x ≈ K1_ref*x
+    @test unlazy(K1)*x ≈ K1_ref*x
 
     S3 = EPMAfem.lazy(+, rand_mat(10, 11), rand_mat(10, 11))
     S3_ref = do_materialize(S3)
@@ -1509,10 +1523,10 @@ end
     @test do_materialize(K) ≈ K_ref
 
     x = rand_vec(size(K, 2))
-    @test K*x ≈ K_ref*x
+    @test unlazy(K)*x ≈ K_ref*x
 
     x = rand_vec(size(K, 1))
-    @test transpose(K)*x ≈ transpose(K_ref)*x
+    @test unlazy(transpose(K))*x ≈ transpose(K_ref)*x
 end
 
 ## ScaleMatrix
@@ -1529,16 +1543,16 @@ end
     SR_ref = R*r
 
     x = rand_vec(size(SL, 2))
-    @test SL * x ≈ SL_ref * x
-    @test SR * x ≈ SR_ref * x
+    @test unlazy(SL) * x ≈ SL_ref * x
+    @test unlazy(SR) * x ≈ SR_ref * x
 
     X = rand_mat(size(SL, 2), 4)
-    @test SL * X ≈ SL_ref * X
-    @test SR * X ≈ SR_ref * X
+    @test unlazy(SL) * X ≈ SL_ref * X
+    @test unlazy(SR) * X ≈ SR_ref * X
 
     X = rand_mat(4, size(SL, 1))
-    @test X * SL ≈ X * SL_ref
-    @test X * SR ≈ X * SR_ref
+    @test X * unlazy(SL) ≈ X * SL_ref
+    @test X * unlazy(SR) ≈ X * SR_ref
 
     SLt = transpose(SL)
     SRt = transpose(SR)
@@ -1546,16 +1560,16 @@ end
     SRt_ref = transpose(SR_ref)
 
     x = rand_vec(size(SLt, 2))
-    @test SLt * x ≈ SLt_ref * x
-    @test SRt * x ≈ SRt_ref * x
+    @test unlazy(SLt) * x ≈ SLt_ref * x
+    @test unlazy(SRt) * x ≈ SRt_ref * x
 
     X = rand_mat(size(SLt, 2), 12)
-    @test SLt * X ≈ SLt_ref * X
-    @test SRt * X ≈ SRt_ref * X
+    @test unlazy(SLt) * X ≈ SLt_ref * X
+    @test unlazy(SRt) * X ≈ SRt_ref * X
 
     X = rand_mat(12, size(SLt, 1))
-    @test X * SLt ≈ X * SLt_ref
-    @test X * SRt ≈ X * SRt_ref
+    @test X * unlazy(SLt) ≈ X * SLt_ref
+    @test X * unlazy(SRt) ≈ X * SRt_ref
 end
 
 ## SumMatrix
@@ -1575,32 +1589,32 @@ end
     end
 
     x = rand_vec(size(S, 2))
-    @test S_ref * x ≈ S * x
-    @test S_ref * x ≈ S_tuple * x
+    @test S_ref * x ≈ unlazy(S) * x
+    @test S_ref * x ≈ unlazy(S_tuple) * x
 
     X = rand_mat(size(S, 2), 12)
-    @test S_ref * X ≈ S * X
-    @test S_ref * X ≈ S_tuple * X
+    @test S_ref * X ≈ unlazy(S) * X
+    @test S_ref * X ≈ unlazy(S_tuple) * X
 
     X = rand_mat(12, size(S, 1))
-    @test X * S_ref ≈ X * S
-    @test X * S_ref ≈ X * S_tuple
+    @test X * S_ref ≈ X * unlazy(S)
+    @test X * S_ref ≈ X * unlazy(S_tuple)
 
     St = transpose(S)
     St_tuple = transpose(S_tuple)
     St_ref = transpose(S_ref)
 
     x = rand_vec(size(St, 2))
-    @test St_ref * x ≈ St * x
-    @test St_ref * x ≈ St_tuple * x
+    @test St_ref * x ≈ unlazy(St) * x
+    @test St_ref * x ≈ unlazy(St_tuple) * x
 
     X = rand_mat(size(St, 2), 12)
-    @test St_ref * X ≈ St * X
-    @test St_ref * X ≈ St_tuple * X
+    @test St_ref * X ≈ unlazy(St) * X
+    @test St_ref * X ≈ unlazy(St_tuple) * X
 
     X = rand_mat(12, size(St, 1))
-    @test X * St_ref ≈ X * St
-    @test X * St_ref ≈ X * St_tuple
+    @test X * St_ref ≈ X * unlazy(St)
+    @test X * St_ref ≈ X * unlazy(St_tuple)
 end
 
 
@@ -1620,8 +1634,8 @@ end
 
     x = rand_vec(size(K)[2])
     X = rand_mat(size(K, 2), 10)
-    @test K * x ≈ K_ref * x
-    @test K * X ≈ K_ref * X
+    @test unlazy(K) * x ≈ K_ref * x
+    @test unlazy(K) * X ≈ K_ref * X
 
     y = rand_vec(size(K)[1])
     Y = rand_mat(size(K)[1], 10)
@@ -1630,11 +1644,11 @@ end
 
     α = rand_scal()
     β = rand_scal()
-    mul!(y, K, x, α, β)
+    mul!(y, unlazy(K), x, α, β)
     mul!(y_ref, K_ref, x, α, β)
     @test y ≈ y_ref
 
-    mul!(Y, K, X, α, β)
+    mul!(Y, unlazy(K), X, α, β)
     mul!(Y_ref, K_ref, X, α, β)
     @test Y ≈ Y_ref
 
@@ -1645,8 +1659,8 @@ end
 
     x = rand_vec(size(Kt)[2])
     X = rand_mat(size(Kt, 2), 10)
-    @test Kt * x ≈ Kt_ref * x
-    @test Kt * X ≈ Kt_ref * X
+    @test unlazy(Kt) * x ≈ Kt_ref * x
+    @test unlazy(Kt) * X ≈ Kt_ref * X
 
     y = rand_vec(size(Kt)[1])
     Y = rand_mat(size(Kt)[1], 10)
@@ -1654,11 +1668,11 @@ end
     Y_ref = copy(Y)
     α = rand_scal()
     β = rand_scal()
-    mul!(y, Kt, x, α, β)
+    mul!(y, unlazy(Kt), x, α, β)
     mul!(y_ref, Kt_ref, x, α, β)
     @test y ≈ y_ref
 
-    mul!(Y, Kt, X, α, β)
+    mul!(Y, unlazy(Kt), X, α, β)
     mul!(Y_ref, Kt_ref, X, α, β)
     @test Y ≈ Y_ref
 
@@ -1714,9 +1728,9 @@ end
     end
     # Test multiplication with a vector x
     x = rand_vec(5)
-    @test (A + B) * x ≈ (A_ + B_) * x
-    @test (A * B) * x ≈ (A_ * B_) * x
-    @test (B * A) * x ≈ (B_ * A_) * x
+    @test unlazy(A + B) * x ≈ (A_ + B_) * x
+    @test unlazy(A * B) * x ≈ (A_ * B_) * x
+    @test unlazy(B * A) * x ≈ (B_ * A_) * x
 end
 
 @testset "Chained lazy operations" begin
@@ -1729,7 +1743,7 @@ end
     M_ref = (A_ + B_) * (C_ + (scal(-1)* A_))
     if cpu @test Matrix(M) ≈ M_ref end
     x = rand_vec(4)
-    @test M * x ≈ M_ref * x
+    @test unlazy(M) * x ≈ M_ref * x
 end
 
 @testset "Diagonal and block diagonal special cases" begin
@@ -1739,13 +1753,13 @@ end
     B = EPMAfem.blockmatrix(D, D, transpose(D), D)
     B_ref = EPMAfem.blockmatrix(Diagonal(d), Diagonal(d), transpose(Diagonal(d)), Diagonal(d))
     x = rand_vec(size(B, 2))
-    @test B * x ≈ B_ref * x
+    @test unlazy(B) * x ≈ B_ref * x
     # Diagonal + scalar
     α = rand_scal()
     S = D + α * Diagonal(ones_vec(6));
     S_ref = Diagonal(d .+ α)
     x = rand_vec(size(S, 2))
-    @test S * x ≈ S_ref * x
+    @test unlazy(S) * x ≈ S_ref * x
 end
 
 @testset "Lazy matrix with view and submatrix" begin

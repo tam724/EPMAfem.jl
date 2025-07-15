@@ -38,7 +38,7 @@ lazy_objectid(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = lazy_objectid
 broadcast_materialize(::AbstractLazyMatrixOrTranspose) = ShouldNotBroadcastMaterialize()
 
 # whoa this is weird..
-broadcast_materialize((first, rem)::Vararg{<:AbstractMatrix}) = combine_broadcast_materialize(broadcast_materialize(first), broadcast_materialize(rem))
+broadcast_materialize((first, rem...)::Vararg{<:AbstractMatrix}) = combine_broadcast_materialize(broadcast_materialize(first), broadcast_materialize(rem...))
 combine_broadcast_materialize(::BroadcastMaterialize, ::BroadcastMaterialize) = ShouldNotBroadcastMaterialize()
 combine_broadcast_materialize(::ShouldBroadcastMaterialize, ::ShouldBroadcastMaterialize) = ShouldBroadcastMaterialize() # the only case that survives..
 
@@ -59,7 +59,7 @@ function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T
     L, rem = materialize_with(ws, parent(Lt), transpose(skeleton))
     return transpose(L), rem
 end
-# this function should return the workspace size for the matrix itself (prod(size(⋅)) AND the workspace size that is needed for the matrix to materialize
+# this function should only return the workspace size that is needed for the matrix to materialize NOT the workspace size for the matrix itself (prod(size(⋅))
 required_workspace(::typeof(materialize_with), ::AbstractLazyMatrix) = error("should be defined")
 required_workspace(::typeof(materialize_with), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(materialize_with, parent(Lt))
 
@@ -94,10 +94,7 @@ end
 
 required_workspace(::typeof(mul_with!), A::AbstractMatrix) = 0
 
-# materialize_with(ws::Workspace, A::AbstractMatrix, ::Nothing) = A, ws
-function materialize_with(ws::Workspace, A::AbstractMatrix, ::Nothing)
-    return A, ws
-end
+materialize_with(ws::Workspace, A::AbstractMatrix, ::Nothing) = A, ws
 
 function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix)
     skeleton .= A
@@ -116,51 +113,51 @@ materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
 # LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMatrix{T}}, x::AbstractVector) where T = mul!(y, At, x, true, false)
 # LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix) where T = mul!(y, At, X, true, false)
 
-function LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
-    ws = create_workspace(mul_with!, A, zeros)
-    if length(ws.workspace) > 0 error("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
-    mul_with!(ws, y, A, x, α, β)
-    return y
-end
+# function LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
+#     ws = create_workspace(mul_with!, A, zeros)
+#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
+#     mul_with!(ws, y, A, x, α, β)
+#     return y
+# end
 
-function LinearAlgebra.mul!(Y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix, α::Number, β::Number) where T
-    @warn "Not build for this, but we try anyways..."
-    ws = create_workspace(mul_with!, A, zeros)
-    if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
-    mul_with!(ws, Y, A, X, α, β)
-    return Y
-end
+# function LinearAlgebra.mul!(Y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix, α::Number, β::Number) where T
+#     @warn "Not build for this, but we try anyways..."
+#     ws = create_workspace(mul_with!, A, zeros)
+#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
+#     mul_with!(ws, Y, A, X, α, β)
+#     return Y
+# end
 
-function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::AbstractLazyMatrix{T}, α::Number, β::Number) where T
-    @warn "Not build for this, but we try anyways..."
-    ws = create_workspace(mul_with!, A, zeros)
-    if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
-    mul_with!(ws, Y, X, A, α, β)
-    return Y
-end
+# function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::AbstractLazyMatrix{T}, α::Number, β::Number) where T
+#     @warn "Not build for this, but we try anyways..."
+#     ws = create_workspace(mul_with!, A, zeros)
+#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
+#     mul_with!(ws, Y, X, A, α, β)
+#     return Y
+# end
 
-function LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-    ws = create_workspace(mul_with!, parent(At), zeros)
-    if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
-    mul_with!(ws, y, At, x, α, β)
-    return y
-end
+# function LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+#     ws = create_workspace(mul_with!, parent(At), zeros)
+#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
+#     mul_with!(ws, y, At, x, α, β)
+#     return y
+# end
 
-function LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
-    @warn "Not build for this, but we try anyways..."
-    ws = create_workspace(mul_with!, parent(At), zeros)
-    if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
-    mul_with!(ws, y, At, X, α, β)
-    return y
-end
+# function LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
+#     @warn "Not build for this, but we try anyways..."
+#     ws = create_workspace(mul_with!, parent(At), zeros)
+#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
+#     mul_with!(ws, y, At, X, α, β)
+#     return y
+# end
 
-function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, α::Number, β::Number) where T
-    @warn "Not build for this, but we try anyways..."
-    ws = create_workspace(mul_with!, parent(At), zeros)
-    if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
-    mul_with!(ws, Y, X, At, α, β)
-    return Y
-end
+# function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, α::Number, β::Number) where T
+#     @warn "Not build for this, but we try anyways..."
+#     ws = create_workspace(mul_with!, parent(At), zeros)
+#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
+#     mul_with!(ws, Y, X, At, α, β)
+#     return Y
+# end
 
 # # a abstract type that does not implement an operation, but an flag, how we deal with this matrix (materialized, cached)
 # abstract type MarkedLazyMatrix{T} <: AbstractLazyMatrix{T} end

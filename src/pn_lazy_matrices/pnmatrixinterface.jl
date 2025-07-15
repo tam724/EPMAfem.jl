@@ -79,7 +79,10 @@ function unlazy(A::AbstractLazyMatrix{T}, ws_alloc=zeros) where T
 end
 
 function unlazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws_alloc=zeros) where T
-    transpose(unlazy(parent(At), ws_alloc))
+    ws_size = required_workspace(mul_with!, parent(At))
+    @info "allocating workspace of size $(ws_size)."
+    ws = create_workspace(ws_size, ws_alloc)
+    return NotSoLazy{T}(At, ws)
 end
 
 function unlazy(As::NTuple{N, AbstractLazyMatrixOrTranspose}, ws_alloc=zeros) where N
@@ -106,6 +109,11 @@ end
 
 function LinearAlgebra.mul!(Y::AbstractMatrix, A::NotSoLazy, X::AbstractMatrix, α::Number, β::Number)
     mul_with!(A.ws, Y, A.A, X, α, β)
+    return Y
+end
+
+function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::NotSoLazy, α::Number, β::Number)
+    mul_with!(A.ws, Y, X, A.A, α, β)
     return Y
 end
 

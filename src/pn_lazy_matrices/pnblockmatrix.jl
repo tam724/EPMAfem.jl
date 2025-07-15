@@ -115,20 +115,13 @@ function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:Inplac
     mul!(Y, It_mat, X, α, β)
 end
 
+# here we have to copy the inner matrix, hence we mimic the materializedmatrix
 required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_workspace(structured_from_ws, A(I)) + required_workspace(materialize_with, materialize(A(I)))
 
-function materialize_with(ws::Workspace, I::InplaceInverseMatrix, ::Nothing)
-    skeleton, rem = structured_from_ws(ws, A(I))
-    A_mat, rem = materialize_with(rem, A(I), skeleton)
-    A_mat = LinearAlgebra.inv!(A_mat)
-    return A_mat, rem
-end
-
 function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::AbstractMatrix)
-    skeleton2, rem = structured_from_ws(ws, A(I))
-    A_mat, _ = materialize_with(rem, materialize(A(I)), skeleton2)
-    skeleton .= LinearAlgebra.inv!(A_mat)
-    return skeleton, ws
+    A_mat, _ = materialize_with(ws, A(I), skeleton)
+    A_mat .= LinearAlgebra.inv!(A_mat)
+    return A_mat, ws
 end
 
-required_workspace(::typeof(materialize_with), I::InplaceInverseMatrix) = required_workspace(structured_from_ws, A(I)) + required_workspace(materialize_with, A(I))
+required_workspace(::typeof(materialize_with), I::InplaceInverseMatrix) = required_workspace(materialize_with, A(I))

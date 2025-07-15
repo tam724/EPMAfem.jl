@@ -1,4 +1,4 @@
-const MaterializedMatrix{T} = LazyOpMatrix{T, typeof(materialize), <:Tuple{<:AbstractLazyMatrixOrTranspose{T}}}
+const MaterializedMatrix{T} = LazyOpMatrix{T, typeof(materialize), <:Tuple{<:AbstractMatrix{T}}}
 const CachedMatrix{T} = LazyOpMatrix{T, typeof(cache), <:Tuple{<:AbstractLazyMatrixOrTranspose{T}}}
 const MaterializedOrCachedMatrix{T} = Union{MaterializedMatrix{T}, CachedMatrix{T}}
 
@@ -31,25 +31,33 @@ required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix) = require
 
 # the materialize_with is different for MaterializeMatrix and CachedMatrix though...
 ##### MaterializedMatrix
-materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::Nothing) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton)
-materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton)
+materialize_with(ws::Workspace, M::MaterializedMatrix, ::Nothing) = materialize_with(broadcast_materialize(A(M)), ws, M, nothing)
 function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, ::Nothing)
     bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
     A_, rem = structured_from_ws(ws, A(M))
     M_ = Base.Broadcast.materialize!(A_, bcd)
     return M_, rem
 end
-function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix)
-    bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
-    Base.Broadcast.materialize!(skeleton, bcd)
-    return skeleton, ws
-end
-function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::Nothing)
+function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, ::Nothing)
     A_, rem = structured_from_ws(ws, A(M))
     materialize_with(rem, A(M), A_)
     return A_, rem
 end
-materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix) = materialize_with(ws, A(M), skeleton)
+
+materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton)
+function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix)
+    @warn "Materializing a materialized matrix..."
+    bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
+    Base.Broadcast.materialize!(skeleton, bcd)
+    return skeleton, ws
+end
+function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix)
+    @warn "Materializing a materialized matrix..."
+    A_, rem = structured_from_ws(ws, A(M))
+    materialize_with(rem, A(M), A_)
+    skeleton .= A_
+    return skeleton, ws
+end
 
 # simply pass through the broadcast materialize calls.. 
 broadcast_materialize(S::MaterializedMatrix) = broadcast_materialize(A(S))
@@ -65,7 +73,7 @@ function materialize_with(ws::Workspace, C::CachedMatrix, ::Nothing)
     valid, memory = ws.cache[lazy_objectid(A(C))]
     C_cached = structured_mat_view(memory, C)
     if !valid[]
-        C_cached, _ = materialize_with(ws, materialize(A(C)), C_cached)
+        C_cached, _ = materialize_with(ws, A(C), C_cached)
         valid[] = true
     end
     return C_cached, ws
@@ -78,7 +86,7 @@ materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with
 
 function required_workspace(::typeof(materialize_with), C::CachedMatrix)
     cache_size = required_workspace(structured_from_ws, A(C))
-    return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(materialize_with, materialize(A(C)))
+    return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(materialize_with, A(C))
 end
 
 # TODO: does this make sense?

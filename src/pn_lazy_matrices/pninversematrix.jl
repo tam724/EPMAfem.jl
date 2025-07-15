@@ -93,6 +93,12 @@ LinearAlgebra.transpose(S::SchurMatrix) = lazy(S.op, transpose(BM(S)))
 
 lazy_getindex(S::SchurMatrix, i::Int, j::Int) = error("Cannot getindex")
 
+function _schur_components(S)
+    A, B, C, D = lazy.(blocks(BM(S)))
+    D⁻¹ = cache(inv!(D))
+    return B * D⁻¹, inner_solver(S)(A - B * D⁻¹ * C), unwrap(C), D⁻¹
+end
+
 function mul_with!(ws::Workspace, y::AbstractVector, S::SchurMatrix, x::AbstractVector, α::Number, β::Number)
     @assert α
     @assert !β
@@ -105,22 +111,19 @@ function mul_with!(ws::Workspace, y::AbstractVector, S::SchurMatrix, x::Abstract
     x_ = @view(y[1:n1])
     y_ = @view(y[n1+1:n1+n2])
 
-    A, B, C, D = lazy.(blocks(BM(S)))
-    D⁻¹ = cache(inv!(D))
+    BD⁻¹, inv_AmBD⁻¹C, C, D⁻¹ = _schur_components(S)
 
-    mul_with!(ws, u, B * D⁻¹, v, -1, true)
-    mul_with!(ws, x_, inner_solver(S)(A - B * D⁻¹ * C), u, true, false)
-    mul_with!(ws, v, unwrap(C), x_, -1, true)
+    mul_with!(ws, u, BD⁻¹, v, -1, true)
+    mul_with!(ws, x_, inv_AmBD⁻¹C, u, true, false)
+    mul_with!(ws, v, C, x_, -1, true)
     mul_with!(ws, y_, D⁻¹, v, true, false)
 end
 
 function required_workspace(::typeof(mul_with!), S::SchurMatrix)
-    A, B, C, D = lazy.(blocks(BM(S)))
-    D⁻¹ = cache(inv!(D))
-
-    ws = required_workspace(mul_with!, B*D⁻¹)
-    ws = max(ws, required_workspace(mul_with!, inner_solver(S)(A - B*D⁻¹*C)))
-    ws = max(ws, required_workspace(mul_with!, unwrap(C)))
+    BD⁻¹, inv_AmBD⁻¹C, C, D⁻¹ = _schur_components(S)
+    ws = required_workspace(mul_with!, BD⁻¹)
+    ws = max(ws, required_workspace(mul_with!, inv_AmBD⁻¹C))
+    ws = max(ws, required_workspace(mul_with!, C))
     ws = max(ws, required_workspace(mul_with!, D⁻¹))
     return ws
 end
