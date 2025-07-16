@@ -1,72 +1,3 @@
-# overload for the constructor of CuSparseMatrixCSC that additionally converts the internal types.
-function CUSPARSE.CuSparseMatrixCSC{T, Ti}(A::SparseMatrixCSC) where {T, Ti}
-    return CUSPARSE.CuSparseMatrixCSC{T, Ti}(
-        CuVector{Ti}(A.colptr), CuVector{Ti}(A.rowval), CuVector{T}(A.nzval), size(A)
-    )
-end
-
-# overload for the constructor of CuSparseVector that additionally converts the internal types.
-function CUSPARSE.CuSparseVector{T, Ti}(v::SparseVector) where {T, Ti}
-    return CUSPARSE.CuSparseVector{T, Ti}(
-        CuVector{Ti}(v.nzind), CuVector{T}(v.nzval), length(v)
-    )
-end
-
-# A = x*transpose(y) for sparse vectors x and y and preallocated A
-function LinearAlgebra.mul!(A::CUDA.CuMatrix, x::CUDA.CUSPARSE.CuSparseVector, y::Transpose{<:Any, <:CUDA.CUSPARSE.CuSparseVector}, α::Number, β::Number)
-    @assert size(A) == (length(x), length(y.parent))
-    my_rmul!(A, β)
-    x_nnz = SparseArrays.nnz(x)
-    y_nnz = SparseArrays.nnz(y.parent)
-    if x_nnz <= 0 || y_nnz <= 0 return A end
-    @kernel function mul!_kernel(A, x_nz, x_i, y_nz, y_i, α)
-        inz, jnz = @index(Global, NTuple)
-        A[x_i[inz], y_i[jnz]] += α * x_nz[inz] * y_nz[jnz]
-    end
-    backend = KernelAbstractions.get_backend(A)
-    kernel! = mul!_kernel(backend)
-    kernel!(A, SparseArrays.nonzeros(x), SparseArrays.nonzeroinds(x), SparseArrays.nonzeros(y.parent), SparseArrays.nonzeroinds(y.parent), α, ndrange=(x_nnz, y_nnz))
-    return A
-end
-
-# A = x*transpose(y) for sparse vectors x and y and preallocated A
-function LinearAlgebra.mul!(A::CUDA.CuMatrix, x::CUDA.CUSPARSE.CuSparseVector, y::Transpose{<:Any, <:CUDA.CuVector}, α::Number, β::Number)
-    @assert size(A) == (length(x), length(y.parent))
-    my_rmul!(A, β)
-    x_nnz = SparseArrays.nnz(x)
-    y_nnz = length(y.parent)
-    if x_nnz <= 0 return A end
-    @kernel function mul!_kernel(A, x_nz, x_i, y, α)
-        inz, jnz = @index(Global, NTuple)
-        A[x_i[inz], jnz] += α * x_nz[inz] * y[jnz]
-    end
-    backend = KernelAbstractions.get_backend(A)
-    kernel! = mul!_kernel(backend)
-    kernel!(A, SparseArrays.nonzeros(x), SparseArrays.nonzeroinds(x), y.parent, α, ndrange=(x_nnz, y_nnz))
-    return A
-end
-
-# A = x*transpose(y) for sparse vectors x and y and preallocated A
-function LinearAlgebra.mul!(A::CUDA.CuMatrix, x::CUDA.CuVector, y::Transpose{<:Any, <:CUDA.CUSPARSE.CuSparseVector}, α::Number, β::Number)
-    @assert size(A) == (length(x), length(y.parent))
-    my_rmul!(A, β)
-    x_nnz = length(x)
-    y_nnz = SparseArrays.nnz(y.parent)
-    if y_nnz <= 0 return A end
-    @kernel function mul!_kernel(A, x, y_nz, y_i, α)
-        inz, jnz = @index(Global, NTuple)
-        A[inz, y_i[jnz]] += α * x[inz] * y_nz[jnz]
-    end
-    backend = KernelAbstractions.get_backend(A)
-    kernel! = mul!_kernel(backend)
-    kernel!(A, x, SparseArrays.nonzeros(y.parent), SparseArrays.nonzeroinds(y.parent), α, ndrange=(x_nnz, y_nnz))
-    return A
-end
-
-# fast check if SparseMatrix is diagonal
-function LinearAlgebra.isdiag(A::SparseArrays.SparseMatrixCSC)
-    return all(rv == cp for (rv, cp) ∈ zip(A.rowval, @view(A.colptr[1:end-1])))
-end
 
 ## convert to Diagonal type if A is diagonal
 diag_if_diag(A::Diagonal) = A
@@ -82,3 +13,12 @@ function dot_buf(x::AbstractVector, A::AbstractMatrix, y::AbstractVector, buf::A
     mul!(transpose(buf), transpose(x), A)
     return dot(y, buf)
 end
+
+# this feels hacky and should be done in CUDA.jl, avoids NaN * false = NaN (sould be 0.0)
+# see: https://github.com/JuliaGPU/CUDA.jl/issues/2607
+function my_rmul!(A::AbstractArray{T}, β::Bool) where T
+    if !β fill!(A, zero(T)) end
+    # if β == true, we do nothing
+    return A
+end
+my_rmul!(A::AbstractArray, β::Number) = rmul!(A, β)

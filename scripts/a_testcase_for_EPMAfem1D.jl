@@ -121,7 +121,7 @@ for N in [1, 3, 13, 19, 21, 27]
     source = EPMAfem.PNXΩSource(q, Ω -> 1.0)
     rhs = EPMAfem.discretize_rhs(source, model, EPMAfem.cpu())
     problem = EPMAfem.discretize_problem(eq, model, EPMAfem.cpu())
-    system = EPMAfem.system(problem, EPMAfem.PNDirectSolver)
+    system = EPMAfem.system2(problem, EPMAfem.Krylov.minres)
 
     solution = EPMAfem.allocate_solution_vector(system)
     EPMAfem.solve(solution, system, rhs)

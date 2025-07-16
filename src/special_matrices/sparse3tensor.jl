@@ -7,7 +7,7 @@ using CUDA
 using ConcreteStructs
 using KernelAbstractions
 
-include("../redefine_rmul.jl")
+include("../utils.jl")
 
 # some overloads to enable SparseArrays and Diagonal
 function SparseArrays.nonzeros(D::Diagonal)

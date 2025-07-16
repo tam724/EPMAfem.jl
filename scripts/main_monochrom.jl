@@ -49,7 +49,7 @@ problem = EPMAfem.discretize_problem(eq, model, EPMAfem.cpu())
 rhs_left = EPMAfem.discretize_rhs(bc_left, model, EPMAfem.cpu())
 # rhs_right = EPMAfem.discretize_rhs(bc_right, model, EPMAfem.cpu())
 
-system = EPMAfem.system(problem, EPMAfem.PNSchurSolver)
+system = EPMAfem.system2(problem, EPMAfem.Krylov.minres);
 
 x_left = EPMAfem.allocate_solution_vector(system)
 # x_right = EPMAfem.allocate_solution_vector(system)
