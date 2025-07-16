@@ -105,13 +105,19 @@ Base.size(I::InplaceInverseMatrix) = size(A(I))
 max_size(I::InplaceInverseMatrix) = max_size(A(I))
 lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{<:Integer}) = NaN
 @inline isdiagonal(I::InplaceInverseMatrix) = isdiagonal(A(I))
-LinearAlgebra.transpose(I::InplaceInverseMatrix) = lazy(LinearAlgebra.inv!, transpose(A(I)))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, I::InplaceInverseMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     A_mat, _ = materialize_with(ws, materialize(A(I)), nothing)
     @assert !β
     @assert α
     ldiv!(Y, A_mat, X)
+end
+
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:InplaceInverseMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
+    A_mat, _ = materialize_with(ws, materialize(A(parent(It))), nothing)
+    @assert !β
+    @assert α
+    ldiv!(Y, transpose(A_mat), X)
 end
 
 required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_workspace(materialize_with, materialize(A(I)))
