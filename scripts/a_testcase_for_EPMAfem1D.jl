@@ -5,6 +5,7 @@ using LinearAlgebra
 using Plots
 using Distributions
 using ConcreteStructs
+using QuadGK
 include("plot_overloads.jl")
 Makie.inline!(false)
 
@@ -108,7 +109,8 @@ space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5,
 
 plotly()
 plot()
-for N in [1, 5, 13, 19, 21, 27]
+sol = Dict()
+for N in [1, 3, 13, 19, 21, 27]
     direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
     model = EPMAfem.DiscreteMonochromPNModel(space_model, direction_model)
 
@@ -124,7 +126,7 @@ for N in [1, 5, 13, 19, 21, 27]
     solution = EPMAfem.allocate_solution_vector(system)
     EPMAfem.solve(solution, system, rhs)
     solp, solm = EPMAfem.pmview(solution, model)
-
+    sol[N] = [solp, solm]
     func = EPMAfem.SpaceModels.interpolable((p=solp[:, 1] |> collect, ), space_model)
     # contourf(-0.5:0.01:0.5, -0.5:0.01:0.5, (z, x) -> func(Gridap.VectorValue(z, x)))
 
@@ -139,17 +141,19 @@ kwargs_analytic = (R=0.15, b=10.0, μ_in=50.0, μ_out=0.01)
 I_0 = intensity(0; kwargs_analytic...)
 plot!(-0.5:0.0001:0.5, x -> 0.7089406763978845/I_0*intensity(x; kwargs_analytic...))
 
-p1 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func(x, Ω; kwargs_analytic...), clims=(-0.1, 0.3))
+p1 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func(x, Ω; kwargs_analytic...), clims=(-0.1,0.3))
 
-function distr_func_numeric(x, Ω)
+function distr_func_numeric(x, Ω, N)
+    direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
     xp, xm = EPMAfem.SpaceModels.eval_basis(space_model, VectorValue(x))
     θ = acos(Ω)
     Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(direction_model, VectorValue(Ω, sin(θ)))
 
+    solp, solm = sol[N]
     return dot(xp, solp * Ωp) + dot(xm, solm * Ωm)
 end
 
-p2 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω), clims=(-0.1, 0.3))
+p2 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 3), clims=(-0.1, 0.3))
 
 plot(p1, p2, size=(700, 300))
 
