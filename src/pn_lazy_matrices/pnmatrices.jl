@@ -47,7 +47,7 @@ isdiagonal(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = isdiagonal(paren
 mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractLazyMatrix, X::AbstractVecOrMat, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
 mul_with!(::Workspace, Y::AbstractMatrix, A::AbstractMatrix, X::AbstractLazyMatrix, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
 # this function should return the workspace size that is needed to mul_with! the AbstractLazyMatrix
-required_workspace(::typeof(mul_with!), ::AbstractLazyMatrix) = error("should be defined")
+required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix) = error("should be defined: $(typeof(L))")
 required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(mul_with!, parent(Lt))
 
 materialize_with(::Workspace, ::AbstractLazyMatrix, ::Union{Nothing, <:AbstractMatrix}) = error("should be defined")

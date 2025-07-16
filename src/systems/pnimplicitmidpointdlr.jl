@@ -23,7 +23,7 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     U = PNLazyMatrices.LazyResizeMatrix(allocate_mat(arch, nb.nx.p, max_rank), (Ref(nb.nx.p), Ref(max_rank)))
     Ut = transpose(U)
 
-    coeffs = (a = [Ref(zero(T)) for _ in 1:ns.ne], c = [[Ref(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=Ref(Δϵ), γ=Ref(0.5), δ=Ref(-0.5), δt=Ref(0.5))
+    coeffs = (a = [Ref(zero(T)) for _ in 1:ns.ne], c = [[Ref(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=Ref(T(Δϵ)), γ=Ref(T(0.5)), δ=Ref(T(-0.5)), δt=Ref(T(0.5)))
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl)
 
@@ -39,7 +39,6 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
 
     A_V = sum(kron_AXB(ρp[i], Vt*(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))*V) for i in 1:ns.ne)
     B_V = sum(kron_AXB(∇pm[i], Ωpm[i]*V) for i in 1:ns.nd)
-    C = sum(kron_AXB(ρm[i], coeffs.a[i]*Im + sum(coeffs.c[i][j]*km[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
     D_V = sum(kron_AXB(∂p[i], Vt*absΩp[i]*V) for i in 1:ns.nd)
 
     BM_V = [
@@ -50,7 +49,6 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
 
     A_U = sum(kron_AXB(Ut*ρp[i]*U, coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
     B_U = sum(kron_AXB(Ut*∇pm[i], Ωpm[i]) for i in 1:ns.nd)
-    C = sum(kron_AXB(ρm[i], coeffs.a[i]*Im + sum(coeffs.c[i][j]*km[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
     D_U = sum(kron_AXB(Ut*∂p[i]*U, absΩp[i]) for i in 1:ns.nd)
 
     BM_U = [
@@ -61,7 +59,6 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
 
     A_UV = sum(kron_AXB(Ut*ρp[i]*U, Vt*(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))*V) for i in 1:ns.ne)
     B_UV = sum(kron_AXB(Ut*∇pm[i], Ωpm[i]*V) for i in 1:ns.nd)
-    C = sum(kron_AXB(ρm[i], coeffs.a[i]*Im + sum(coeffs.c[i][j]*km[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
     D_UV = sum(kron_AXB(Ut*∂p[i]*U, Vt*absΩp[i]*V) for i in 1:ns.nd)
 
     BM_UV = [
@@ -111,18 +108,18 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssem
     rhs_K = @view(system.tmp[1:nxp*x.rank[] + nxm*nΩm])
     mul!(reshape(@view(rhs_K[1:nxp*x.rank[]]), (nxp, x.rank[])), reshape(rhsp, (nxp, nΩp)), transpose(Vt₀))
     copyto!(@view(rhs_K[nxp*x.rank[]+1:end]), rhsm)
-    K₁ = zeros(nxp*x.rank[]) # TODO: allocating
+    K₁ = allocate_vec(architecture(system.problem), nxp*x.rank[]) # TODO: allocating
     mul!(K₁, system.mats.half_BM_V⁻¹, rhs_K)
-    U₁ = qr(reshape(K₁, (nxp, x.rank[]))).Q[1:size(U₀, 1), 1:size(U₀, 2)]
+    U₁ = (qr(reshape(K₁, (nxp, x.rank[]))).Q |> mat_type(architecture(system.problem)))[1:size(U₀, 1), 1:size(U₀, 2)]
     M = transpose(U₁)*U₀
 
     # L-step
     rhs_Lt = @view(system.tmp[1:x.rank[]*nΩp + nxm*nΩm])
     mul!(reshape(@view(rhs_Lt[1:x.rank[]*nΩp]), (x.rank[], nΩp)), transpose(U₀), reshape(rhsp, (nxp, nΩp)))
     copyto!(@view(rhs_Lt[x.rank[]*nΩp+1:end]), rhsm)
-    Lt₁ = zeros(x.rank[]*nΩp) # TODO: allocating
+    Lt₁ = allocate_vec(architecture(system.problem), x.rank[]*nΩp) # TODO: allocating
     mul!(Lt₁, system.mats.half_BM_U⁻¹, rhs_Lt)
-    V₁ = qr(transpose(reshape(Lt₁, (x.rank[], nΩp)))).Q[1:size(Vt₀, 2), 1:size(Vt₀, 1)]
+    V₁ = (qr(transpose(reshape(Lt₁, (x.rank[], nΩp)))).Q |> mat_type(architecture(system.problem)))[1:size(Vt₀, 2), 1:size(Vt₀, 1)]
     N = transpose(V₁)*transpose(Vt₀)
     
     # S-step (prep)
@@ -148,7 +145,7 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssem
     copyto!(reshape(@view(rhs_S[1:x.rank[]*x.rank[]]), (x.rank[], x.rank[])), M * transpose(U₀) * reshape(rhsp, (nxp, nΩp)) * transpose(Vt₀) * transpose(N))
     copyto!(@view(rhs_S[x.rank[]*x.rank[]+1:end]), rhsm)
     # TODO:
-    S₁ = zeros(x.rank[]*x.rank[] + nxm*nΩm) # allocates, we could directly write this in S₀ and _xm
+    S₁ = allocate_vec(architecture(system.problem), x.rank[]*x.rank[] + nxm*nΩm) # allocates, we could directly write this in S₀ and _xm
     mul!(S₁, system.mats.BM_UV⁻¹, rhs_S)
 
     copyto!(U₀, U₁)
@@ -221,8 +218,9 @@ end
 function fillzero!(sol::LowRankSolution)
     Up, Sp, Vtp = USVt(sol)
     U, S, Vt = svd(rand(size(Up, 1), size(Vtp, 2)))
-    copyto!(Up, @view(U[:, 1:sol.rank[]]))
-    copyto!(Vtp, @view(Vt[1:sol.rank[], :]))
+    # TODO: this is weird and allocates to work together with CUDA!
+    copyto!(Up, U[:, 1:sol.rank[]])
+    copyto!(Vtp, Vt[1:sol.rank[], :])
     fill!(Sp, zero(eltype(Sp)))
     fill!(sol._xm, zero(eltype(sol._xm)))
 end

@@ -26,10 +26,11 @@ Base.size(L::Lazy) = size(unwrap(L))
 Base.getindex(L::Lazy, i::Int, j::Int) = CUDA.@allowscalar getindex(unwrap(L), i, j)
 LinearAlgebra.transpose(L::Lazy) = lazy(transpose(L.A))
 
-Base.:*(L::AbstractLazyMatrixOrTranspose, α::Number) = lazy(*, unwrap(L), Ref(α))
-Base.:*(L::AbstractLazyMatrixOrTranspose, α::Base.RefValue{<:Number}) = lazy(*, unwrap(L), α)
-Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose) = lazy(*, Ref(α), unwrap(L))
-Base.:*(α::Base.RefValue{<:Number}, L::AbstractLazyMatrixOrTranspose) = lazy(*, α, unwrap(L))
+Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::Number) where T = lazy(*, unwrap(L), Ref(T(α)))
+Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, Ref(T(α)), unwrap(L))
+
+Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::Base.RefValue{T}) where T = lazy(*, unwrap(L), α)
+Base.:*(α::Base.RefValue{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, α, unwrap(L))
 
 Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(*, unwrap(A), unwrap(B))
 Base.:*(As::Vararg{<:AbstractLazyMatrixOrTranspose}) = lazy(*, unwrap.(As)...)
@@ -102,6 +103,7 @@ end
 
 Base.getindex(A::NotSoLazy, i::Integer, j::Integer) = getindex(A.A, i, j)
 Base.size(A::NotSoLazy) = size(A.A)
+LinearAlgebra.transpose(A::NotSoLazy{T}) where T = NotSoLazy{T}(transpose(A.A), A.ws)
 
 function LinearAlgebra.mul!(y::AbstractVector, A::NotSoLazy, x::AbstractVector, α::Number, β::Number)
     mul_with!(A.ws, y, A.A, x, α, β)

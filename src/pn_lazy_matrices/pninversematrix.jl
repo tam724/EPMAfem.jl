@@ -50,9 +50,11 @@ lazy_getindex(K::KrylovMinresMatrix, i::Int, j::Int) = error("Cannot getindex")
 # end
 
 function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovMinresMatrix, x::AbstractVector, α::Number, β::Number)
-    A_ = NotSoLazy{eltype(K)}(A(K), ws)
+    T = eltype(K)
+    A_ = NotSoLazy{T}(A(K), ws)
     solver = Krylov.MinresSolver(A_, x) # this allocates!
-    Krylov.solve!(solver, A_, x)
+    T = eltype(K)
+    Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
     y .= α .* solver.x .+ β .* y
 end
 
@@ -71,9 +73,10 @@ LinearAlgebra.transpose(K::KrylovGmresMatrix) = lazy(Krylov.gmres, transpose(A(K
 lazy_getindex(K::KrylovGmresMatrix, i::Int, j::Int) = error("Cannot getindex")
 
 function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovGmresMatrix, x::AbstractVector, α::Number, β::Number)
-    A_ = NotSoLazy{eltype(K)}(A(K), ws)
+    T = eltype(K)
+    A_ = NotSoLazy{T}(A(K), ws)
     solver = Krylov.GmresSolver(A_, x) # this allocates!
-    Krylov.solve!(solver, A_, x)
+    Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
     y .= α .* solver.x .+ β .* y
 end
 

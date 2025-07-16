@@ -8,12 +8,16 @@ Base.@kwdef @concrete struct DiscretePNSystem2 <: AbstractDiscretePNSystem
     rhs
 end
 
+function Base.adjoint(A::DiscretePNSystem2)
+    return DiscretePNSystem2(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, BM=A.BM, BM⁻¹=A.BM⁻¹, rhs=A.rhs)
+end
+
 function build_coeffs_and_mat_blocks(pbl::DiscretePNProblem)
     T = base_type(architecture(pbl))
     ns = EPMAfem.n_sums(pbl)
     Δϵ = step(energy_model(pbl.model))
     
-    coeffs = (a = [Ref(zero(T)) for _ in 1:ns.ne], c = [[Ref(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=Ref(Δϵ), γ=Ref(0.5), δ=Ref(-0.5), δt=Ref(0.5))
+    coeffs = (a = [Ref(zero(T)) for _ in 1:ns.ne], c = [[Ref(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=Ref(T(Δϵ)), γ=Ref(T(0.5)), δ=Ref(T(-0.5)), δt=Ref(T(0.5)))
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl)
 
