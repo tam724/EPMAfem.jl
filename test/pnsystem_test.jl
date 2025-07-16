@@ -108,6 +108,35 @@ function test_cached_LK_K(LK, K)
     @test !(y ≈ K * x)
 end
 
+@testset "HalfSchurMatrix + solver" begin
+    A = rand(2, 2) |> x -> transpose(x) * x
+    D = rand(2, 2) |> x -> transpose(x) * x
+    B = rand(2, 3)
+    C1 = Diagonal(rand(3))
+    C2 = Diagonal(rand(3))
+
+    Al, Dl, Bl, C1l, C2l = lazy.((A, D, B, C1, C2))
+    BMl = [Al + Dl Bl
+    transpose(Bl) C1l + C2l]
+
+    BM = [A + D B
+    transpose(B) C1 + C2]
+
+    BMl_halfschur_minres = EPMAfem.lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BMl)
+    BMl_halfschur_gmres = EPMAfem.lazy((PNLazyMatrices.half_schur_complement, Krylov.gmres), BMl)
+    BMl_halfschur_backslash = EPMAfem.lazy((PNLazyMatrices.half_schur_complement, \), BMl)
+
+    x = rand(size(BMl_halfschur_minres, 2))
+    y_ = (BM \ copy(x))[1:2]
+
+    y_minres = unlazy(BMl_halfschur_minres) * copy(x)
+    @test y_minres ≈ y_
+    y_gmres = unlazy(BMl_halfschur_gmres) * copy(x)
+    @test y_gmres ≈ y_
+    y_backslash = unlazy(BMl_halfschur_backslash) * copy(x)
+    @test y_backslash ≈ y_
+end
+
 @testset "SchurMatrix + gmres & \\" begin
     A = rand(2, 2)
     D = rand(2, 2)
