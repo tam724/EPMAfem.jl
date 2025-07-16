@@ -127,3 +127,51 @@ function required_workspace(::typeof(mul_with!), S::SchurMatrix)
     ws = max(ws, required_workspace(mul_with!, D⁻¹))
     return ws
 end
+
+# this is a weird one..
+function half_schur_complement() end
+const HalfSchurMatrix{T} = LazyOpMatrix{T, <:Tuple{typeof(half_schur_complement), <:SchurInnerSolver}, <:Tuple{Union{BlockMatrix{T}, Transpose{T, <:BlockMatrix{T}}}}}
+BM(S::HalfSchurMatrix) = only(S.args)
+inner_solver(S::HalfSchurMatrix) = S.op[2]
+
+function Base.size(S::HalfSchurMatrix)
+    n1, n2 = block_size(BM(S))
+    return (n1, n1 + n2)
+end
+function max_size(S::HalfSchurMatrix)
+    n1, n2 = max_block_size(BM(S))
+    return (n1, n1 + n2)
+end
+
+LinearAlgebra.transpose(S::HalfSchurMatrix) = lazy(S.op, transpose(BM(S)))
+
+lazy_getindex(S::HalfSchurMatrix, i::Int, j::Int) = error("Cannot getindex")
+
+function _half_schur_components(S)
+    A, B, C, D = lazy.(blocks(BM(S)))
+    D⁻¹ = cache(inv!(D))
+    return B * D⁻¹, inner_solver(S)(A - B * D⁻¹ * C)
+end
+
+function mul_with!(ws::Workspace, y::AbstractVector, S::HalfSchurMatrix, x::AbstractVector, α::Number, β::Number)
+    @assert α
+    @assert !β
+
+    n1, n2 = block_size(BM(S))
+
+    u = @view(x[1:n1])
+    v = @view(x[n1+1:n1+n2])
+    x_ = @view(y[1:n1])
+
+    BD⁻¹, inv_AmBD⁻¹C = _half_schur_components(S)
+
+    mul_with!(ws, u, BD⁻¹, v, -1, true)
+    mul_with!(ws, x_, inv_AmBD⁻¹C, u, true, false)
+end
+
+function required_workspace(::typeof(mul_with!), S::HalfSchurMatrix)
+    BD⁻¹, inv_AmBD⁻¹C = _half_schur_components(S)
+    ws = required_workspace(mul_with!, BD⁻¹)
+    ws = max(ws, required_workspace(mul_with!, inv_AmBD⁻¹C))
+    return ws
+end

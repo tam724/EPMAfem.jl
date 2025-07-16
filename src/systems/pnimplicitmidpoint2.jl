@@ -10,11 +10,9 @@ end
 
 function build_coeffs_and_mat_blocks(pbl::DiscretePNProblem)
     T = base_type(architecture(pbl))
-
     ns = EPMAfem.n_sums(pbl)
-
     Δϵ = step(energy_model(pbl.model))
-
+    
     coeffs = (a = [Ref(zero(T)) for _ in 1:ns.ne], c = [[Ref(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=Ref(Δϵ), γ=Ref(0.5), δ=Ref(-0.5), δt=Ref(0.5))
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl)
@@ -27,21 +25,20 @@ function build_coeffs_and_mat_blocks(pbl::DiscretePNProblem)
     UL = coeffs.Δ*(A + coeffs.γ*D)
     UR = coeffs.Δ*(coeffs.δ*B)
     LL = T(-1)*(coeffs.Δ*(coeffs.δt*transpose(B)))
-    LR = T(-1)*(coeffs.Δ*C) 
+    LR = T(-1)*(coeffs.Δ*C)
 
-    return coeffs, UL, UR, LL, LR
+    BM = [
+        UL UR
+        LL LR
+    ]
+
+    return coeffs, BM
 end
 
 function implicit_midpoint2(pbl::DiscretePNProblem, solver)
     arch = architecture(pbl)
 
-    coeffs, UL, UR, LL, LR = build_coeffs_and_mat_blocks(pbl)
-
-    lazy_BM = [
-        UL UR
-        LL LR
-        ]
-
+    coeffs, lazy_BM = build_coeffs_and_mat_blocks(pbl)
     lazy_BM⁻¹ = lazy(solver, lazy_BM)
 
     BM, BM⁻¹ = unlazy((lazy_BM, lazy_BM⁻¹), vec_size -> allocate_vec(arch, vec_size))

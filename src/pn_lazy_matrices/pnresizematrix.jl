@@ -14,7 +14,24 @@ function resize!(R, (m, n)::Tuple{<:Integer, <:Integer})
     return R
 end
 
+function resize!(R, (m, _)::Tuple{<:Integer, Colon})
+    if size(R.A, 1) < m
+        error("size too big!")
+    end
+    R.size[1][] = m
+    return R
+end
+
+function resize!(R, (_, n)::Tuple{Colon, <:Integer})
+    if size(R.A, 2) < n
+        error("size too big!")
+    end
+    R.size[2][] = n
+    return R
+end
+
 Base.copyto!(R::LazyResizeMatrix, vals::AbstractArray) = copyto!(_reshape_view(R), vals)
+do_copyto!(R::LazyResizeMatrix, vals) = copyto!(_reshape_view(R), vals)
 @inline A(R::LazyResizeMatrix) = _reshape_view(R)
 Base.size(R::LazyResizeMatrix) = (R.size[1][], R.size[2][])
 max_size(R::LazyResizeMatrix) = size(R.A)
