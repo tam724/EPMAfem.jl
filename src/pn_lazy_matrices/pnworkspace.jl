@@ -34,6 +34,9 @@ end
 Base.max(ws1::WorkspaceSize, memory_add::Integer) = WorkspaceSize(max(ws1.workspace, memory_add), ws1.cache)
 Base.max(memory_add::Integer, ws1::WorkspaceSize) = max(ws1, memory_add)
 
+workspace_size(ws::WorkspaceSize) = ws.workspace
+workspace_size(n::Int) = n
+
 
 function take_ws(ws::Workspace, n::Integer)
     return @view(ws.workspace[1:n]), Workspace(@view(ws.workspace[n+1:end]), ws.cache)

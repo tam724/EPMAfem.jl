@@ -4,7 +4,6 @@ A(K::BackslashMatrix) = only(K.args)
 
 Base.size(K::BackslashMatrix) = size(A(K))
 max_size(K::BackslashMatrix) = max_size(A(K))
-
 isdiagonal(K::BackslashMatrix) = isdiagonal(A(K))
 
 lazy_getindex(K::BackslashMatrix, i::Int, j::Int) = error("Cannot getindex")
@@ -27,7 +26,6 @@ A(K::KrylovMinresMatrix) = K.args[1]
 
 Base.size(K::KrylovMinresMatrix) = size(A(K))
 max_size(K::KrylovMinresMatrix) = max_size(A(K))
-
 isdiagonal(K::KrylovMinresMatrix) = isdiagonal(A(K))
 
 lazy_getindex(K::KrylovMinresMatrix, i::Int, j::Int) = error("Cannot getindex")
@@ -75,7 +73,6 @@ A(K::KrylovGmresMatrix) = K.args[1]
 
 Base.size(K::KrylovGmresMatrix) = size(A(K))
 max_size(K::KrylovGmresMatrix) = max_size(A(K))
-
 isdiagonal(K::KrylovGmresMatrix) = isdiagonal(A(K))
 
 lazy_getindex(K::KrylovGmresMatrix, i::Int, j::Int) = error("Cannot getindex")
@@ -102,20 +99,25 @@ function schur_complement() end
 const SchurInnerSolver = Union{typeof(Krylov.minres), typeof(Krylov.gmres), typeof(\)}
 const SchurMatrix{T} = LazyOpMatrix{T, <:Tuple{typeof(schur_complement), <:SchurInnerSolver}, <:Tuple{Union{BlockMatrix{T}, Transpose{T, <:BlockMatrix{T}}}}}
 BM(S::SchurMatrix) = only(S.args)
+BM(St::Transpose{T, <:SchurMatrix{T}}) where T = transpose(BM(parent(St)))
 inner_solver(S::SchurMatrix) = S.op[2]
+inner_solver(St::Transpose{T, <:SchurMatrix{T}}) where T = parent(St).op[2]
 
 Base.size(S::SchurMatrix) = size(BM(S))
 max_size(S::SchurMatrix) = max_size(BM(S))
+isdiagonal(S::SchurMatrix) = isdiagonal(BM(S))
 
 lazy_getindex(S::SchurMatrix, i::Int, j::Int) = error("Cannot getindex")
 
-function _schur_components(S::SchurMatrix)
+_schur_blocks(S::SchurMatrix) = lazy.(blocks(BM(S)))
+
+function _schur_components(S::Union{SchurMatrix, Transpose{T, <:SchurMatrix{T}}}) where T
     A, B, C, D = lazy.(blocks(BM(S)))
     D⁻¹ = cache(inv!(D))
     return B * D⁻¹, inner_solver(S)(A - B * D⁻¹ * C), unwrap(C), D⁻¹
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, S::SchurMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, S::Union{SchurMatrix, Transpose{T, <:SchurMatrix{T}}}, x::AbstractVector, α::Number, β::Number) where T
     @assert α
     @assert !β
 
@@ -135,31 +137,25 @@ function mul_with!(ws::Workspace, y::AbstractVector, S::SchurMatrix, x::Abstract
     mul_with!(ws, y_, D⁻¹, v, true, false)
 end
 
-function _schur_components(St::Transpose{T, <:SchurMatrix{T}}) where T
-    A, B, C, D = lazy.(blocks(BM(parent(St))))
-    D⁻¹ = cache(inv!(D))
-    return transpose(C) * transpose(D⁻¹), inner_solver(parent(St))(transpose(A) - transpose(C) * transpose(D⁻¹) * transpose(B)), transpose(unwrap(B)), transpose(D⁻¹)
-end
+# function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:SchurMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+#     @assert α
+#     @assert !β
 
-function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:SchurMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-    @assert α
-    @assert !β
+#     n1, n2 = block_size(BM(parent(St)))
 
-    n1, n2 = block_size(BM(parent(St)))
+#     u = @view(x[1:n1])
+#     v = @view(x[n1+1:n1+n2])
 
-    u = @view(x[1:n1])
-    v = @view(x[n1+1:n1+n2])
+#     x_ = @view(y[1:n1])
+#     y_ = @view(y[n1+1:n1+n2])
 
-    x_ = @view(y[1:n1])
-    y_ = @view(y[n1+1:n1+n2])
+#     t_BD⁻¹, t_inv_AmBD⁻¹C, t_C, t_D⁻¹ = _schur_components(St)
 
-    t_BD⁻¹, t_inv_AmBD⁻¹C, t_C, t_D⁻¹ = _schur_components(St)
-
-    mul_with!(ws, u, t_BD⁻¹, v, -1, true)
-    mul_with!(ws, x_, t_inv_AmBD⁻¹C, u, true, false)
-    mul_with!(ws, v, t_C, x_, -1, true)
-    mul_with!(ws, y_, t_D⁻¹, v, true, false)
-end
+#     mul_with!(ws, u, t_BD⁻¹, v, -1, true)
+#     mul_with!(ws, x_, t_inv_AmBD⁻¹C, u, true, false)
+#     mul_with!(ws, v, t_C, x_, -1, true)
+#     mul_with!(ws, y_, t_D⁻¹, v, true, false)
+# end
 
 
 function required_workspace(::typeof(mul_with!), S::SchurMatrix)
@@ -185,6 +181,7 @@ function max_size(S::HalfSchurMatrix)
     n1, n2 = max_block_size(BM(S))
     return (n1, n1 + n2)
 end
+isdiagonal(S::HalfSchurMatrix) = false # not even square :D
 
 lazy_getindex(S::HalfSchurMatrix, i::Int, j::Int) = error("Cannot getindex")
 

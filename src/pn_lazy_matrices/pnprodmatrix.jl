@@ -289,7 +289,6 @@ function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix
     return skeleton, ws
 end
 
-
 function required_workspace(::typeof(materialize_with), M::ProdMatrix)
     # simply exaggerate here.. # TODO bring the workspace size down !
     max_m = maximum(A -> size(A, 1), As(M))

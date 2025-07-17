@@ -40,7 +40,24 @@ function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::Materi
 end
 function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, ::Nothing)
     A_, rem = structured_from_ws(ws, A(M))
-    materialize_with(rem, A(M), A_)
+    strategy = materialize_strategy(M)
+    if strategy == :mat
+        materialize_with(rem, A(M), A_)
+    elseif strategy == :x_mul
+        error("not implemented")
+        x_i, rem_ = take_ws(rem, size(A(M), 1))
+        for i in 1:size(A(M), 1)
+            # x_i[i] = 1.0
+            # mul_with!(rem, @view(A_[:])
+        end
+    elseif strategy == :mul_x
+        x_i, rem_ = take_ws(rem, size(A(M), 2))
+        for i in 1:size(A(M), 2)
+            x_i[i] = 1.0
+            mul_with!(rem_, @view(A_[:, i]), A(M), x_i, true, false)
+            x_i[i] = 0.0
+        end
+    end
     return A_, rem
 end
 
@@ -63,13 +80,37 @@ end
 broadcast_materialize(S::MaterializedMatrix) = broadcast_materialize(A(S))
 materialize_broadcasted(ws::Workspace, S::MaterializedMatrix) = materialize_broadcasted(ws, A(S))
 
+function materialize_strategy(M::MaterializedMatrix)
+    # this is a crude heuristic! (if it is "cheaper" to multiply with the matrix than to materialize, then materialize by multiplication)
+    mat = workspace_size(required_workspace(materialize_with, A(M)))
+    mA, nA = max_size(A(M))
+    mul = min(mA, nA) * workspace_size(required_workspace(mul_with!, A(M)))
+    if mat < mul
+        return :mat
+    elseif nA <= mA
+        return :mat
+    else
+        return :mat
+    end
+end
+
 function required_workspace(::typeof(materialize_with), M::MaterializedMatrix)
-    return required_workspace(structured_from_ws, A(M)) + required_workspace(materialize_with, A(M))
+    strategy = materialize_strategy(M)
+    if strategy == :mat
+        return required_workspace(structured_from_ws, A(M)) + required_workspace(materialize_with, A(M))
+    elseif strategy == :x_mul
+        return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M)) + max_size(A(M))[1]
+    else # strategy == :mul_x
+        return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M)) + max_size(A(M))[2]
+    end
+    # @show required_workspace(materialize_with, A(M)), required_workspace(mul_with!, A(M)), size(A(M))
+    return 
 end
 materialize(M::Union{MaterializedMatrix{T}, Transpose{T, <:MaterializedMatrix{T}}}) where T = M
 
 ##### CachedMatrix
 function materialize_with(ws::Workspace, C::CachedMatrix, ::Nothing)
+    if !haskey(ws.cache, lazy_objectid(A(C))) @warn "$(typeof(A(C))) key not found" end
     valid, memory = ws.cache[lazy_objectid(A(C))]
     C_cached = structured_mat_view(memory, C)
     if !valid[]
