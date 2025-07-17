@@ -44,18 +44,22 @@ function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::Mat
     if strategy == :mat
         materialize_with(rem, A(M), A_)
     elseif strategy == :x_mul
-        error("not implemented")
         x_i, rem_ = take_ws(rem, size(A(M), 1))
+        y, rem_ = take_ws(rem_, size(A(M), 2))
+        _fillzero!(x_i)
         for i in 1:size(A(M), 1)
-            # x_i[i] = 1.0
-            # mul_with!(rem, @view(A_[:])
+            x_i[i] = one(eltype(A(M)))
+            mul_with!(rem_, y, transpose(A(M)), x_i, true, false)
+            copyto!(@view(A_[i, :]), y)
+            x_i[i] = zero(eltype(M))
         end
     elseif strategy == :mul_x
         x_i, rem_ = take_ws(rem, size(A(M), 2))
+        _fillzero!(x_i)
         for i in 1:size(A(M), 2)
-            x_i[i] = 1.0
+            x_i[i] = one(eltype(A(M)))
             mul_with!(rem_, @view(A_[:, i]), A(M), x_i, true, false)
-            x_i[i] = 0.0
+            x_i[i] = zero(eltype(A(M)))
         end
     end
     return A_, rem
@@ -88,9 +92,9 @@ function materialize_strategy(M::MaterializedMatrix)
     if mat < mul
         return :mat
     elseif nA <= mA
-        return :mat
+        return :mul_x
     else
-        return :mat
+        return :x_mul
     end
 end
 
@@ -99,7 +103,7 @@ function required_workspace(::typeof(materialize_with), M::MaterializedMatrix)
     if strategy == :mat
         return required_workspace(structured_from_ws, A(M)) + required_workspace(materialize_with, A(M))
     elseif strategy == :x_mul
-        return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M)) + max_size(A(M))[1]
+        return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M)) + max_size(A(M))[1] + max_size(A(M))[2] # because we cannot directly write into the memory for A
     else # strategy == :mul_x
         return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M)) + max_size(A(M))[2]
     end
