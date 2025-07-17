@@ -82,7 +82,7 @@ broadcast_materialize(S::MaterializedMatrix) = broadcast_materialize(A(S))
 materialize_broadcasted(ws::Workspace, S::MaterializedMatrix) = materialize_broadcasted(ws, A(S))
 
 function materialize_strategy(M::MaterializedMatrix)
-    # return :mat
+    return :mat # TODO: still unsure about this one..
     # this is a crude heuristic! (if it is "cheaper" to multiply with the matrix than to materialize, then materialize by multiplication)
     mat = workspace_size(required_workspace(materialize_with, A(M)))
     mA, nA = max_size(A(M))

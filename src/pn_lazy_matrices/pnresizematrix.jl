@@ -44,9 +44,13 @@ mul_with!(::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:LazyResizeMatrix{
 mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:LazyResizeMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), α, β)
 required_workspace(::typeof(mul_with!), S::LazyResizeMatrix) = 0
 
-function materialize_with(ws::Workspace, R::LazyResizeMatrix, skeleton::AbstractMatrix)
-    skeleton .= _reshape_view(R)
-    return skeleton, ws
+materialize(R::LazyResizeMatrix) = R
+materialize(Rt::Transpose{T, <:LazyResizeMatrix{T}}) where T = Rt
+function materialize_with(ws::Workspace, R::LazyResizeMatrix, ::Nothing)
+    return _reshape_view(R), ws
+end
+function materialize_with(ws::Workspace, Rt::Transpose{T, <:LazyResizeMatrix{T}}, ::Nothing) where T
+    return transpose(_reshape_view(parent(Rt))), ws
 end
 
 broadcast_materialize(::LazyResizeMatrix) = ShouldBroadcastMaterialize()
