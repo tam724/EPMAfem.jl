@@ -36,9 +36,13 @@ LinearAlgebra.mul!(Y::AbstractVector, St::Transpose{T, <:ScaleMatrix{T}}, X::Abs
 LinearAlgebra.mul!(Y::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
 LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
 
+_rmul!(A::AbstractArray, α::Number) = rmul!(A, α)
+_rmul!(A::Diagonal, α::Number) = rmul!(A.diag, α)
+
 function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix)
     A_mat, _ = materialize_with(ws, A(S), skeleton)
-    A_mat .= a(S) .* A_mat
+    _rmul!(A_mat, a(S))
+    # A_mat .= a(S) .* A_mat
     return A_mat, ws
 end
 

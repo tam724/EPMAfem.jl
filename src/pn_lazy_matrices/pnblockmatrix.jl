@@ -124,7 +124,7 @@ required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_work
 
 function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::AbstractMatrix)
     A_mat, _ = materialize_with(ws, A(I), skeleton)
-    A_mat .= LinearAlgebra.inv!(A_mat)
+    LinearAlgebra.inv!(A_mat)
     return A_mat, ws
 end
 

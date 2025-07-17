@@ -48,12 +48,18 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Tran
 end
 required_workspace(::typeof(mul_with!), S::SumMatrix) = maximum(required_workspace(mul_with!, A) for A in As(S))
 
+_fillzero!(A::AbstractArray) = fill!(A, zero(eltype(A)))
+_fillzero!(D::Diagonal) = fill!(D.diag, zero(eltype(D)))
+
+_add!(A::AbstractArray, B::AbstractArray) = axpy!(true, B, A)
+_add!(A::Diagonal, B::Diagonal) = axpy!(true, B.diag, A.diag)
+
 function materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix)
     # what we do here is to wrap every component into a lazy(materialize, ) and then materialize the full matrix
-    skeleton .= zero(eltype(skeleton))
+    _fillzero!(skeleton)
     for A in As(S)
         A_mat, _ = materialize_with(ws, materialize(A), nothing)
-        skeleton .+= A_mat
+        _add!(skeleton, A_mat)
     end
     return skeleton, ws
 end

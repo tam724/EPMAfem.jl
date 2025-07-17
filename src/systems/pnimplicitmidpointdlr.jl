@@ -37,9 +37,9 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
         T(-1)*(coeffs.Δ*(coeffs.δt*transpose(B))) T(-1)*(coeffs.Δ*C)
     ]
 
-    A_V = sum(kron_AXB(ρp[i], Vt*(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))*V) for i in 1:ns.ne)
-    B_V = sum(kron_AXB(∇pm[i], Ωpm[i]*V) for i in 1:ns.nd)
-    D_V = sum(kron_AXB(∂p[i], Vt*absΩp[i]*V) for i in 1:ns.nd)
+    A_V = sum(kron_AXB(ρp[i], cache(Vt*(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))*V)) for i in 1:ns.ne)
+    B_V = sum(kron_AXB(∇pm[i], cache(Ωpm[i]*V)) for i in 1:ns.nd)
+    D_V = sum(kron_AXB(∂p[i], cache(Vt*absΩp[i]*V)) for i in 1:ns.nd)
 
     BM_V = [
         coeffs.Δ*(A_V + coeffs.γ*D_V) coeffs.Δ*(coeffs.δ*B_V)
@@ -47,9 +47,9 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     ]
     half_BM_V⁻¹ = lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BM_V)
 
-    A_U = sum(kron_AXB(Ut*ρp[i]*U, coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
-    B_U = sum(kron_AXB(Ut*∇pm[i], Ωpm[i]) for i in 1:ns.nd)
-    D_U = sum(kron_AXB(Ut*∂p[i]*U, absΩp[i]) for i in 1:ns.nd)
+    A_U = sum(kron_AXB(cache(Ut*ρp[i]*U), coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
+    B_U = sum(kron_AXB((Ut*∇pm[i]), Ωpm[i]) for i in 1:ns.nd)
+    D_U = sum(kron_AXB(cache(Ut*∂p[i]*U), absΩp[i]) for i in 1:ns.nd)
 
     BM_U = [
         coeffs.Δ*(A_U + coeffs.γ*D_U) coeffs.Δ*(coeffs.δ*B_U)
@@ -57,9 +57,9 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     ]
     half_BM_U⁻¹ = lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BM_U)
 
-    A_UV = sum(kron_AXB(Ut*ρp[i]*U, Vt*(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))*V) for i in 1:ns.ne)
-    B_UV = sum(kron_AXB(Ut*∇pm[i], Ωpm[i]*V) for i in 1:ns.nd)
-    D_UV = sum(kron_AXB(Ut*∂p[i]*U, Vt*absΩp[i]*V) for i in 1:ns.nd)
+    A_UV = sum(kron_AXB(cache(Ut*ρp[i]*U), cache(Vt*(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))*V)) for i in 1:ns.ne)
+    B_UV = sum(kron_AXB((Ut*∇pm[i]), (Ωpm[i]*V)) for i in 1:ns.nd)
+    D_UV = sum(kron_AXB(cache(Ut*∂p[i]*U), cache(Vt*absΩp[i]*V)) for i in 1:ns.nd)
 
     BM_UV = [
         coeffs.Δ*(A_UV + coeffs.γ*D_UV) coeffs.Δ*(coeffs.δ*B_UV)
