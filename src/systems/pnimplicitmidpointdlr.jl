@@ -127,22 +127,11 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssem
     PNLazyMatrices.do_copyto!(system.mats.Vt, transpose(V₁))
     PNLazyMatrices.resize!(system.mats.U, (:, x.rank[]))
     PNLazyMatrices.do_copyto!(system.mats.U, U₁)
-    # update the rhs (we multiply the whole linear system with Δϵ -> "normalization")
-    # implicit_midpoint_coeffs_nonadjoint_rhs!(system.coeffs, system.problem, idx, Δϵ)
-    # invalidate_cache!(system.mats.BM)
-    # minus because we have to bring b to the right side of the equation
-    # assemble_at!(system.rhs, rhs_ass, minus½(idx), -Δϵ, true)
-    # @show size(M), size(N), size(S₀)
-    # mul!(system.rhs, system.mats.BM, vec!(system.tmp, M, S₀, transpose(N), x._xm), -1.0, true)
-
-    # implicit_midpoint_coeffs_nonadjoint_mat!(system.coeffs, system.problem, idx, Δϵ)
     invalidate_cache!(system.mats.BM_UV⁻¹)
-
-    # rhsp, rhsm = @view(system.rhs[1:nxp*nΩp]), @view(system.rhs[nxp*nΩp+1:end])
-
+    
     # S-step
     rhs_S = @view(system.tmp[1:x.rank[]*x.rank[] + nxm*nΩm])
-    copyto!(reshape(@view(rhs_S[1:x.rank[]*x.rank[]]), (x.rank[], x.rank[])), M * transpose(U₀) * reshape(rhsp, (nxp, nΩp)) * transpose(Vt₀) * transpose(N))
+    copyto!(reshape(@view(rhs_S[1:x.rank[]*x.rank[]]), (x.rank[], x.rank[])), transpose(U₁)*reshape(rhsp, (nxp, nΩp))*V₁)
     copyto!(@view(rhs_S[x.rank[]*x.rank[]+1:end]), rhsm)
     # TODO:
     S₁ = allocate_vec(architecture(system.problem), x.rank[]*x.rank[] + nxm*nΩm) # allocates, we could directly write this in S₀ and _xm

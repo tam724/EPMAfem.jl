@@ -11,7 +11,7 @@ include("plot_overloads.jl")
 # direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 2)
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), 100))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(1, 1)
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(21, 1)
 
 equations = EPMAfem.PNEquations()
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
@@ -27,36 +27,43 @@ problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 
 system4 = EPMAfem.implicit_midpoint2(problem, \)
 system5 = EPMAfem.implicit_midpoint2(problem, (PNLazyMatrices.schur_complement, Krylov.minres))
-system6 = EPMAfem.implicit_midpoint_dlr(problem; max_rank=1);
+system6 = EPMAfem.implicit_midpoint_dlr(problem; max_rank=5);
 
 excitation = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [0.7], [VectorValue(-1.0, 0.0, 0.0)])
 extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
 
 discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cpu())[1]
-discrete_extr = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cpu())[1].vector
+# discrete_extr = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cpu())[1].vector
 
-sol4 = system4 * discrete_rhs
-sol5 = system5 * discrete_rhs
-sol6 = system6 * discrete_rhs
+x = range(-1, 1, length=101)
+f(x) = exp(-100*x^2)
+plot(f.(x))
 
+discrete_rhs2 = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), discrete_rhs.bϵ, f.(x), zeros(size(discrete_rhs.bΩp)))
+discrete_rhs2.bΩp[1] = -1.0
 
-anim = @animate for ((i4, ψ4), (i5, ψ5), (i6, ψ6)) in zip(sol4, sol5, sol6)
-    @show i4, i5, i6
-    ψp4, ψm4 = EPMAfem.pmview(ψ4, model)
-    func4 = EPMAfem.SpaceModels.interpolable(ψp4[:, 1] |> collect, EPMAfem.space_model(model))
-    plot(-1.0:0.01:0, func4.interp, swapxy=true, aspect_ratio=:equal, label="backslash")
+# sol4 = system4 * discrete_rhs2
+sol5 = system5 * discrete_rhs2
+sol6 = system6 * discrete_rhs2
+
+anim = @animate for ((i5, ψ5), (i6, ψ6)) in zip(sol5, sol6)
+    @show i5, i6
+    # ψp4, ψm4 = EPMAfem.pmview(ψ4, model)
+    # func4 = EPMAfem.SpaceModels.interpolable(ψp4[:, 1] |> collect, EPMAfem.space_model(model))
+    # plot(-1.0:0.01:0, func4.interp, swapxy=true, label="backslash")
 
     ψp5, ψm5 = EPMAfem.pmview(ψ5, model)
     func5 = EPMAfem.SpaceModels.interpolable(ψp5[:, 1] |> collect, EPMAfem.space_model(model))
-    plot!(-1.0:0.01:0, func5.interp, swapxy=true, aspect_ratio=:equal, label="schur minres")
+    plot(-1.0:0.01:0, func5.interp, swapxy=true, label="schur minres")
 
     ψp6, ψm6 = EPMAfem.pmview(ψ6, model)
     func6 = EPMAfem.SpaceModels.interpolable(ψp6[:, 1] |> collect, EPMAfem.space_model(model))
-    plot!(-1.0:0.01:0, func6.interp, swapxy=true, aspect_ratio=:equal, label="dlr")
+    plot!(-1.0:0.01:0, func6.interp, swapxy=true, label="dlr")
 
     U, S, Vt = EPMAfem.USVt(ψ6)
-    @show S
+    plot!(size=(1000, 1000))
 end
+gif(anim)
 
 sol = system * discrete_rhs;
 solm1 = systemm1 * discrete_rhs;
