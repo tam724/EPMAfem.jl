@@ -128,7 +128,7 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssem
     PNLazyMatrices.resize!(system.mats.U, (:, x.rank[]))
     PNLazyMatrices.do_copyto!(system.mats.U, U₁)
     invalidate_cache!(system.mats.BM_UV⁻¹)
-    
+
     # S-step
     rhs_S = @view(system.tmp[1:x.rank[]*x.rank[] + nxm*nΩm])
     copyto!(reshape(@view(rhs_S[1:x.rank[]*x.rank[]]), (x.rank[], x.rank[])), transpose(U₁)*reshape(rhsp, (nxp, nΩp))*V₁)
@@ -189,6 +189,17 @@ function vec!(x::AbstractVector, Up, Sp, Vtp, xm)
     _xm = @view(x[nxp*nΩp+1:end])
     _xm .= xm
     return x
+end
+
+function pview(sol::LowRankSolution, model::DiscretePNModel)
+    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
+    U, S, Vt = USVt(sol)
+    return U*S*Vt
+end
+
+function mview(sol::LowRankSolution, model::DiscretePNModel)
+    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(model)
+    return reshape(sol._xm, (nxm, nΩm))
 end
 
 function pmview(sol::LowRankSolution, model::DiscretePNModel)
