@@ -89,11 +89,20 @@ end
 # for all "normal" matrices this is probably useful..
 broadcast_materialize(::AbstractMatrix) = ShouldBroadcastMaterialize()
 
-function mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
+#use nothing here to explcitly say that the lazy path should end
+function mul_with!(::Union{Workspace, Nothing}, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     if Y isa AbstractLazyMatrixOrTranspose error("should not happen! mul_with!(.., ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...)") end
     if A isa AbstractLazyMatrixOrTranspose error("should not happen! mul_with!(.., ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...)") end
     if X isa AbstractLazyMatrixOrTranspose error("should not happen! mul_with!(.., ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...)") end
-    mul!(Y, A, X, α, β)
+    if A isa Diagonal
+        CUDA.NVTX.@range "Diag mul" begin
+            mul!(Y, A, X, α, β)            
+        end
+    else
+        CUDA.NVTX.@range "normal mul" begin
+            mul!(Y, A, X, α, β)            
+        end
+    end
 end
 
 required_workspace(::typeof(mul_with!), A::AbstractMatrix) = 0
@@ -108,64 +117,6 @@ end
 required_workspace(::typeof(materialize_with), A::AbstractMatrix) = 0
 
 materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
-
-# allocate_with(::Workspace, A::AbstractMatrix) = error("should not be called!")
-# required_workspace(::typeof(allocate_with), A::AbstractMatrix) = 0
-
-# LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::AbstractVector) where T = mul!(y, A, x, true, false)
-# LinearAlgebra.mul!(y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix) where T = mul!(y, A, X, true, false)
-# LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMatrix{T}}, x::AbstractVector) where T = mul!(y, At, x, true, false)
-# LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix) where T = mul!(y, At, X, true, false)
-
-# function LinearAlgebra.mul!(y::AbstractVector, A::AbstractLazyMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
-#     ws = create_workspace(mul_with!, A, zeros)
-#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
-#     mul_with!(ws, y, A, x, α, β)
-#     return y
-# end
-
-# function LinearAlgebra.mul!(Y::AbstractMatrix, A::AbstractLazyMatrix{T}, X::AbstractMatrix, α::Number, β::Number) where T
-#     @warn "Not build for this, but we try anyways..."
-#     ws = create_workspace(mul_with!, A, zeros)
-#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
-#     mul_with!(ws, Y, A, X, α, β)
-#     return Y
-# end
-
-# function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::AbstractLazyMatrix{T}, α::Number, β::Number) where T
-#     @warn "Not build for this, but we try anyways..."
-#     ws = create_workspace(mul_with!, A, zeros)
-#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(length(ws.workspace)))!") end
-#     mul_with!(ws, Y, X, A, α, β)
-#     return Y
-# end
-
-# function LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:AbstractLazyMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-#     ws = create_workspace(mul_with!, parent(At), zeros)
-#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
-#     mul_with!(ws, y, At, x, α, β)
-#     return y
-# end
-
-# function LinearAlgebra.mul!(y::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
-#     @warn "Not build for this, but we try anyways..."
-#     ws = create_workspace(mul_with!, parent(At), zeros)
-#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
-#     mul_with!(ws, y, At, X, α, β)
-#     return y
-# end
-
-# function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, At::Transpose{T, <:AbstractLazyMatrix{T}}, α::Number, β::Number) where T
-#     @warn "Not build for this, but we try anyways..."
-#     ws = create_workspace(mul_with!, parent(At), zeros)
-#     if length(ws.workspace) > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(length(ws.workspace)))!") end
-#     mul_with!(ws, Y, X, At, α, β)
-#     return Y
-# end
-
-# # a abstract type that does not implement an operation, but an flag, how we deal with this matrix (materialized, cached)
-# abstract type MarkedLazyMatrix{T} <: AbstractLazyMatrix{T} end
-
 @concrete struct LazyOpMatrix{T} <: AbstractLazyMatrix{T}
     op
     args

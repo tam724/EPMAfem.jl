@@ -1,10 +1,6 @@
 const ScaleMatrixL{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{Base.RefValue{T}, M}}
 const ScaleMatrixR{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{M, Base.RefValue{T}}}
 const ScaleMatrix{T, M <: AbstractMatrix{T}} = Union{ScaleMatrixL{T, M}, ScaleMatrixR{T, M}}
-# ScaleMatricex where M is a "normal" Matrix type should support the 5-arg mul! -> when mul_with!(::ScaleMatrix) we simply fuse the coefficient into a mul!( with α = a(S)*α_)
-const NotFusedScaleMatrix{T} = ScaleMatrix{T, <:AbstractLazyMatrixOrTranspose{T}}
-# we cannot do this for ScaleMatrices where the M is a LazyMatrix -> NonFusedScaleMatrix
-# somewhat that copies what we do with ShouldBroadcastMaterialize, maybe there is duplicate information here (TODO: figure this out..)
 
 @inline a(S::ScaleMatrixL) = S.args[1][]
 @inline A(S::ScaleMatrixL) = S.args[2]
@@ -15,26 +11,11 @@ max_size(S::ScaleMatrix) = max_size(A(S))
 lazy_getindex(S::ScaleMatrix, idx::Vararg{<:Integer}) = *(a(S), getindex(A(S), idx...))
 @inline isdiagonal(S::ScaleMatrix) = isdiagonal(A(S))
 
-mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::NotFusedScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::NotFusedScaleMatrix, α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
-mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:NotFusedScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T = mul_with!(ws, Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:NotFusedScaleMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
-required_workspace(::typeof(mul_with!), S::NotFusedScaleMatrix) = required_workspace(mul_with!, A(S))
-
-# for ScaleMatrix (fused) the mul_with! simply calls back into mul!
-mul_with!(::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
-mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul!(Y, X, A(S), a(S)*α, β)
-mul_with!(::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
-required_workspace(::typeof(mul_with!), S::ScaleMatrix) = 0
-
-# and we can additionally overload the LinearAlgebra.mul! calls by simply fusing in the a(S)
-LinearAlgebra.mul!(Y::AbstractVector, S::ScaleMatrix, X::AbstractVector, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
-LinearAlgebra.mul!(Y::AbstractMatrix, S::ScaleMatrix, X::AbstractMatrix, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
-LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul!(Y, X, A(S), a(S)*α, β)
-LinearAlgebra.mul!(Y::AbstractVector, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVector, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-LinearAlgebra.mul!(Y::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
+mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
+mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul_with!(ws, Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
+required_workspace(::typeof(mul_with!), S::ScaleMatrix) = required_workspace(mul_with!, A(S))
 
 _rmul!(A::AbstractArray, α::Number) = rmul!(A, α)
 _rmul!(A::Diagonal, α::Number) = rmul!(A.diag, α)
@@ -144,7 +125,7 @@ end
 function materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix)
     A_mat, rem = materialize_with(ws, materialize(A(M)), nothing)
     B_mat, _ = materialize_with(rem, materialize(B(M)), nothing)
-    mul!(skeleton, A_mat, B_mat)
+    mul_with!(nothing, skeleton, A_mat, B_mat, true, false)
     return skeleton, ws
 end
 
@@ -275,17 +256,17 @@ function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix
 
     Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))), nothing)
     Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]), nothing)
-    mul!(mat_view(T1, size(Aₙ₋₁, 1), size(Aₙ, 2)), Aₙ₋₁, Aₙ)
+    mul_with!(nothing, mat_view(T1, size(Aₙ₋₁, 1), size(Aₙ, 2)), Aₙ₋₁, Aₙ, true, false)
     T2, rem_ = take_ws(rem, max_intermediate)
     for i in length(As(M))-2:-1:2
         Aᵢ, _ = materialize_with(rem_, materialize(As(M)[i]), nothing)
-        mul!(mat_view(T2, size(Aᵢ, 1), size(Aₙ, 2)), Aᵢ, mat_view(T1, size(Aᵢ, 2), size(Aₙ, 2)))
+        mul_with!(nothing, mat_view(T2, size(Aᵢ, 1), size(Aₙ, 2)), Aᵢ, mat_view(T1, size(Aᵢ, 2), size(Aₙ, 2)), true, false)
         T1, T2 = T2, T1
     end
     A₁, _ = materialize_with(rem_, materialize(As(M)[1]), nothing)
 
     # the final result is always T1
-    mul!(skeleton, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)))
+    mul_with!(nothing, skeleton, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)), true, false)
     return skeleton, ws
 end
 

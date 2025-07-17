@@ -11,19 +11,19 @@ lazy_objectid(M::MaterializedOrCachedMatrix) = lazy_objectid(A(M))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, M::MaterializedOrCachedMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     materialized_M, _ = materialize_with(ws, M, nothing)
-    mul!(Y, materialized_M, X, α, β)
+    mul_with!(nothing, Y, materialized_M, X, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
     materialized_Mt, _ = materialize_with(ws, parent(Mt), nothing)
-    mul!(Y, transpose(materialized_Mt), X, α, β)
+    mul_with!(nothing, Y, transpose(materialized_Mt), X, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::MaterializedOrCachedMatrix, α::Number, β::Number)
     materialized_M, _ = materialize_with(ws, M, nothing)
-    mul!(Y, X, materialized_M, α, β)
+    mul_with!(nothing, Y, X, materialized_M, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, α::Number, β::Number) where T
     materialized_Mt, _ = materialize_with(ws, parent(Mt), nothing)
-    mul!(Y, X, transpose(materialized_Mt), α, β)
+    mul_with!(nothing, Y, X, transpose(materialized_Mt), α, β)
 end
 # this may be extended to multiplications of multiple materialized matrices.. (we are good with only one now..)
 required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix) = required_workspace(materialize_with, M)
@@ -82,7 +82,7 @@ broadcast_materialize(S::MaterializedMatrix) = broadcast_materialize(A(S))
 materialize_broadcasted(ws::Workspace, S::MaterializedMatrix) = materialize_broadcasted(ws, A(S))
 
 function materialize_strategy(M::MaterializedMatrix)
-    return :mat # TODO: still unsure about this one..
+    # return :mat # TODO: still unsure about this one..
     # this is a crude heuristic! (if it is "cheaper" to multiply with the matrix than to materialize, then materialize by multiplication)
     mat = workspace_size(required_workspace(materialize_with, A(M)))
     mA, nA = max_size(A(M))
