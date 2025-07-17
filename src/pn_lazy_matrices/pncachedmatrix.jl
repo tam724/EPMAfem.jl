@@ -40,43 +40,40 @@ function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::Materi
 end
 function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, ::Nothing)
     A_, rem = structured_from_ws(ws, A(M))
+    return materialize_with(ShouldNotBroadcastMaterialize(), rem, M, A_; warn=false)
+end
+
+materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix; warn=true) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton; warn=warn) 
+function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix; warn=true)
+    if warn @warn "Materializing a materialized matrix..." end
+    bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
+    Base.Broadcast.materialize!(skeleton, bcd)
+    return skeleton, ws
+end
+function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix; warn=true)
+    if warn @warn "Materializing a materialized matrix..." end
     strategy = materialize_strategy(M)
     if strategy == :mat
-        materialize_with(rem, A(M), A_)
+        materialize_with(ws, A(M), skeleton)
     elseif strategy == :x_mul
-        x_i, rem_ = take_ws(rem, size(A(M), 1))
+        x_i, rem_ = take_ws(ws, size(A(M), 1))
         y, rem_ = take_ws(rem_, size(A(M), 2))
         _fillzero!(x_i)
         for i in 1:size(A(M), 1)
             x_i[i] = one(eltype(A(M)))
             mul_with!(rem_, y, transpose(A(M)), x_i, true, false)
-            copyto!(@view(A_[i, :]), y)
+            copyto!(@view(skeleton[i, :]), y)
             x_i[i] = zero(eltype(M))
         end
     elseif strategy == :mul_x
-        x_i, rem_ = take_ws(rem, size(A(M), 2))
+        x_i, rem_ = take_ws(ws, size(A(M), 2))
         _fillzero!(x_i)
         for i in 1:size(A(M), 2)
             x_i[i] = one(eltype(A(M)))
-            mul_with!(rem_, @view(A_[:, i]), A(M), x_i, true, false)
+            mul_with!(rem_, @view(skeleton[:, i]), A(M), x_i, true, false)
             x_i[i] = zero(eltype(A(M)))
         end
     end
-    return A_, rem
-end
-
-materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton)
-function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix)
-    @warn "Materializing a materialized matrix..."
-    bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
-    Base.Broadcast.materialize!(skeleton, bcd)
-    return skeleton, ws
-end
-function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix)
-    @warn "Materializing a materialized matrix..."
-    A_, rem = structured_from_ws(ws, A(M))
-    materialize_with(rem, A(M), A_)
-    skeleton .= A_
     return skeleton, ws
 end
 
@@ -107,7 +104,6 @@ function required_workspace(::typeof(materialize_with), M::MaterializedMatrix)
     else # strategy == :mul_x
         return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M)) + max_size(A(M))[2]
     end
-    # @show required_workspace(materialize_with, A(M)), required_workspace(mul_with!, A(M)), size(A(M))
     return 
 end
 materialize(M::Union{MaterializedMatrix{T}, Transpose{T, <:MaterializedMatrix{T}}}) where T = M
@@ -118,7 +114,7 @@ function materialize_with(ws::Workspace, C::CachedMatrix, ::Nothing)
     valid, memory = ws.cache[lazy_objectid(A(C))]
     C_cached = structured_mat_view(memory, C)
     if !valid[]
-        C_cached, _ = materialize_with(ws, A(C), C_cached)
+        materialize_with(ws, materialize(A(C)), C_cached; warn=false)
         valid[] = true
     end
     return C_cached, ws
@@ -131,7 +127,14 @@ materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with
 
 function required_workspace(::typeof(materialize_with), C::CachedMatrix)
     cache_size = required_workspace(structured_from_ws, A(C))
-    return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(materialize_with, A(C))
+    strategy = materialize_strategy(materialize(A(C)))
+    if strategy == :mat
+        return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(materialize_with, A(C))
+    elseif strategy == :x_mul
+        return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(mul_with!, A(C)) + max_size(A(C))[1] + max_size(A(C))[2] # because we cannot directly write into the memory for A
+    else # strategy == :mul_x
+        return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(mul_with!, A(C)) + max_size(A(C))[2]
+    end
 end
 
 # TODO: does this make sense?
