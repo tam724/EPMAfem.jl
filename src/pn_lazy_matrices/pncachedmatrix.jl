@@ -60,18 +60,18 @@ function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::Mat
         y, rem_ = take_ws(rem_, size(A(M), 2))
         _fillzero!(x_i)
         for i in 1:size(A(M), 1)
-            x_i[i] = one(eltype(A(M)))
+            x_i[i:i] .= one(eltype(A(M)))
             mul_with!(rem_, y, transpose(A(M)), x_i, true, false)
             copyto!(@view(skeleton[i, :]), y)
-            x_i[i] = zero(eltype(M))
+            x_i[i:i] .= zero(eltype(M))
         end
     elseif strategy == :mul_x
         x_i, rem_ = take_ws(ws, size(A(M), 2))
         _fillzero!(x_i)
         for i in 1:size(A(M), 2)
-            x_i[i] = one(eltype(A(M)))
+            x_i[i:i] .= one(eltype(A(M)))
             mul_with!(rem_, @view(skeleton[:, i]), A(M), x_i, true, false)
-            x_i[i] = zero(eltype(A(M)))
+            x_i[i:i] .= zero(eltype(A(M)))
         end
     end
     return skeleton, ws
@@ -82,10 +82,12 @@ broadcast_materialize(S::MaterializedMatrix) = broadcast_materialize(A(S))
 materialize_broadcasted(ws::Workspace, S::MaterializedMatrix) = materialize_broadcasted(ws, A(S))
 
 function materialize_strategy(M::MaterializedMatrix)
+    # return :mat
     # this is a crude heuristic! (if it is "cheaper" to multiply with the matrix than to materialize, then materialize by multiplication)
     mat = workspace_size(required_workspace(materialize_with, A(M)))
     mA, nA = max_size(A(M))
     mul = min(mA, nA) * workspace_size(required_workspace(mul_with!, A(M)))
+    # @show mat, mA, nA, mul
     if mat < mul
         return :mat
     elseif nA <= mA

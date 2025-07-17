@@ -27,9 +27,11 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl)
 
-    A = sum(kron_AXB(ρp[i], coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
+    A_Ikp(i) = cache(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))
+    C_Ikm(i) = cache(coeffs.a[i]*Im + sum(coeffs.c[i][j]*km[i][j] for j in 1:ns.nσ))
+    A = sum(kron_AXB(ρp[i], A_Ikp(i)) for i in 1:ns.ne)
     B = sum(kron_AXB(∇pm[i], Ωpm[i]) for i in 1:ns.nd)
-    C = sum(kron_AXB(ρm[i], coeffs.a[i]*Im + sum(coeffs.c[i][j]*km[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
+    C = sum(kron_AXB(ρm[i], C_Ikm(i)) for i in 1:ns.ne)
     D = sum(kron_AXB(∂p[i], absΩp[i]) for i in 1:ns.nd)
 
     BM = [
@@ -37,7 +39,7 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
         T(-1)*(coeffs.Δ*(coeffs.δt*transpose(B))) T(-1)*(coeffs.Δ*C)
     ]
 
-    A_V = sum(kron_AXB(ρp[i], cache(Vt*(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))*V)) for i in 1:ns.ne)
+    A_V = sum(kron_AXB(ρp[i], cache(Vt*A_Ikp(i)*V)) for i in 1:ns.ne)
     B_V = sum(kron_AXB(∇pm[i], cache(Ωpm[i]*V)) for i in 1:ns.nd)
     D_V = sum(kron_AXB(∂p[i], cache(Vt*absΩp[i]*V)) for i in 1:ns.nd)
 
@@ -47,8 +49,8 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     ]
     half_BM_V⁻¹ = lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BM_V)
 
-    A_U = sum(kron_AXB(cache(Ut*ρp[i]*U), coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
-    B_U = sum(kron_AXB((Ut*∇pm[i]), Ωpm[i]) for i in 1:ns.nd)
+    A_U = sum(kron_AXB(cache(Ut*ρp[i]*U), A_Ikp(i)) for i in 1:ns.ne)
+    B_U = sum(kron_AXB(cache(Ut*∇pm[i]), Ωpm[i]) for i in 1:ns.nd)
     D_U = sum(kron_AXB(cache(Ut*∂p[i]*U), absΩp[i]) for i in 1:ns.nd)
 
     BM_U = [
@@ -57,8 +59,8 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     ]
     half_BM_U⁻¹ = lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BM_U)
 
-    A_UV = sum(kron_AXB(cache(Ut*ρp[i]*U), cache(Vt*(coeffs.a[i]*Ip + sum(coeffs.c[i][j]*kp[i][j] for j in 1:ns.nσ))*V)) for i in 1:ns.ne)
-    B_UV = sum(kron_AXB((Ut*∇pm[i]), (Ωpm[i]*V)) for i in 1:ns.nd)
+    A_UV = sum(kron_AXB(cache(Ut*ρp[i]*U), cache(Vt*A_Ikp(i)*V)) for i in 1:ns.ne)
+    B_UV = sum(kron_AXB(cache(Ut*∇pm[i]), cache(Ωpm[i]*V)) for i in 1:ns.nd)
     D_UV = sum(kron_AXB(cache(Ut*∂p[i]*U), cache(Vt*absΩp[i]*V)) for i in 1:ns.nd)
 
     BM_UV = [
@@ -67,6 +69,7 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     ]
     BM_UV⁻¹ = lazy((PNLazyMatrices.schur_complement, Krylov.minres), BM_UV)
 
+    # uBM, uhalf_BM_U⁻¹, uhalf_BM_V⁻¹, uBM_UV⁻¹ = unlazy((BM, half_BM_U⁻¹, half_BM_V⁻¹, BM_UV⁻¹), arch)
     uBM, uhalf_BM_U⁻¹, uhalf_BM_V⁻¹, uBM_UV⁻¹ = unlazy((BM, half_BM_U⁻¹, half_BM_V⁻¹, BM_UV⁻¹), vec_size -> allocate_vec(arch, vec_size))
     rhs = allocate_vec(arch, size(BM, 1))
     tmp = allocate_vec(arch, size(BM, 1))

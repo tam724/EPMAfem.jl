@@ -7,13 +7,13 @@ function create_workspace(::typeof(materialize_with), L::AbstractLazyMatrixOrTra
     return create_workspace(ws_size, allocate)
 end
 create_workspace(n::Integer, allocate) = create_workspace(WorkspaceSize(n, []), allocate)
-function create_workspace(ws::WorkspaceSize, allocate)
+function create_workspace(ws::WorkspaceSize, allocate::Function)
     workspace = allocate(ws.workspace)
     cache = Dict{UInt64, Tuple{Base.RefValue{Bool}, typeof(workspace)}}()
     for (cache_key, cache_size) in ws.cache
         cache[cache_key] = (Ref(false), allocate(cache_size))
     end
-    return Workspace(workspace, cache)
+    return PreallWorkspace(workspace, cache)
 end
 
 function Base.:+(memory_add::Integer, ws::WorkspaceSize)
@@ -38,18 +38,17 @@ workspace_size(ws::WorkspaceSize) = ws.workspace
 workspace_size(n::Int) = n
 
 
-function take_ws(ws::Workspace, n::Integer)
-    return @view(ws.workspace[1:n]), Workspace(@view(ws.workspace[n+1:end]), ws.cache)
+function take_ws(ws::PreallWorkspace, n::Integer)
+    return @view(ws.workspace[1:n]), PreallWorkspace(@view(ws.workspace[n+1:end]), ws.cache)
 end
 
-function take_ws(ws::Workspace, (n, m)::Tuple{<:Integer, <:Integer})
-    return reshape(@view(ws.workspace[1:n*m]), (n, m)), Workspace(@view(ws.workspace[n*m+1:end]), ws.cache)
+function take_ws(ws::PreallWorkspace, (n, m)::Tuple{<:Integer, <:Integer})
+    return reshape(@view(ws.workspace[1:n*m]), (n, m)), PreallWorkspace(@view(ws.workspace[n*m+1:end]), ws.cache)
 end
 
-function take_ws(ws::Workspace, (n, m, k)::Tuple{<:Integer, <:Integer, <:Integer})
-    return reshape(@view(ws.workspace[1:n*m*k]), (n, m, k)), Workspace(@view(ws.workspace[n*m*k+1:end]), ws.cache)
+function take_ws(ws::PreallWorkspace, (n, m, k)::Tuple{<:Integer, <:Integer, <:Integer})
+    return reshape(@view(ws.workspace[1:n*m*k]), (n, m, k)), PreallWorkspace(@view(ws.workspace[n*m*k+1:end]), ws.cache)
 end
-
 
 function mat_view(v::AbstractVector, m::Integer, n::Integer)
     return reshape(@view(v[1:m*n]), (m, n))

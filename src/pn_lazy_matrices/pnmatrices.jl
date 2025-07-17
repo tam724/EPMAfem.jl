@@ -10,10 +10,13 @@ abstract type BroadcastMaterialize end
 struct ShouldBroadcastMaterialize <: BroadcastMaterialize end
 struct ShouldNotBroadcastMaterialize <: BroadcastMaterialize end
 
-@concrete struct Workspace{VT<:AbstractVector}
+abstract type Workspace{VT} end
+
+@concrete struct PreallWorkspace{VT<:AbstractVector} <: Workspace{VT}
     workspace::VT
     cache
 end
+
 @concrete struct WorkspaceSize{ST<:Integer}
     workspace::ST
     cache

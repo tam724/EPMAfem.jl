@@ -49,6 +49,7 @@ convert_to_architecture(arch::PNArchitecture{T}, x::Diagonal) where T = Diagonal
 
 allocate_vec(arch::PNArchitecture{T}, n::Int) where T = vec_type(arch)(undef, n)
 allocate_mat(arch::PNArchitecture{T}, m::Int, n::Int) where T = mat_type(arch)(undef, m, n)
+allocate_arr(arch::PNArchitecture{T}, m::Int, n::Int, k::Int) where T = arr_type(arch)(undef, m, n, k)
 
 ## syntactic sugar
 (arch::PNArchitecture)(x) = convert_to_architecture(arch, x)
