@@ -85,65 +85,83 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
 end
 
 function step_nonadjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssembler, idx, Δϵ)
-    if system.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
-    if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
-    # update the rhs (we multiply the whole linear system with Δϵ -> "normalization")
-    implicit_midpoint_coeffs_nonadjoint_rhs!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.mats.BM)
-    # minus because we have to bring b to the right side of the equation
-    assemble_at!(system.rhs, rhs_ass, minus½(idx), -Δϵ, true)
-    mul!(system.rhs, system.mats.BM, vec!(system.tmp, x), -1.0, true)
+    @show idx
+    CUDA.NVTX.@range "prep" begin
+        if system.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
+        if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
+        # update the rhs (we multiply the whole linear system with Δϵ -> "normalization")
+        implicit_midpoint_coeffs_nonadjoint_rhs!(system.coeffs, system.problem, idx, Δϵ)
+        invalidate_cache!(system.mats.BM)
+        # minus because we have to bring b to the right side of the equation
+        CUDA.NVTX.@range "assemble vec" begin
+            assemble_at!(system.rhs, rhs_ass, minus½(idx), -Δϵ, true)
+        end
 
-    U₀, S₀, Vt₀ = USVt(x)
+        CUDA.NVTX.@range "assemble rhs" begin
+            mul!(system.rhs, system.mats.BM, vec!(system.tmp, x), -1.0, true)
+        end
+        U₀, S₀, Vt₀ = USVt(x)
 
-    implicit_midpoint_coeffs_nonadjoint_mat!(system.coeffs, system.problem, idx, Δϵ)
-    # K-step (prep)
-    PNLazyMatrices.resize!(system.mats.Vt, (x.rank[], :))
-    PNLazyMatrices.copyto!(system.mats.Vt, Vt₀)
-    # L-step (prep)
-    PNLazyMatrices.resize!(system.mats.U, (:, x.rank[]))
-    PNLazyMatrices.copyto!(system.mats.U, U₀)
-    invalidate_cache!(system.mats.half_BM_V⁻¹) # not necessary, same ws: invalidate_cache!(system.mats.half_BM_U⁻¹)
-    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
-    rhsp, rhsm = @view(system.rhs[1:nxp*nΩp]), @view(system.rhs[nxp*nΩp+1:end])
 
-    # K-step
-    rhs_K = @view(system.tmp[1:nxp*x.rank[] + nxm*nΩm])
-    mul!(reshape(@view(rhs_K[1:nxp*x.rank[]]), (nxp, x.rank[])), reshape(rhsp, (nxp, nΩp)), transpose(Vt₀))
-    copyto!(@view(rhs_K[nxp*x.rank[]+1:end]), rhsm)
-    K₁ = allocate_vec(architecture(system.problem), nxp*x.rank[]) # TODO: allocating
-    mul!(K₁, system.mats.half_BM_V⁻¹, rhs_K)
-    U₁ = (qr(reshape(K₁, (nxp, x.rank[]))).Q |> mat_type(architecture(system.problem)))[1:size(U₀, 1), 1:size(U₀, 2)]
-    M = transpose(U₁)*U₀
+        CUDA.NVTX.@range "copy basis" begin
+            implicit_midpoint_coeffs_nonadjoint_mat!(system.coeffs, system.problem, idx, Δϵ)
+            # K-step (prep)
+            PNLazyMatrices.resize!(system.mats.Vt, (x.rank[], :))
+            PNLazyMatrices.copyto!(system.mats.Vt, Vt₀)
+            # L-step (prep)
+            PNLazyMatrices.resize!(system.mats.U, (:, x.rank[]))
+            PNLazyMatrices.copyto!(system.mats.U, U₀)
+            invalidate_cache!(system.mats.half_BM_V⁻¹) # not necessary, same ws: invalidate_cache!(system.mats.half_BM_U⁻¹)
+            (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
+            rhsp, rhsm = @view(system.rhs[1:nxp*nΩp]), @view(system.rhs[nxp*nΩp+1:end])
+        end
+    end
 
-    # L-step
-    rhs_Lt = @view(system.tmp[1:x.rank[]*nΩp + nxm*nΩm])
-    mul!(reshape(@view(rhs_Lt[1:x.rank[]*nΩp]), (x.rank[], nΩp)), transpose(U₀), reshape(rhsp, (nxp, nΩp)))
-    copyto!(@view(rhs_Lt[x.rank[]*nΩp+1:end]), rhsm)
-    Lt₁ = allocate_vec(architecture(system.problem), x.rank[]*nΩp) # TODO: allocating
-    mul!(Lt₁, system.mats.half_BM_U⁻¹, rhs_Lt)
-    V₁ = (qr(transpose(reshape(Lt₁, (x.rank[], nΩp)))).Q |> mat_type(architecture(system.problem)))[1:size(Vt₀, 2), 1:size(Vt₀, 1)]
-    N = transpose(V₁)*transpose(Vt₀)
-    
-    # S-step (prep)
-    PNLazyMatrices.resize!(system.mats.Vt, (x.rank[], :))
-    PNLazyMatrices.do_copyto!(system.mats.Vt, transpose(V₁))
-    PNLazyMatrices.resize!(system.mats.U, (:, x.rank[]))
-    PNLazyMatrices.do_copyto!(system.mats.U, U₁)
-    invalidate_cache!(system.mats.BM_UV⁻¹)
+    CUDA.NVTX.@range "k-step" begin
+        # K-step
+        rhs_K = @view(system.tmp[1:nxp*x.rank[] + nxm*nΩm])
+        mul!(reshape(@view(rhs_K[1:nxp*x.rank[]]), (nxp, x.rank[])), reshape(rhsp, (nxp, nΩp)), transpose(Vt₀))
+        copyto!(@view(rhs_K[nxp*x.rank[]+1:end]), rhsm)
+        K₁ = allocate_vec(architecture(system.problem), nxp*x.rank[]) # TODO: allocating
+        mul!(K₁, system.mats.half_BM_V⁻¹, rhs_K)
+        U₁ = (qr(reshape(K₁, (nxp, x.rank[]))).Q |> mat_type(architecture(system.problem)))[1:size(U₀, 1), 1:size(U₀, 2)]
+        M = transpose(U₁)*U₀
+    end
 
-    # S-step
-    rhs_S = @view(system.tmp[1:x.rank[]*x.rank[] + nxm*nΩm])
-    copyto!(reshape(@view(rhs_S[1:x.rank[]*x.rank[]]), (x.rank[], x.rank[])), transpose(U₁)*reshape(rhsp, (nxp, nΩp))*V₁)
-    copyto!(@view(rhs_S[x.rank[]*x.rank[]+1:end]), rhsm)
-    # TODO:
-    S₁ = allocate_vec(architecture(system.problem), x.rank[]*x.rank[] + nxm*nΩm) # allocates, we could directly write this in S₀ and _xm
-    mul!(S₁, system.mats.BM_UV⁻¹, rhs_S)
+    CUDA.NVTX.@range "l-step" begin
+        # L-step
+        rhs_Lt = @view(system.tmp[1:x.rank[]*nΩp + nxm*nΩm])
+        mul!(reshape(@view(rhs_Lt[1:x.rank[]*nΩp]), (x.rank[], nΩp)), transpose(U₀), reshape(rhsp, (nxp, nΩp)))
+        copyto!(@view(rhs_Lt[x.rank[]*nΩp+1:end]), rhsm)
+        Lt₁ = allocate_vec(architecture(system.problem), x.rank[]*nΩp) # TODO: allocating
+        mul!(Lt₁, system.mats.half_BM_U⁻¹, rhs_Lt)
+        V₁ = (qr(transpose(reshape(Lt₁, (x.rank[], nΩp)))).Q |> mat_type(architecture(system.problem)))[1:size(Vt₀, 2), 1:size(Vt₀, 1)]
+        N = transpose(V₁)*transpose(Vt₀)
+    end
 
-    copyto!(U₀, U₁)
-    copyto!(Vt₀, transpose(V₁))
-    copyto!(S₀, @view(S₁[1:x.rank[]*x.rank[]]))
-    copyto!(x._xm, @view(S₁[x.rank[]*x.rank[]+1:end]))
+    CUDA.NVTX.@range "s-step" begin
+        # S-step (prep)
+        PNLazyMatrices.resize!(system.mats.Vt, (x.rank[], :))
+        PNLazyMatrices.do_copyto!(system.mats.Vt, transpose(V₁))
+        PNLazyMatrices.resize!(system.mats.U, (:, x.rank[]))
+        PNLazyMatrices.do_copyto!(system.mats.U, U₁)
+        invalidate_cache!(system.mats.BM_UV⁻¹)
+
+        # S-step
+        rhs_S = @view(system.tmp[1:x.rank[]*x.rank[] + nxm*nΩm])
+        copyto!(reshape(@view(rhs_S[1:x.rank[]*x.rank[]]), (x.rank[], x.rank[])), transpose(U₁)*reshape(rhsp, (nxp, nΩp))*V₁)
+        copyto!(@view(rhs_S[x.rank[]*x.rank[]+1:end]), rhsm)
+        # TODO:
+        S₁ = allocate_vec(architecture(system.problem), x.rank[]*x.rank[] + nxm*nΩm) # allocates, we could directly write this in S₀ and _xm
+        mul!(S₁, system.mats.BM_UV⁻¹, rhs_S)
+    end
+
+    CUDA.NVTX.@range "finalize" begin
+        copyto!(U₀, U₁)
+        copyto!(Vt₀, transpose(V₁))
+        copyto!(S₀, @view(S₁[1:x.rank[]*x.rank[]]))
+        copyto!(x._xm, @view(S₁[x.rank[]*x.rank[]+1:end]))
+    end
 end
 
 # function step_adjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssembler, idx, Δϵ)

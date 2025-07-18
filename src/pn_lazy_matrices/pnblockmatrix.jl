@@ -123,8 +123,12 @@ end
 required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_workspace(materialize_with, materialize(A(I)))
 
 function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::AbstractMatrix)
-    A_mat, _ = materialize_with(ws, A(I), skeleton)
-    LinearAlgebra.inv!(A_mat)
+    CUDA.NVTX.@range "materialize inv" begin
+        A_mat, _ = materialize_with(ws, A(I), skeleton)
+    end
+    CUDA.NVTX.@range "invert inv" begin
+        LinearAlgebra.inv!(A_mat)
+    end
     return A_mat, ws
 end
 

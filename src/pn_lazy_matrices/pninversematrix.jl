@@ -96,7 +96,7 @@ required_workspace(::typeof(mul_with!), K::KrylovGmresMatrix) = required_workspa
 
 function schur_complement() end
 
-const SchurInnerSolver = Union{typeof(Krylov.minres), typeof(Krylov.gmres), typeof(\)}
+const SchurInnerSolver = Any # Union{typeof(Krylov.minres), typeof(Krylov.gmres), typeof(\), typeof(Krylov.minres ∘ cache), typeof(Krylov.gmres ∘ cache), typeof(\)}
 const SchurMatrix{T} = LazyOpMatrix{T, <:Tuple{typeof(schur_complement), <:SchurInnerSolver}, <:Tuple{Union{BlockMatrix{T}, Transpose{T, <:BlockMatrix{T}}}}}
 BM(S::SchurMatrix) = only(S.args)
 BM(St::Transpose{T, <:SchurMatrix{T}}) where T = transpose(BM(parent(St)))

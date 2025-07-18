@@ -116,7 +116,9 @@ function materialize_with(ws::Workspace, C::CachedMatrix, ::Nothing)
     valid, memory = ws.cache[lazy_objectid(A(C))]
     C_cached = structured_mat_view(memory, C)
     if !valid[]
-        materialize_with(ws, materialize(A(C)), C_cached; warn=false)
+        CUDA.NVTX.@range "precompute cache" begin
+            materialize_with(ws, materialize(A(C)), C_cached; warn=false)
+        end
         valid[] = true
     end
     return C_cached, ws

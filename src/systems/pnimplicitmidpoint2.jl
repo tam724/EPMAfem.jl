@@ -116,6 +116,7 @@ function implicit_midpoint_coeffs_adjoint_mat!(coeffs, problem, idx, Δϵ)
 end
 
 function step_nonadjoint!(x, system::DiscretePNSystem2, rhs_ass::PNVectorAssembler, idx, Δϵ)
+    @show idx
     if system.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
     # update the rhs (we multiply the whole linear system with Δϵ -> "normalization")

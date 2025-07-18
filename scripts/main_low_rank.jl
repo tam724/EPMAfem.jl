@@ -7,44 +7,113 @@ using EPMAfem.Gridap
 using LinearAlgebra
 include("plot_overloads.jl")
 
+
 # space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (50, 50)))
 # direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 2)
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), 100))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(21, 1)
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (20, 40, 40)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(15, 3)
 
 equations = EPMAfem.PNEquations()
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
 
-problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
+problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
 
-# system = EPMAfem.implicit_midpoint(problem, EPMAfem.PNKrylovMinresSolver)
-# systemm1 = EPMAfem.implicit_midpoint(problem, EPMAfem.PNSchurSolver)
-
-# system2 = EPMAfem.implicit_midpoint2(problem, Krylov.minres)
-# system3 = EPMAfem.implicit_midpoint2(problem, Krylov.gmres)
 # system4 = EPMAfem.implicit_midpoint2(problem, \)
-
-system4 = EPMAfem.implicit_midpoint2(problem, \)
-system5 = EPMAfem.implicit_midpoint2(problem, (PNLazyMatrices.schur_complement, Krylov.minres))
+system5 = EPMAfem.implicit_midpoint2(problem, (PNLazyMatrices.schur_complement, Krylov.minres));
 system6 = EPMAfem.implicit_midpoint_dlr(problem; max_rank=5);
 
-excitation = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [0.7], [VectorValue(-1.0, 0.0, 0.0)])
-extraction = EPMAfem.PNExtraction([0.1, 0.2], equations)
+# BM_V = system6.mats.half_BM_V⁻¹.A.args[1]
+# PNLazyMatrices.block_size(BM_V)
 
-discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cpu())[1]
-# discrete_extr = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cpu())[1].vector
+# BM_U = system6.mats.half_BM_U⁻¹.A.args[1]
+# PNLazyMatrices.block_size(BM_U)
 
-x = range(-1, 1, length=101)
-f(x) = exp(-100*x^2)
-plot(f.(x))
+# PNLazyMatrices._half_schur_components(system6.mats.half_BM_U⁻¹.A)
 
-discrete_rhs2 = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), discrete_rhs.bϵ, f.(x), zeros(size(discrete_rhs.bΩp)))
-discrete_rhs2.bΩp[1] = -1.0
+# BM_UV = system6.mats.BM_UV⁻¹.A.args[1]
+# PNLazyMatrices.block_size(BM_UV)
+
+# A, B, C, D = EPMAfem.PNLazyMatrices._schur_components(system6.mats.BM_UV⁻¹.A);
+
+excitation = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [0.7], [VectorValue(-1.0, 0.0, 0.0)]);
+extraction = EPMAfem.PNExtraction([0.1, 0.2], equations);
+
+discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())[1];
+discrete_extr = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())[1].vector;
+
+# x = range(-1, 1, length=101)
+# f(x) = exp(-100*x^2)
+# plot(f.(x))
+
+# discrete_rhs2 = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), discrete_rhs.bϵ, f.(x), zeros(size(discrete_rhs.bΩp)))
+# discrete_rhs2.bΩp[1] = -1.0
 
 # sol4 = system4 * discrete_rhs2
-sol5 = system5 * discrete_rhs2
-sol6 = system6 * discrete_rhs2
+sol5 = system5 * discrete_rhs;
+sol6 = system6 * discrete_rhs;
+
+
+anim = @animate for ((i5, ψ5), (i6, ψ6)) in zip(sol5, sol6)
+    ψp5, ψm5 = EPMAfem.pmview(ψ5, model)
+    func5 = EPMAfem.SpaceModels.interpolable(ψp5[:, 1] |> collect, EPMAfem.space_model(model))
+    p1 = heatmap(-1.0:0.01:0, -1.0:0.01:1.0, aspect_ratio=:equal, func5.interp, swapxy=true, label="schur minres")
+
+    ψp6, ψm6 = EPMAfem.pmview(ψ6, model)
+    func6 = EPMAfem.SpaceModels.interpolable(ψp6[:, 1] |> collect, EPMAfem.space_model(model))
+    p2 = heatmap(-1.0:0.01:0, -1.0:0.01:1.0, aspect_ratio=:equal, func6.interp, swapxy=true, label="schur minres")
+    plot(p1, p2)
+end
+gif(anim)
+
+for (i, ψ) in Iterators.take(sol6, 5)
+    @show i
+end
+
+discrete_extr * sol5
+discrete_extr * sol6
+
+CUDA.@profile discrete_extr * sol5
+CUDA.@profile discrete_extr * sol6
+
+@profview discrete_extr * sol5
+@profview discrete_extr * sol6
+
+@time discrete_extr * sol5
+@time discrete_extr * sol6
+
+M = only(comps[2].args);
+
+PNLazyMatrices.materialize_strategy(materialize(M))
+ws_mat = PNLazyMatrices.create_workspace(PNLazyMatrices.required_workspace(materialize_with, materialize(M)), zeros)
+ws_mul = PNLazyMatrices.create_workspace(PNLazyMatrices.required_workspace(mul_with!, M), zeros)
+length(ws_mat.workspace)
+length(ws_mul.workspace)
+
+M_ = zeros(size(M))
+@time PNLazyMatrices.materialize_with(ws_mat, materialize(M), M_; warn=false);
+y_ = zeros(size(M, 2))
+x_ = zeros(size(M, 1))
+@profview @btime PNLazyMatrices.mul_with!(ws_mul, y_, M, x_, true, false)
+
+
+anim = @animate for(i5, ψ5) in sol5
+    @show i5
+    # ψp4, ψm4 = EPMAfem.pmview(ψ4, model)
+    # func4 = EPMAfem.SpaceModels.interpolable(ψp4[:, 1] |> collect, EPMAfem.space_model(model))
+    # plot(-1.0:0.01:0, func4.interp, swapxy=true, label="backslash")
+
+    ψp5, ψm5 = EPMAfem.pmview(ψ5, model)
+    func5 = EPMAfem.SpaceModels.interpolable(ψp5[:, 1] |> collect, EPMAfem.space_model(model))
+    heatmap(-1.0:0.01:0, -1.0:0.01:1.0, func5.interp, swapxy=true, label="schur minres")
+
+    # U, S, Vt = EPMAfem.USVt(ψ6)
+    # plot!(size=(1000, 1000))
+end
+gif(anim)
+
+
+
 
 anim = @animate for ((i5, ψ5), (i6, ψ6)) in zip(sol5, sol6)
     @show i5, i6
