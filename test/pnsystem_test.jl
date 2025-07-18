@@ -86,7 +86,7 @@ cpu = true
 do_materialize(A::PNLazyMatrices.AbstractLazyMatrixOrTranspose) = do_materialize(EPMAfem.materialize(A))
 function do_materialize(M::PNLazyMatrices.MaterializedMatrix)
     ws = EPMAfem.create_workspace(PNLazyMatrices.materialize_with, M, rand_vec)
-    M_mat, _ = PNLazyMatrices.materialize_with(ws, M, nothing)
+    M_mat, _ = PNLazyMatrices.materialize_with(ws, M)
     return M_mat
 end
 
@@ -1135,22 +1135,22 @@ end
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM2, rand_vec)
     # @show length(ws.workspace)
-    MM2_mat, _ = EPMAfem.materialize_with(ws, MM2, nothing)
+    MM2_mat, _ = EPMAfem.materialize_with(ws, MM2)
     @test MM2_mat ≈ M2_ref
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM3, rand_vec)
     # @show length(ws.workspace)
-    MM3_mat, _ = EPMAfem.materialize_with(ws, MM3, nothing)
+    MM3_mat, _ = EPMAfem.materialize_with(ws, MM3)
     @test MM3_mat ≈ M3_ref
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM4, rand_vec)
     # @show length(ws.workspace)
-    MM4_mat, _ = EPMAfem.materialize_with(ws, MM4, nothing)
+    MM4_mat, _ = EPMAfem.materialize_with(ws, MM4)
     @test MM4_mat ≈ M4_ref
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM5, rand_vec)
     # @show length(ws.workspace)
-    MM5_mat, _ = EPMAfem.materialize_with(ws, MM5, nothing)
+    MM5_mat, _ = EPMAfem.materialize_with(ws, MM5)
     @test MM5_mat ≈ M5_ref
 end
 
@@ -1176,7 +1176,7 @@ end
     MM = EPMAfem.materialize(M)
 
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, MM, rand_vec)
-    MM_mat, rem = EPMAfem.materialize_with(ws, MM, nothing)
+    MM_mat, rem = EPMAfem.materialize_with(ws, MM)
     @test MM_mat ≈ M_ref
 end
 
@@ -1218,7 +1218,7 @@ end
     MM = EPMAfem.materialize(M)
     ws = EPMAfem.create_workspace(EPMAfem.materialize_with, MM, rand_vec)
 
-    MM_mat, rem = EPMAfem.materialize_with(ws, MM, nothing)
+    MM_mat, rem = EPMAfem.materialize_with(ws, MM)
 
     @test MM_mat ≈ M_ref
 end
@@ -1321,7 +1321,7 @@ end
     ws = EPMAfem.create_workspace(EPMAfem.materialize_with, D, rand_vec)
 
     @test ws.workspace |> length == 25
-    D_mat, rem_ws = EPMAfem.materialize_with(ws, D, nothing)
+    D_mat, rem_ws = EPMAfem.materialize_with(ws, D)
     @test D_mat isa Diagonal
     @test D_mat.diag ≈ kron(A_, B_).diag
 
@@ -1330,8 +1330,8 @@ end
 
     ws.workspace |> length
 
-    D_big_mat, rem_ws = EPMAfem.materialize_with(ws, D_big, nothing)
-    EPMAfem.materialize_with(ws, D_big, nothing)
+    D_big_mat, rem_ws = EPMAfem.materialize_with(ws, D_big)
+    EPMAfem.materialize_with(ws, D_big)
 
     @test D_big_mat isa Diagonal
     @test D_big_mat.diag ≈ kron(kron(A_, B_), scal(3.0) * kron(A_, B_)).diag

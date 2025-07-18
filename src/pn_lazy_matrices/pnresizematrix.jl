@@ -46,10 +46,10 @@ required_workspace(::typeof(mul_with!), S::LazyResizeMatrix) = 0
 
 materialize(R::LazyResizeMatrix) = R
 materialize(Rt::Transpose{T, <:LazyResizeMatrix{T}}) where T = Rt
-function materialize_with(ws::Workspace, R::LazyResizeMatrix, ::Nothing)
+function materialize_with(ws::Workspace, R::LazyResizeMatrix)
     return _reshape_view(R), ws
 end
-function materialize_with(ws::Workspace, Rt::Transpose{T, <:LazyResizeMatrix{T}}, ::Nothing) where T
+function materialize_with(ws::Workspace, Rt::Transpose{T, <:LazyResizeMatrix{T}}) where T
     return transpose(_reshape_view(parent(Rt))), ws
 end
 

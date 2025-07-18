@@ -10,19 +10,19 @@ lazy_getindex(M::MaterializedOrCachedMatrix{T}, idx::Vararg{<:Integer}) where T 
 lazy_objectid(M::MaterializedOrCachedMatrix) = lazy_objectid(A(M))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, M::MaterializedOrCachedMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    materialized_M, _ = materialize_with(ws, M, nothing)
+    materialized_M, _ = materialize_with(ws, M)
     mul_with!(nothing, Y, materialized_M, X, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
-    materialized_Mt, _ = materialize_with(ws, parent(Mt), nothing)
+    materialized_Mt, _ = materialize_with(ws, parent(Mt))
     mul_with!(nothing, Y, transpose(materialized_Mt), X, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::MaterializedOrCachedMatrix, α::Number, β::Number)
-    materialized_M, _ = materialize_with(ws, M, nothing)
+    materialized_M, _ = materialize_with(ws, M)
     mul_with!(nothing, Y, X, materialized_M, α, β)
 end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, α::Number, β::Number) where T
-    materialized_Mt, _ = materialize_with(ws, parent(Mt), nothing)
+    materialized_Mt, _ = materialize_with(ws, parent(Mt))
     mul_with!(nothing, Y, X, transpose(materialized_Mt), α, β)
 end
 # this may be extended to multiplications of multiple materialized matrices.. (we are good with only one now..)
@@ -31,21 +31,29 @@ required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix) = require
 
 # the materialize_with is different for MaterializeMatrix and CachedMatrix though...
 ##### MaterializedMatrix
-materialize_with(ws::Workspace, M::MaterializedMatrix, ::Nothing) = materialize_with(broadcast_materialize(A(M)), ws, M, nothing)
-function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, ::Nothing)
+materialize_with(ws::Workspace, M::MaterializedMatrix) = materialize_with(broadcast_materialize(A(M)), ws, M)
+function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix)
     bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
     A_, rem = structured_from_ws(ws, A(M))
     M_ = Base.Broadcast.materialize!(A_, bcd)
     return M_, rem
 end
-function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, ::Nothing)
+function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix)
     A_, rem = structured_from_ws(ws, A(M))
     return materialize_with(ShouldNotBroadcastMaterialize(), rem, M, A_; warn=false)
 end
 
 materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix; warn=true) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton; warn=warn) 
+materialize_with(ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix, α::Number, β::Number; warn=true) = materialize_with(broadcast_materialize(A(M)), ws, M, skeleton, α, β; warn=warn) 
 function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix; warn=true)
     if warn @warn "Materializing a materialized matrix..." end
+    bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
+    Base.Broadcast.materialize!(skeleton, bcd)
+    return skeleton, ws
+end
+function materialize_with(::ShouldBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix, α::Number, β::Number; warn=true)
+    if warn @warn "Materializing a materialized matrix..." end
+    error("NOT IMPLEMENTED")
     bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
     Base.Broadcast.materialize!(skeleton, bcd)
     return skeleton, ws
@@ -71,6 +79,32 @@ function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::Mat
         for i in 1:size(A(M), 2)
             x_i[i:i] .= one(eltype(A(M)))
             mul_with!(rem_, @view(skeleton[:, i]), A(M), x_i, true, false)
+            x_i[i:i] .= zero(eltype(A(M)))
+        end
+    end
+    return skeleton, ws
+end
+function materialize_with(::ShouldNotBroadcastMaterialize, ws::Workspace, M::MaterializedMatrix, skeleton::AbstractMatrix, α::Number, β::Number; warn=true)
+    if warn @warn "Materializing a materialized matrix..." end
+    strategy = materialize_strategy(M)
+    if strategy == :mat
+        materialize_with(ws, A(M), skeleton, α, β)
+    elseif strategy == :x_mul
+        x_i, rem_ = take_ws(ws, size(A(M), 1))
+        y, rem_ = take_ws(rem_, size(A(M), 2))
+        _fillzero!(x_i)
+        for i in 1:size(A(M), 1)
+            x_i[i:i] .= one(eltype(A(M)))
+            mul_with!(rem_, y, transpose(A(M)), x_i, true, false)
+            @view(skeleton[i, :]) .= α.*y .+ β.*@view(skeleton[i, :])
+            x_i[i:i] .= zero(eltype(M))
+        end
+    elseif strategy == :mul_x
+        x_i, rem_ = take_ws(ws, size(A(M), 2))
+        _fillzero!(x_i)
+        for i in 1:size(A(M), 2)
+            x_i[i:i] .= one(eltype(A(M)))
+            mul_with!(rem_, @view(skeleton[:, i]), A(M), x_i, α, β)
             x_i[i:i] .= zero(eltype(A(M)))
         end
     end
@@ -111,7 +145,7 @@ end
 materialize(M::Union{MaterializedMatrix{T}, Transpose{T, <:MaterializedMatrix{T}}}) where T = M
 
 ##### CachedMatrix
-function materialize_with(ws::Workspace, C::CachedMatrix, ::Nothing)
+function materialize_with(ws::Workspace, C::CachedMatrix)
     if !haskey(ws.cache, lazy_objectid(A(C))) @warn "$(typeof(A(C))) key not found" end
     valid, memory = ws.cache[lazy_objectid(A(C))]
     C_cached = structured_mat_view(memory, C)
@@ -123,11 +157,21 @@ function materialize_with(ws::Workspace, C::CachedMatrix, ::Nothing)
     end
     return C_cached, ws
 end
-materialize_with(ws::Workspace, C::CachedMatrix, skeleton::AbstractMatrix) = error("TODO")
+function materialize_with(ws::Workspace, C::CachedMatrix, skeleton::AbstractMatrix)
+    A_, _ = materialize_with(ws, C)
+    skeleton .= A_
+    return skeleton, ws
+end
+
+function materialize_with(ws::Workspace, C::CachedMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    A_, _ = materialize_with(ws, C)
+    skeleton .= α.*A_ .+ β.*skeleton
+    return skeleton, ws
+end
 
 # simply pass through the broadcast materialize calls.. 
 broadcast_materialize(::CachedMatrix) = ShouldBroadcastMaterialize()
-materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C, nothing))
+materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C))
 
 function required_workspace(::typeof(materialize_with), C::CachedMatrix)
     cache_size = required_workspace(structured_from_ws, A(C))

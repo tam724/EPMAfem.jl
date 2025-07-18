@@ -54,14 +54,13 @@ _fillzero!(D::Diagonal) = fill!(D.diag, zero(eltype(D)))
 _add!(A::AbstractArray, B::AbstractArray) = axpy!(true, B, A)
 _add!(A::Diagonal, B::Diagonal) = axpy!(true, B.diag, A.diag)
 
-function materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix)
-    # what we do here is to wrap every component into a lazy(materialize, ) and then materialize the full matrix
-    _fillzero!(skeleton)
-    for A in As(S)
-        A_mat, _ = materialize_with(ws, materialize(A), nothing)
-        _add!(skeleton, A_mat)
+materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix) = materialize_with(ws, S, skeleton, true, false)
+function materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    A_mat, _ = materialize_with(ws, first(As(S)), skeleton, α, β)
+    for A in As(S)[2:end]
+        A_mat, _ = materialize_with(ws, A, skeleton, α, true)
     end
-    return skeleton, ws
+    return A_mat, ws
 end
 
 materialize_broadcasted(ws::Workspace, S::SumMatrix) = Base.Broadcast.broadcasted(+, materialize_broadcasted.(Ref(ws), As(S))...)
@@ -69,7 +68,7 @@ materialize_broadcasted(ws::Workspace, S::SumMatrix) = Base.Broadcast.broadcaste
 function required_workspace(::typeof(materialize_with), S::SumMatrix)
     max_workspace = 0
     for A in As(S)
-        max_workspace = max(max_workspace, required_workspace(materialize_with, materialize(A)))
+        max_workspace = max(max_workspace, required_workspace(materialize_with, A))
     end
     return max_workspace
 end

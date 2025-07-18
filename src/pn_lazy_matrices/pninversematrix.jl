@@ -9,12 +9,12 @@ isdiagonal(K::BackslashMatrix) = isdiagonal(A(K))
 lazy_getindex(K::BackslashMatrix, i::Int, j::Int) = error("Cannot getindex")
 
 function mul_with!(ws::Workspace, y::AbstractVector, K::BackslashMatrix, x::AbstractVector, α::Number, β::Number)
-    A_, rem = materialize_with(ws, materialize(A(K)), nothing)
+    A_, rem = materialize_with(ws, materialize(A(K)))
     y .= α .* (A_ \ x) .+ β .* y
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:BackslashMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-    A_, rem = materialize_with(ws, materialize(A(parent(Kt))), nothing)
+    A_, rem = materialize_with(ws, materialize(A(parent(Kt))))
     y .= α .* (transpose(A_) \ x) .+ β .* y
 end
 

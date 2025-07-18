@@ -23,10 +23,9 @@ required_workspace(::typeof(mul_with!), S::ScaleMatrix) = required_workspace(mul
 _rmul!(A::AbstractArray, α::Number) = rmul!(A, α)
 _rmul!(A::Diagonal, α::Number) = rmul!(A.diag, α)
 
-function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix)
-    A_mat, _ = materialize_with(ws, A(S), skeleton)
-    _rmul!(A_mat, a(S))
-    # A_mat .= a(S) .* A_mat
+materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix) = materialize_with(ws, S, skeleton, true, false)
+function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    A_mat, _ = materialize_with(ws, A(S), skeleton, α*a(S), β)
     return A_mat, ws
 end
 
@@ -125,10 +124,12 @@ function required_workspace(::typeof(mul_with!), M::TwoProdMatrix)
     # return size(B(M), 1) + max(size(A(M), 1), size(B(M), 2)) + max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
 end
 
-function materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix)
-    A_mat, rem = materialize_with(ws, materialize(A(M)), nothing)
-    B_mat, _ = materialize_with(rem, materialize(B(M)), nothing)
-    mul_with!(nothing, skeleton, A_mat, B_mat, true, false)
+materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix) = materialize_with(ws, M, skeleton, true, false)
+
+function materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    A_mat, rem = materialize_with(ws, materialize(A(M)))
+    B_mat, _ = materialize_with(rem, materialize(B(M)))
+    mul_with!(nothing, skeleton, A_mat, B_mat, α, β)
     return skeleton, ws
 end
 
@@ -251,25 +252,27 @@ function required_workspace(::typeof(mul_with!), M::ProdMatrix)
     return 2*my_ws + int_ws
 end
 
-function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix) # TODO: (GJCBP)
+materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix) = materialize_with(ws, M, skeleton, true, false)
+
+function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix, α::Number, β::Number) # TODO: (GJCBP)
     max_m = maximum(A -> size(A, 1), As(M))
     max_n = maximum(A -> size(A, 2), As(M))
     max_intermediate = max_m*max_n
     T1, rem = take_ws(ws, max_intermediate)
 
-    Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))), nothing)
-    Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]), nothing)
+    Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))))
+    Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]))
     mul_with!(nothing, mat_view(T1, size(Aₙ₋₁, 1), size(Aₙ, 2)), Aₙ₋₁, Aₙ, true, false)
     T2, rem_ = take_ws(rem, max_intermediate)
     for i in length(As(M))-2:-1:2
-        Aᵢ, _ = materialize_with(rem_, materialize(As(M)[i]), nothing)
+        Aᵢ, _ = materialize_with(rem_, materialize(As(M)[i]))
         mul_with!(nothing, mat_view(T2, size(Aᵢ, 1), size(Aₙ, 2)), Aᵢ, mat_view(T1, size(Aᵢ, 2), size(Aₙ, 2)), true, false)
         T1, T2 = T2, T1
     end
-    A₁, _ = materialize_with(rem_, materialize(As(M)[1]), nothing)
+    A₁, _ = materialize_with(rem_, materialize(As(M)[1]))
 
     # the final result is always T1
-    mul_with!(nothing, skeleton, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)), true, false)
+    mul_with!(nothing, skeleton, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)), α, β)
     return skeleton, ws
 end
 

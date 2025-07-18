@@ -87,12 +87,13 @@ end
 
 required_workspace(::typeof(mul_with!), BM::BlockMatrix) = maximum(required_workspace(mul_with!, A_) for A_ in (A(BM), B(BM), C(BM), D(BM)))
 
-function materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatrix)
+materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatrix) = materialize_with(ws, BM, skeleton, true, false)
+function materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
     n1, n2 = block_size(BM)
-    materialize_with(ws, A(BM), @view(skeleton[1:n1, 1:n1]))
-    materialize_with(ws, B(BM), @view(skeleton[1:n1, n1+1:n1+n2]))
-    materialize_with(ws, C(BM), @view(skeleton[n1+1:n1+n2, 1:n1]))
-    materialize_with(ws, D(BM), @view(skeleton[n1+1:n1+n2, n1+1:n1+n2]))
+    materialize_with(ws, A(BM), @view(skeleton[1:n1, 1:n1]), α, β)
+    materialize_with(ws, B(BM), @view(skeleton[1:n1, n1+1:n1+n2]), α, β)
+    materialize_with(ws, C(BM), @view(skeleton[n1+1:n1+n2, 1:n1]), α, β)
+    materialize_with(ws, D(BM), @view(skeleton[n1+1:n1+n2, n1+1:n1+n2]), α, β)
     return skeleton, ws
 end
 required_workspace(::typeof(materialize_with), BM::BlockMatrix) = maximum(A -> required_workspace(materialize_with, A), blocks(BM))
@@ -107,14 +108,14 @@ lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{<:Integer}) = NaN
 @inline isdiagonal(I::InplaceInverseMatrix) = isdiagonal(A(I))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, I::InplaceInverseMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    A_mat, _ = materialize_with(ws, materialize(A(I)), nothing)
+    A_mat, _ = materialize_with(ws, materialize(A(I)))
     @assert !β
     @assert α
     ldiv!(Y, A_mat, X)
 end
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:InplaceInverseMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
-    A_mat, _ = materialize_with(ws, materialize(A(parent(It))), nothing)
+    A_mat, _ = materialize_with(ws, materialize(A(parent(It))))
     @assert !β
     @assert α
     ldiv!(Y, transpose(A_mat), X)

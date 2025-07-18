@@ -199,11 +199,22 @@ function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix
     A_ = materialize(A(K))
     B_ = materialize(B(K))
 
-    A_mat, rem_ = materialize_with(ws, A_, nothing)
-    B_mat, _ = materialize_with(rem_, B_, nothing)
+    A_mat, rem_ = materialize_with(ws, A_)
+    B_mat, _ = materialize_with(rem_, B_)
     
-    # we implement 
     kron!(skeleton, transpose(B_mat), A_mat)
+    return skeleton, ws
+end
+
+function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    # what we do here is that we wrap both components into a lazy(materialized, ) and then materialize the full matrix
+    A_ = materialize(A(K))
+    B_ = materialize(B(K))
+
+    A_mat, rem_ = materialize_with(ws, A_)
+    B_mat, _ = materialize_with(rem_, B_)
+    
+    kron!(skeleton, transpose(B_mat), A_mat, α, β)
     return skeleton, ws
 end
 

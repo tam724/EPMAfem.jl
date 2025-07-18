@@ -54,13 +54,20 @@ mul_with!(::Workspace, Y::AbstractMatrix, A::AbstractMatrix, X::AbstractLazyMatr
 required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix) = error("should be defined: $(typeof(L))")
 required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(mul_with!, parent(Lt))
 
-materialize_with(::Workspace, ::AbstractLazyMatrix, ::Union{Nothing, <:AbstractMatrix}) = error("should be defined")
-function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, ::Nothing) where T
-    L, rem = materialize_with(ws, parent(Lt), nothing)
+# returns the matrix in materialized form (if provided, uses skeleton::AbstractMatrix to materialize AND if provided αβs to skeleton)
+materialize_with(::Workspace, ::AbstractLazyMatrix) = error("should be defined")
+materialize_with(::Workspace, ::AbstractLazyMatrix, ::AbstractMatrix) = error("should be defined")
+materialize_with(::Workspace, ::AbstractLazyMatrix, ::AbstractMatrix, α::Number, β::Number) = error("should be defined")
+function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T
+    L, rem = materialize_with(ws, parent(Lt))
     return transpose(L), rem
 end
 function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, skeleton::AbstractMatrix) where T
     L, rem = materialize_with(ws, parent(Lt), transpose(skeleton))
+    return transpose(L), rem
+end
+function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, skeleton::AbstractMatrix, α::Number, β::Number) where T
+    L, rem = materialize_with(ws, parent(Lt), transpose(skeleton), α, β)
     return transpose(L), rem
 end
 # this function should only return the workspace size that is needed for the matrix to materialize NOT the workspace size for the matrix itself (prod(size(⋅))
@@ -107,13 +114,16 @@ end
 
 required_workspace(::typeof(mul_with!), A::AbstractMatrix) = 0
 
-materialize_with(ws::Workspace, A::AbstractMatrix, ::Nothing) = A, ws
-
+materialize_with(ws::Workspace, A::AbstractMatrix) = A, ws
 function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix)
     skeleton .= A
     return skeleton, ws
 end
-        
+function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    skeleton .= α.*A .+ β.*skeleton
+    return skeleton, ws
+end
+
 required_workspace(::typeof(materialize_with), A::AbstractMatrix) = 0
 
 materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
