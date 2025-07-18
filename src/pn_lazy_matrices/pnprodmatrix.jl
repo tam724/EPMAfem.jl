@@ -1,11 +1,14 @@
-const ScaleMatrixL{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{Base.RefValue{T}, M}}
-const ScaleMatrixR{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{M, Base.RefValue{T}}}
-const ScaleMatrix{T, M <: AbstractMatrix{T}} = Union{ScaleMatrixL{T, M}, ScaleMatrixR{T, M}}
+const ScaleMatrixL{T} = LazyOpMatrix{T, typeof(*), <:Tuple{Base.RefValue{T}, <:AbstractMatrix}}
+const ScaleMatrixR{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix, Base.RefValue{T}}}
+const UnaryMinusMatrix{T} = LazyOpMatrix{T, typeof(-), <:Tuple{<:AbstractMatrix{T}}}
+const ScaleMatrix{T} = Union{ScaleMatrixL{T}, ScaleMatrixR{T}, UnaryMinusMatrix{T}}
 
 @inline a(S::ScaleMatrixL) = S.args[1][]
 @inline A(S::ScaleMatrixL) = S.args[2]
 @inline a(S::ScaleMatrixR) = S.args[2][]
 @inline A(S::ScaleMatrixR) = S.args[1]
+@inline a(::UnaryMinusMatrix{T}) where T = T(-1)
+@inline A(S::UnaryMinusMatrix) = only(S.args)
 Base.size(S::ScaleMatrix) = size(A(S))
 max_size(S::ScaleMatrix) = max_size(A(S))
 lazy_getindex(S::ScaleMatrix, idx::Vararg{<:Integer}) = *(a(S), getindex(A(S), idx...))

@@ -39,10 +39,10 @@ Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = 
 Base.:+(A::AbstractMatrix, L::AbstractLazyMatrixOrTranspose) = lazy(+, A, unwrap(L))
 Base.:+(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L), A)
 
-Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy(+, unwrap(L1), lazy(*, Ref(eltype(L2)(-1)), unwrap(L2)))
-Base.:-(A::AbstractMatrix, L::AbstractLazyMatrixOrTranspose) = lazy(+, A, lazy(*, Ref(eltype(L)(-1)), unwrap(L)))
-Base.:-(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L), lazy(*, Ref(eltype(A)(-1)), A))
-Base.:-(L::AbstractLazyMatrixOrTranspose) = lazy(*, Ref(eltype(L)(-1)), L)
+Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy(+, unwrap(L1), lazy(-, unwrap(L2)))
+Base.:-(A::AbstractMatrix, L::AbstractLazyMatrixOrTranspose) = lazy(+, A, lazy(-, unwrap(L)))
+Base.:-(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L), lazy(-, A))
+Base.:-(L::AbstractLazyMatrixOrTranspose) = lazy(-, unwrap(L))
 
 # damn I implemented a weird version of kron...
 LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = transpose(lazy(kron_AXB, transpose(unwrap(B)), unwrap(A)))
