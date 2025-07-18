@@ -22,9 +22,13 @@ end
 
     ∂p
     ∇pm
+
+    # matrices for filtering
+    Jp
+    Jm
 end
 
-lazy_space_matrices(space_discretization::SpaceDiscretization) = lazy.(space_discretization.ρp), lazy.(space_discretization.ρm), lazy.(space_discretization.∂p), lazy.(space_discretization.∇pm)
+lazy_space_matrices(space_discretization::SpaceDiscretization) = lazy.(space_discretization.ρp), lazy.(space_discretization.ρm), lazy.(space_discretization.∂p), lazy.(space_discretization.∇pm), lazy(space_discretization.Jp), lazy(space_discretization.Jm)
 
 
 @concrete struct DirectionDiscretization
@@ -37,9 +41,13 @@ lazy_space_matrices(space_discretization::SpaceDiscretization) = lazy.(space_dis
     km
     absΩp
     Ωpm
+
+    # matrices for filtering
+    Fp
+    Fm
 end
 
-lazy_direction_matrices(direction_discretization::DirectionDiscretization) = lazy(direction_discretization.Ip), lazy(direction_discretization.Im), direction_discretization.kp .|> x -> lazy.(x), direction_discretization.km .|> x -> lazy.(x), lazy.(direction_discretization.absΩp), lazy.(direction_discretization.Ωpm)
+lazy_direction_matrices(direction_discretization::DirectionDiscretization) = lazy(direction_discretization.Ip), lazy(direction_discretization.Im), direction_discretization.kp .|> x -> lazy.(x), direction_discretization.km .|> x -> lazy.(x), lazy.(direction_discretization.absΩp), lazy.(direction_discretization.Ωpm), lazy(direction_discretization.Fp), lazy(direction_discretization.Fm)
 
 
 
@@ -54,7 +62,11 @@ function discretize_space(pn_eq::Union{AbstractPNEquations, AbstractMonochromPNE
     ∂p = [dropzeros!(SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl))) for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))] |> arch
     ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) for ∫ ∈ SM.∫R_u_∂v(dimensionality(space_mdl))] |> arch
 
-    return SpaceDiscretization(space_mdl, arch, ρp, ρm, ∂p, ∇pm)
+    Jp = diag_if_diag(SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.even(space_mdl), SM.even(space_mdl))) |> arch
+    Jm = diag_if_diag(SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.odd(space_mdl))) |> arch
+
+
+    return SpaceDiscretization(space_mdl, arch, ρp, ρm, ∂p, ∇pm, Jp, Jm)
 end
 
 function discretize_space_updatable(pn_eq::Union{AbstractPNEquations, AbstractMonochromPNEquations, AbstractDegeneratePNEquations}, space_mdl::SpaceModels.GridapSpaceModel, arch::PNArchitecture)
@@ -104,7 +116,11 @@ function discretize_direction(pn_eq::Union{AbstractPNEquations, AbstractMonochro
         Ωpm = [BlockedMatrices.blocked_from_mat(Ωpm_full[i], SH.get_indices_∫S²Ωuv(direction_mdl, dim)) for (i, dim) in enumerate(dimensions(dimensionality(direction_mdl)))] |> arch
     end
 
-    return DirectionDiscretization(direction_mdl, arch, Ip, Im, kp, km, absΩp, Ωpm)
+    Fp = diag_if_diag(SH.assemble_bilinear(SH.∫S²_fσuv, direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.exact_quadrature())) |> arch
+    Fm = diag_if_diag(SH.assemble_bilinear(SH.∫S²_fσuv, direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature())) |> arch
+
+
+    return DirectionDiscretization(direction_mdl, arch, Ip, Im, kp, km, absΩp, Ωpm, Fp, Fm)
 end
 
 function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, arch::PNArchitecture; updatable=false)

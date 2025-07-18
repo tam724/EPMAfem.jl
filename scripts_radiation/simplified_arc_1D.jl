@@ -126,3 +126,21 @@ plot!(0:0.0003:0.03, z -> 1/scaling_factor*interpolable_27(VectorValue(z)), labe
 # plot!(0:0.0003:0.03, z -> interpolable_3(VectorValue(z)), label="P3")
 # plot!(0:0.0003:0.03, z -> interpolable_21(VectorValue(z)), label="P21")
 # plot!(0:0.0003:0.03, z -> interpolable_27(VectorValue(z)), label="P27")
+
+
+model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(5,2)
+U = EPMAfem.SphericalHarmonicsModels.even(model)
+
+model.N
+
+u = U[2]
+model.degree(u)
+EPMAfem.SphericalHarmonicsModels.order(u)
+
+h = [model.degree(u) for u in U]
+print(h)
+A = Diagonal(ones(length(U))) .* h
+
+filter_values = ([EPMAfem.SphericalHarmonicsModels.degree(u) for u in U]/model.N).^2
+
+Diagonal(ones(length(U))) .* filter_values

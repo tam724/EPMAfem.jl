@@ -26,9 +26,13 @@ end
     N
     num_dofs
     moments
+
+    # filter params
+    σ_f
+    α
 end
 
-function EOSphericalHarmonicsModel(N, ND)
+function EOSphericalHarmonicsModel(N, ND, σ_f=0.0, α=1.0)
     _XD = dimensionality(ND)
     viable_moments = get_all_viable_harmonics_up_to(N, _XD)
     sort!(viable_moments, lt=isless_evenodd)
@@ -44,7 +48,7 @@ function EOSphericalHarmonicsModel(N, ND)
     num_dofs_odd = length(odd_moments)
     num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
 
-    return EOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, num_dofs, moments)
+    return EOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, num_dofs, moments, σ_f, α)
 end
 
 function even(model::EOSphericalHarmonicsModel)

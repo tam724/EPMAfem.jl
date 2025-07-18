@@ -15,6 +15,8 @@ const ∫S²_absΩzuv = Val{:∫S²_absΩzuv}()
 const ∫S²_absΩxuv = Val{:∫S²_absΩxuv}()
 const ∫S²_absΩyuv = Val{:∫S²_absΩyuv}()
 
+const ∫S²_fσuv = Val{:∫S²_fσuv}()
+
 ∫S²_absΩuv(::_1D) = (∫S²_absΩzuv, )
 ∫S²_absΩuv(::_2D) = (∫S²_absΩzuv, ∫S²_absΩxuv)
 ∫S²_absΩuv(::_3D) = (∫S²_absΩzuv, ∫S²_absΩxuv, ∫S²_absΩyuv)
@@ -35,6 +37,7 @@ int_func(::Val{:∫S²_Ωzuv}, Ω) = Ωz(Ω)
 int_func(::Val{:∫S²_absΩxuv}, Ω) = abs(Ωx(Ω))
 int_func(::Val{:∫S²_absΩyuv}, Ω) = abs(Ωy(Ω))
 int_func(::Val{:∫S²_absΩzuv}, Ω) = abs(Ωz(Ω))
+int_func(::Val{:∫S²_fσuv}, Ω) = 1
 
 @concrete struct LegendreBasisExp
     coeffs
@@ -219,6 +222,24 @@ function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_ab
             return assemble_bilinear(integral, model, U, V)
         else
             error("whats wrong here?")
+        end
+    end
+    return A
+end
+
+
+function assemble_bilinear(::Val{:∫S²_fσuv}, model, U, V, ::exact_quadrature)
+    if U == V
+        # println("DEBUG1")
+        filter_values = -model.σ_f * log(eps(Float64)) .* ([SphericalHarmonicsModels.degree(u) for u in U]/model.N).^model.α
+        A = Diagonal(ones(length(U))) .* filter_values
+        return A
+    end
+    # println("DEBUG2")
+    A = zeros(length(V), length(U))
+    for i in eachindex(V)
+        for j in eachindex(U)
+            A[i, j] = V[i] == U[j] ? -model.σ_f * log(eps(Float64)) * (EPMAfem.SphericalHarmonicsModels.degree(U[j])/model.N)^model.α : 0.0
         end
     end
     return A
