@@ -28,8 +28,8 @@ function build_coeffs_and_mat_blocks(pbl::DiscretePNProblem)
 
     UL = coeffs.Δ*(A + coeffs.γ*D)
     UR = coeffs.Δ*(coeffs.δ*B)
-    LL = T(-1)*(coeffs.Δ*(coeffs.δt*transpose(B)))
-    LR = T(-1)*(coeffs.Δ*C)
+    LL = -(coeffs.Δ*(coeffs.δt*transpose(B)))
+    LR = -(coeffs.Δ*C)
 
     BM = [
         UL UR
