@@ -23,7 +23,7 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     U = PNLazyMatrices.LazyResizeMatrix(allocate_mat(arch, nb.nx.p, max_rank), (Ref(nb.nx.p), Ref(max_rank)))
     Ut = transpose(U)
 
-    coeffs = (a = [Ref(zero(T)) for _ in 1:ns.ne], c = [[Ref(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=Ref(T(Δϵ)), γ=Ref(T(0.5)), δ=Ref(T(-0.5)), δt=Ref(T(0.5)))
+    coeffs = (a = [LazyScalar(zero(T)) for _ in 1:ns.ne], c = [[LazyScalar(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=LazyScalar(T(Δϵ)), γ=LazyScalar(T(0.5)), δ=LazyScalar(T(-0.5)), δt=LazyScalar(T(0.5)))
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl)
 
@@ -70,14 +70,14 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
     BM_UV⁻¹ = lazy((PNLazyMatrices.schur_complement, Krylov.minres), BM_UV)
 
     # uBM, uhalf_BM_U⁻¹, uhalf_BM_V⁻¹, uBM_UV⁻¹ = unlazy((BM, half_BM_U⁻¹, half_BM_V⁻¹, BM_UV⁻¹), arch)
-    uBM, uhalf_BM_U⁻¹, uhalf_BM_V⁻¹, uBM_UV⁻¹ = unlazy((BM, half_BM_U⁻¹, half_BM_V⁻¹, BM_UV⁻¹), vec_size -> allocate_vec(arch, vec_size))
+    uBM, uhalf_BM_U⁻¹, uhalf_BM_V⁻¹, uBM_UV⁻¹, coeffs_, Vt_, U_ = unlazy((BM, half_BM_U⁻¹, half_BM_V⁻¹, BM_UV⁻¹, coeffs, Vt, U), vec_size -> allocate_vec(arch, vec_size))
     rhs = allocate_vec(arch, size(BM, 1))
     tmp = allocate_vec(arch, size(BM, 1))
 
     return DiscreteDLRPNSystem(
         problem = pbl,
-        coeffs = coeffs,
-        mats = (BM=uBM, half_BM_U⁻¹=uhalf_BM_U⁻¹, half_BM_V⁻¹=uhalf_BM_V⁻¹, BM_UV⁻¹=uBM_UV⁻¹, Vt=Vt, U=U),
+        coeffs = coeffs_,
+        mats = (BM=uBM, half_BM_U⁻¹=uhalf_BM_U⁻¹, half_BM_V⁻¹=uhalf_BM_V⁻¹, BM_UV⁻¹=uBM_UV⁻¹, Vt=Vt_, U=U_),
         rhs = rhs,
         tmp = tmp,
         max_rank=max_rank
@@ -91,7 +91,6 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssem
         if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
         # update the rhs (we multiply the whole linear system with Δϵ -> "normalization")
         implicit_midpoint_coeffs_nonadjoint_rhs!(system.coeffs, system.problem, idx, Δϵ)
-        invalidate_cache!(system.mats.BM)
         # minus because we have to bring b to the right side of the equation
         CUDA.NVTX.@range "assemble vec" begin
             assemble_at!(system.rhs, rhs_ass, minus½(idx), -Δϵ, true)
@@ -106,12 +105,9 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssem
         CUDA.NVTX.@range "copy basis" begin
             implicit_midpoint_coeffs_nonadjoint_mat!(system.coeffs, system.problem, idx, Δϵ)
             # K-step (prep)
-            PNLazyMatrices.resize!(system.mats.Vt, (x.rank[], :))
-            PNLazyMatrices.copyto!(system.mats.Vt, Vt₀)
+            PNLazyMatrices.resize_copyto!(system.mats.Vt, Vt₀)
             # L-step (prep)
-            PNLazyMatrices.resize!(system.mats.U, (:, x.rank[]))
-            PNLazyMatrices.copyto!(system.mats.U, U₀)
-            invalidate_cache!(system.mats.half_BM_V⁻¹) # not necessary, same ws: invalidate_cache!(system.mats.half_BM_U⁻¹)
+            PNLazyMatrices.resize_copyto!(system.mats.U, U₀)
             (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
             rhsp, rhsm = @view(system.rhs[1:nxp*nΩp]), @view(system.rhs[nxp*nΩp+1:end])
         end
@@ -141,11 +137,8 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem, rhs_ass::PNVectorAssem
 
     CUDA.NVTX.@range "s-step" begin
         # S-step (prep)
-        PNLazyMatrices.resize!(system.mats.Vt, (x.rank[], :))
-        PNLazyMatrices.do_copyto!(system.mats.Vt, transpose(V₁))
-        PNLazyMatrices.resize!(system.mats.U, (:, x.rank[]))
-        PNLazyMatrices.do_copyto!(system.mats.U, U₁)
-        invalidate_cache!(system.mats.BM_UV⁻¹)
+        PNLazyMatrices.resize_copyto!(system.mats.Vt, transpose(V₁))
+        PNLazyMatrices.resize_copyto!(system.mats.U, U₁)
 
         # S-step
         rhs_S = @view(system.tmp[1:x.rank[]*x.rank[] + nxm*nΩm])

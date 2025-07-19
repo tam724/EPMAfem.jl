@@ -142,7 +142,7 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Kt::Transpose{T, <:KronMatr
 end
 
 # hacky: define default
-required_workspace(::typeof(mul_with!), A::AbstractMatrix, size) = required_workspace(mul_with!, A)
+# required_workspace(::typeof(mul_with!), A::AbstractMatrix, size) = required_workspace(mul_with!, A)
 has_batched_mul!(A) = false
 
 # required matmuls
@@ -152,7 +152,7 @@ has_batched_mul!(A) = false
 # strategy AX_B: B: (mA, mB), A: (nA, mB)
 # strategy AX_B: B: (mA, nB), A: (mA, mB)
 
-function required_workspace(::typeof(mul_with!), K::KronMatrix)
+function required_workspace(::typeof(mul_with!), K::KronMatrix, cache_notifier)
     mA, nA = max_size(A(K))
     mB, nB = max_size(B(K))
 
@@ -167,32 +167,32 @@ function required_workspace(::typeof(mul_with!), K::KronMatrix)
         size_B = (mA, max(nB, mB))
     end
 
-    return inner_ws + max(required_workspace(mul_with!, A(K), size_A), required_workspace(mul_with!, B(K), size_B))
+    return inner_ws + max(required_workspace(mul_with!, A(K), cache_notifier), required_workspace(mul_with!, B(K), cache_notifier))
 end
 
-function required_workspace(::typeof(mul_with!), K::KronMatrix, (mx, nx))
-    # @assert mx == max_size(K, 2)
-    mA, nA = max_size(A(K))
-    mB, nB = max_size(B(K))
+# function required_workspace(::typeof(mul_with!), K::KronMatrix, (mx, nx))
+#     # @assert mx == max_size(K, 2)
+#     mA, nA = max_size(A(K))
+#     mB, nB = max_size(B(K))
 
-    strategy = mul_strategy(K)
-    if has_batched_mul!(A(K)) && has_batched_mul!(B(K))
-        inner_ws = (strategy == :A_XB) ? nA*nB*nx : mA*mB*nx
-        return inner_ws # the batched_mul! does not need workspace right now..
-    end
+#     strategy = mul_strategy(K)
+#     if has_batched_mul!(A(K)) && has_batched_mul!(B(K))
+#         inner_ws = (strategy == :A_XB) ? nA*nB*nx : mA*mB*nx
+#         return inner_ws # the batched_mul! does not need workspace right now..
+#     end
 
-    if strategy == :A_XB
-        size_A = (max(nA, mA), nB)
-        size_B = (nA, max(nB, mB))
-    else
-        size_A = (max(nA, mA), mB)
-        size_B = (mA, max(nB, mB))
-    end
+#     if strategy == :A_XB
+#         size_A = (max(nA, mA), nB)
+#         size_B = (nA, max(nB, mB))
+#     else
+#         size_A = (max(nA, mA), mB)
+#         size_B = (mA, max(nB, mB))
+#     end
 
 
-    inner_ws = (strategy == :A_XB) ? nA*nB : mA*mB
-    return inner_ws + max(required_workspace(mul_with!, A(K), size_A), required_workspace(mul_with!, B(K), size_B))
-end
+#     inner_ws = (strategy == :A_XB) ? nA*nB : mA*mB
+#     return inner_ws + max(required_workspace(mul_with!, A(K), size_A), required_workspace(mul_with!, B(K), size_B))
+# end
 
 function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix)
     # what we do here is that we wrap both components into a lazy(materialized, ) and then materialize the full matrix
@@ -218,9 +218,9 @@ function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix
     return skeleton, ws
 end
 
-function required_workspace(::typeof(materialize_with), K::KronMatrix)
+function required_workspace(::typeof(materialize_with), K::KronMatrix, cache_notifier)
     A_ = materialize(A(K))
     B_ = materialize(B(K))
     # the prod(size(K)) is guaranteed to be there! (by the MaterializedMatrix) we only report what we need internally
-    return required_workspace(materialize_with, A_) + required_workspace(materialize_with, B_)
+    return required_workspace(materialize_with, A_, cache_notifier) + required_workspace(materialize_with, B_, cache_notifier)
 end

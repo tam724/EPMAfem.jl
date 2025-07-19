@@ -17,7 +17,7 @@ function build_coeffs_and_mat_blocks(pbl::DiscretePNProblem)
     ns = EPMAfem.n_sums(pbl)
     Δϵ = step(energy_model(pbl.model))
     
-    coeffs = (a = [Ref(zero(T)) for _ in 1:ns.ne], c = [[Ref(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=Ref(T(Δϵ)), γ=Ref(T(0.5)), δ=Ref(T(-0.5)), δt=Ref(T(0.5)))
+    coeffs = (a = [LazyScalar(zero(T)) for _ in 1:ns.ne], c = [[LazyScalar(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=LazyScalar(T(Δϵ)), γ=LazyScalar(T(0.5)), δ=LazyScalar(T(-0.5)), δt=LazyScalar(T(0.5)))
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl)
 
@@ -45,12 +45,12 @@ function implicit_midpoint2(pbl::DiscretePNProblem, solver)
     coeffs, lazy_BM = build_coeffs_and_mat_blocks(pbl)
     lazy_BM⁻¹ = lazy(solver, lazy_BM)
 
-    BM, BM⁻¹ = unlazy((lazy_BM, lazy_BM⁻¹), vec_size -> allocate_vec(arch, vec_size))
+    BM, BM⁻¹, coeffs_ = unlazy((lazy_BM, lazy_BM⁻¹, coeffs), vec_size -> allocate_vec(arch, vec_size))
     rhs = allocate_vec(arch, size(BM, 1))
 
     return DiscretePNSystem2(
         problem = pbl,
-        coeffs = coeffs,
+        coeffs = coeffs_,
         BM = BM,
         BM⁻¹ = BM⁻¹,
         rhs = rhs,
@@ -121,13 +121,11 @@ function step_nonadjoint!(x, system::DiscretePNSystem2, rhs_ass::PNVectorAssembl
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
     # update the rhs (we multiply the whole linear system with Δϵ -> "normalization")
     implicit_midpoint_coeffs_nonadjoint_rhs!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.BM)
     # minus because we have to bring b to the right side of the equation
     assemble_at!(system.rhs, rhs_ass, minus½(idx), -Δϵ, true)
     mul!(system.rhs, system.BM, x, -1.0, true)
 
     implicit_midpoint_coeffs_nonadjoint_mat!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.BM⁻¹)
     mul!(x, system.BM⁻¹, system.rhs)
 end
 
@@ -136,13 +134,11 @@ function step_adjoint!(x, system::DiscretePNSystem2, rhs_ass::PNVectorAssembler,
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(pnsystem.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
     # update the rhs
     implicit_midpoint_coeffs_adjoint_rhs!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.BM)
     # minus because we have to bring b to the right side of the equation
     assemble_at!(system.rhs, rhs_ass, plus½(idx), -Δϵ, true)
     mul!(system.rhs, transpose(system.BM), x, -1.0, true)
 
     implicit_midpoint_coeffs_adjoint_mat!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.BM⁻¹)
     mul!(x, transpose(system.BM⁻¹), system.rhs)
 end
 

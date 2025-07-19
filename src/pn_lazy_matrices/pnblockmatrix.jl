@@ -85,7 +85,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, BMt::Transpose{T, <:BlockMa
     mul_with!(ws, y2, transpose(D(parent(BMt))), x2, α, true)
 end
 
-required_workspace(::typeof(mul_with!), BM::BlockMatrix) = maximum(required_workspace(mul_with!, A_) for A_ in (A(BM), B(BM), C(BM), D(BM)))
+required_workspace(::typeof(mul_with!), BM::BlockMatrix, cache_notifier) = maximum(required_workspace(mul_with!, A_, cache_notifier) for A_ in (A(BM), B(BM), C(BM), D(BM)))
 
 materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatrix) = materialize_with(ws, BM, skeleton, true, false)
 function materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
@@ -96,7 +96,7 @@ function materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatr
     materialize_with(ws, D(BM), @view(skeleton[n1+1:n1+n2, n1+1:n1+n2]), α, β)
     return skeleton, ws
 end
-required_workspace(::typeof(materialize_with), BM::BlockMatrix) = maximum(A -> required_workspace(materialize_with, A), blocks(BM))
+required_workspace(::typeof(materialize_with), BM::BlockMatrix, cache_notifier) = maximum(A -> required_workspace(materialize_with, A, cache_notifier), blocks(BM))
 
 ### INPLACE INV MATRIX
 const InplaceInverseMatrix{T} = LazyOpMatrix{T, typeof(LinearAlgebra.inv!), <:Tuple{<:AbstractMatrix}}
@@ -121,7 +121,7 @@ function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:Inplac
     ldiv!(Y, transpose(A_mat), X)
 end
 
-required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix) = required_workspace(materialize_with, materialize(A(I)))
+required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix, cache_notifier) = required_workspace(materialize_with, materialize(A(I)), cache_notifier)
 
 function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::AbstractMatrix)
     CUDA.NVTX.@range "materialize inv" begin
@@ -133,4 +133,4 @@ function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::Abst
     return A_mat, ws
 end
 
-required_workspace(::typeof(materialize_with), I::InplaceInverseMatrix) = required_workspace(materialize_with, A(I))
+required_workspace(::typeof(materialize_with), I::InplaceInverseMatrix, cache_notifier) = required_workspace(materialize_with, A(I), cache_notifier)

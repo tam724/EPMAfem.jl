@@ -8,8 +8,8 @@ using LinearAlgebra
 include("plot_overloads.jl")
 
 
-# space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (50, 50)))
-# direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 2)
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (50, 50)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 2)
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (20, 40, 40)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(15, 3)
@@ -52,7 +52,6 @@ discrete_extr = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())
 # sol4 = system4 * discrete_rhs2
 sol5 = system5 * discrete_rhs;
 sol6 = system6 * discrete_rhs;
-
 
 anim = @animate for ((i5, ψ5), (i6, ψ6)) in zip(sol5, sol6)
     ψp5, ψm5 = EPMAfem.pmview(ψ5, model)

@@ -46,7 +46,7 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Tran
     end
     return
 end
-required_workspace(::typeof(mul_with!), S::SumMatrix) = maximum(required_workspace(mul_with!, A) for A in As(S))
+required_workspace(::typeof(mul_with!), S::SumMatrix, cache_notifier) = maximum(required_workspace(mul_with!, A, cache_notifier) for A in As(S))
 
 _fillzero!(A::AbstractArray) = fill!(A, zero(eltype(A)))
 _fillzero!(D::Diagonal) = fill!(D.diag, zero(eltype(D)))
@@ -65,10 +65,4 @@ end
 
 materialize_broadcasted(ws::Workspace, S::SumMatrix) = Base.Broadcast.broadcasted(+, materialize_broadcasted.(Ref(ws), As(S))...)
 
-function required_workspace(::typeof(materialize_with), S::SumMatrix)
-    max_workspace = 0
-    for A in As(S)
-        max_workspace = max(max_workspace, required_workspace(materialize_with, A))
-    end
-    return max_workspace
-end
+required_workspace(::typeof(materialize_with), S::SumMatrix, cache_notifier) = maximum(required_workspace(materialize_with, A, cache_notifier) for A in As(S))

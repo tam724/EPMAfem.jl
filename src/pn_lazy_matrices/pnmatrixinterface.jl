@@ -26,11 +26,11 @@ Base.size(L::Lazy) = size(unwrap(L))
 Base.getindex(L::Lazy, i::Int, j::Int) = CUDA.@allowscalar getindex(unwrap(L), i, j)
 LinearAlgebra.transpose(L::Lazy) = lazy(transpose(L.A))
 
-Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::Number) where T = lazy(*, unwrap(L), Ref(T(α)))
-Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, Ref(T(α)), unwrap(L))
+Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::Number) where T = lazy(*, unwrap(L), LazyScalar(T(α)))
+Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, LazyScalar(T(α)), unwrap(L))
 
-Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::Base.RefValue{T}) where T = lazy(*, unwrap(L), α)
-Base.:*(α::Base.RefValue{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, α, unwrap(L))
+Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::LazyScalar{T}) where T = lazy(*, unwrap(L), α)
+Base.:*(α::LazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, α, unwrap(L))
 
 Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(*, unwrap(A), unwrap(B))
 Base.:*(As::Vararg{<:AbstractLazyMatrixOrTranspose}) = lazy(*, unwrap.(As)...)
@@ -70,36 +70,39 @@ Base.:\(A::AbstractLazyMatrixOrTranspose) = lazy(\, unwrap(A))
     ws
 end
 
-notsolazy(A::AbstractLazyMatrix{T}, ws) where T = NotSoLazy{T}(A, ws)
-notsolazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws) where T = transpose(NotSoLazy{T}(parent(At), ws))
+# notsolazy(A::AbstractLazyMatrix{T}, ws) where T = NotSoLazy{T}(A, ws)
+# notsolazy(a::LazyScalar{T}, ws) where T = NotSoLazyScalar{T}(a, ws)
+# notsolazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws) where T = transpose(NotSoLazy{T}(parent(At), ws))
 
 function unlazy(A::AbstractLazyMatrix{T}, ws_alloc=zeros) where T
-    ws_size = required_workspace(mul_with!, A)
+    ws_size = required_workspace(mul_with!, A, ())
     @info "allocating workspace of size $(ws_size)."
     ws = create_workspace(ws_size, ws_alloc)
     return NotSoLazy{T}(A, ws)
 end
 
 function unlazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws_alloc=zeros) where T
-    ws_size = required_workspace(mul_with!, parent(At))
+    ws_size = required_workspace(mul_with!, parent(At), ())
     @info "allocating workspace of size $(ws_size)."
     ws = create_workspace(ws_size, ws_alloc)
     return NotSoLazy{T}(At, ws)
 end
 
-function unlazy(As::NTuple{N, AbstractLazyMatrixOrTranspose}, ws_alloc=zeros) where N
-    ws_size = 0
-    for A in As
-        if A isa Transpose
-            ws_size = max(required_workspace(mul_with!, parent(A)), ws_size)
-        else
-            ws_size = max(required_workspace(mul_with!, A), ws_size)
-        end
-    end
+_recursive_required_workspace_mul(A::AbstractLazyMatrix) = required_workspace(mul_with!, A, ())
+_recursive_required_workspace_mul(At::Transpose{T, <:AbstractLazyMatrix}) where T = required_workspace(mul_with!, parent(At), ())
+_recursive_required_workspace_mul(a::LazyScalar) = 0
+_recursive_required_workspace_mul(coll) = mapreduce(_recursive_required_workspace_mul, max, coll)
+
+_recursive_notsolazy(A::AbstractLazyMatrix{T}, ws::Workspace) where T = NotSoLazy{T}(A, ws)
+_recursive_notsolazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws::Workspace) where T = NotSoLazy{T}(At, ws)
+_recursive_notsolazy(a::LazyScalar{T}, ws::Workspace) where T = NotSoLazyScalar{T}(a, ws)
+_recursive_notsolazy(coll, ws::Workspace) = map(t -> _recursive_notsolazy(t, ws), coll)
+
+function unlazy(coll, ws_alloc=zeros)
+    ws_size = _recursive_required_workspace_mul(coll)
     ws = create_workspace(ws_size, ws_alloc)
-    return notsolazy.(As, Ref(ws))
+    return _recursive_notsolazy(coll, ws)
 end
-    
 
 Base.getindex(A::NotSoLazy, i::Integer, j::Integer) = getindex(A.A, i, j)
 Base.size(A::NotSoLazy) = size(A.A)
@@ -120,4 +123,8 @@ function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::NotSoLazy, 
     return Y
 end
 
-invalidate_cache!(A::NotSoLazy) = invalidate_cache!(A.ws)
+# interface for NotSolLazy{ResizeMatrix}
+Base.copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_::AbstractMatrix) where T = copyto!(R.ws, R.A, A_)
+Base.copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_) where T = copyto!(R.ws, R.A, A_)
+resize_copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_::AbstractMatrix) where T = resize_copyto!(R.ws, R.A, A_)
+

@@ -18,7 +18,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:Backslas
     y .= α .* (transpose(A_) \ x) .+ β .* y
 end
 
-required_workspace(::typeof(mul_with!), K::BackslashMatrix) = required_workspace(materialize_with, materialize(A(K)))
+required_workspace(::typeof(mul_with!), K::BackslashMatrix, cache_notifier) = required_workspace(materialize_with, materialize(A(K)), cache_notifier)
 
 # krylov_minres
 const KrylovMinresMatrix{T} = LazyOpMatrix{T, typeof(Krylov.minres), <:Tuple{<:AbstractMatrix{T}}}
@@ -65,7 +65,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KrylovMi
     y .= α .* solver.x .+ β .* y
 end
 
-required_workspace(::typeof(mul_with!), K::KrylovMinresMatrix) = required_workspace(mul_with!, A(K))
+required_workspace(::typeof(mul_with!), K::KrylovMinresMatrix, cache_notifier) = required_workspace(mul_with!, A(K), cache_notifier)
 
 # krylov_gmres
 const KrylovGmresMatrix{T} = LazyOpMatrix{T, typeof(Krylov.gmres), <:Tuple{<:AbstractMatrix{T}}}
@@ -91,7 +91,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KrylovGm
     y .= α .* solver.x .+ β .* y
 end
 
-required_workspace(::typeof(mul_with!), K::KrylovGmresMatrix) = required_workspace(mul_with!, A(K))
+required_workspace(::typeof(mul_with!), K::KrylovGmresMatrix, cache_notifier) = required_workspace(mul_with!, A(K), cache_notifier)
 
 
 function schur_complement() end
@@ -158,12 +158,12 @@ end
 # end
 
 
-function required_workspace(::typeof(mul_with!), S::SchurMatrix)
+function required_workspace(::typeof(mul_with!), S::SchurMatrix, cache_notifier)
     BD⁻¹, inv_AmBD⁻¹C, C, D⁻¹ = _schur_components(S)
-    ws = required_workspace(mul_with!, BD⁻¹)
-    ws = max(ws, required_workspace(mul_with!, inv_AmBD⁻¹C))
-    ws = max(ws, required_workspace(mul_with!, C))
-    ws = max(ws, required_workspace(mul_with!, D⁻¹))
+    ws = required_workspace(mul_with!, BD⁻¹, cache_notifier)
+    ws = max(ws, required_workspace(mul_with!, inv_AmBD⁻¹C, cache_notifier))
+    ws = max(ws, required_workspace(mul_with!, C, cache_notifier))
+    ws = max(ws, required_workspace(mul_with!, D⁻¹, cache_notifier))
     return ws
 end
 
@@ -207,9 +207,9 @@ function mul_with!(ws::Workspace, y::AbstractVector, S::HalfSchurMatrix, x::Abst
     mul_with!(ws, x_, inv_AmBD⁻¹C, u, true, false)
 end
 
-function required_workspace(::typeof(mul_with!), S::HalfSchurMatrix)
+function required_workspace(::typeof(mul_with!), S::HalfSchurMatrix, cache_notifier)
     BD⁻¹, inv_AmBD⁻¹C = _half_schur_components(S)
-    ws = required_workspace(mul_with!, BD⁻¹)
-    ws = max(ws, required_workspace(mul_with!, inv_AmBD⁻¹C))
+    ws = required_workspace(mul_with!, BD⁻¹, cache_notifier)
+    ws = max(ws, required_workspace(mul_with!, inv_AmBD⁻¹C, cache_notifier))
     return ws
 end

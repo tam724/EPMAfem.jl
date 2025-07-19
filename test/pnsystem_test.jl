@@ -69,8 +69,6 @@ const PNLazyMatrices = EPMAfem.PNLazyMatrices
 #     end
 # end
 
-
-
 lazy(A) = EPMAfem.lazy(A)
 unlazy(A) = EPMAfem.unlazy(A, zeros)
 
@@ -100,12 +98,74 @@ function test_cached_LK_K(LK, K)
     @test y ≈ K * x
     EPMAfem.mul_with!(ws, y, LK, x, true, false)
     @test y ≈ K * x
-    for (id, (valid, mem)) in ws.cache
+    for (id, (valid, mem)) in ws.cache.cache
         @test valid[]
         mem .= rand(size(mem))
     end
     EPMAfem.mul_with!(ws, y, LK, x, true, false)
     @test !(y ≈ K * x)
+end
+
+@testset "autocache resizematrix + prodmatrix" begin
+    A = PNLazyMatrices.LazyResizeMatrix(rand(4, 10), (Base.RefValue(4), Base.RefValue(4)))
+    a = EPMAfem.LazyScalar(1.0)
+    B = lazy(rand_mat(4, 4))
+
+    M = EPMAfem.cache(transpose(A) * B * A)
+    M2 = transpose(A) * B * A
+
+    M_, A_ = unlazy((M, A))
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M)][1][] == false
+    x = rand_vec(size(M_, 2))
+    @test M_ * x ≈ unlazy(M2) * x
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M)][1][] == true
+    PNLazyMatrices.resize_copyto!(A_, rand_mat(4, 4))
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M)][1][] == false
+    x = rand_vec(size(M_, 2))
+    @test M_ * x ≈ unlazy(M2) * x
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M)][1][] == true
+    PNLazyMatrices.resize_copyto!(A_, rand_mat(4, 8))
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M)][1][] == false
+    x = rand_vec(size(M_, 2))
+    @test M_ * x ≈ unlazy(M2) * x
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M)][1][] == true
+end
+
+@testset "Auto Cache Invalidation" begin
+    a = PNLazyMatrices.LazyScalar(2.0)
+    A = PNLazyMatrices.lazy(rand(3, 3))
+    b = PNLazyMatrices.LazyScalar(1.0)
+    B = PNLazyMatrices.lazy(rand(3, 3))
+
+    A_c = PNLazyMatrices.cache(a*A)
+    B_c = PNLazyMatrices.cache(B*b)
+    M_c = PNLazyMatrices.cache(A_c + B_c + A_c)
+
+    M_ = unlazy(M_c)
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M_c)][1][] == false
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(A_c)][1][] == false
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(B_c)][1][] == false
+    x = rand(size(M_, 2))
+    @test M_ * x ≈ (a[]*A.A + b[]*B.A + a[]*A.A)*x
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M_c)][1][] == true
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(A_c)][1][] == true
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(B_c)][1][] == true
+    a[M_.ws] = 1.0
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M_c)][1][] == false
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(A_c)][1][] == false
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(B_c)][1][] == true
+    @test M_ * x ≈ (a[]*A.A + b[]*B.A + a[]*A.A)*x
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M_c)][1][] == true
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(A_c)][1][] == true
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(B_c)][1][] == true
+    b[M_.ws] = 2.0
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M_c)][1][] == false
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(A_c)][1][] == true
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(B_c)][1][] == false
+    @test M_ * x ≈ (a[]*A.A + b[]*B.A + a[]*A.A)*x
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(M_c)][1][] == true
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(A_c)][1][] == true
+    @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(B_c)][1][] == true
 end
 
 @testset "HalfSchurMatrix + solver" begin
@@ -324,24 +384,21 @@ end
     C = rand(10, 10)
     D = rand(11, 11)
 
-    AL = PNLazyMatrices.LazyResizeMatrix(rand(15, 15), (Ref(10), Ref(5)))
-    BL = PNLazyMatrices.LazyResizeMatrix(rand(15, 15), (Ref(11), Ref(5)))
+    AL = PNLazyMatrices.LazyResizeMatrix(rand(10, 15), (Ref(10), Ref(5)))
+    BL = PNLazyMatrices.LazyResizeMatrix(rand(11, 15), (Ref(11), Ref(5)))
     CL = C |> lazy
     DL = D |> lazy
     XL = EPMAfem.materialize(transpose(AL) * CL * AL)
     YL = EPMAfem.cache(transpose(BL) * DL * BL)
     KL = kron(XL, YL)
 
-    PNLazyMatrices.resize!(AL, (10, 3))
-    PNLazyMatrices.resize!(BL, (11, 6))
-
     K = kron(transpose(A)*C*A, transpose(B)*D*B)
 
-    AL .= A
-    BL .= B
-
+    KL_, AL_, BL_ = unlazy((KL, AL, BL))
+    PNLazyMatrices.resize_copyto!(AL_, A)
+    PNLazyMatrices.resize_copyto!(BL_, B)
     x = rand(size(KL, 2))
-    test_cached_LK_K(KL, K)
+    @test KL_ * x ≈ K * x
 end
 
 # let
@@ -438,7 +495,7 @@ end
     LM5 = LM4 * transpose(LM4);
 
     x = rand_vec(size(LM5, 2))
-    ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5)
+    ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, ())
     ws = EPMAfem.create_workspace(ws_size, rand_vec)
     y = rand_vec(size(LM5, 1))
     EPMAfem.mul_with!(ws, y, LM5, x, true, false)
@@ -482,7 +539,7 @@ end
         LM4 = may_m(γ * LM3 + kron(LM1, transpose(may_m(transpose(LJ) * LM2 * LJ))));
         LM5 = LM4 * transpose(LM4);
 
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5)
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM5, 1))
         EPMAfem.mul_with!(ws, y, LM5, x, true, false)
@@ -600,7 +657,7 @@ end
     K = A * B * C * D  * A * B * C * D 
     LK = EPMAfem.cache(LA * LB * LC * LD) * EPMAfem.cache(LA * LB * LC * LD)
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, LK, rand_vec)
-    @test length(ws.cache) == 1
+    @test length(ws.cache.cache) == 1
     test_cached_LK_K(LK, K)
 end
 
@@ -641,7 +698,7 @@ end
         LM4 = may_m(γ * LM3 + kron(LM1, transpose(may_m(transpose(LJ) * LM2 * LJ))));
         LM5 = LM4 * transpose(LM4);
 
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5)
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM5, 1))
         EPMAfem.mul_with!(ws, y, LM5, x, true, false)
@@ -683,14 +740,14 @@ end
         LM4 = EPMAfem.blockmatrix(LM1, LM2, transpose(LM2), LM3)
 
         x = rand_vec(size(LM4, 2))
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM4, 1))
         EPMAfem.mul_with!(ws, y, LM4, x, true, false)
         @test y ≈ M4 * x
 
         x = rand_vec(size(LM4, 1))
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM4, 2))
         EPMAfem.mul_with!(ws, y, transpose(LM4), x, true, false)
@@ -734,14 +791,14 @@ end
         LM4 = EPMAfem.blockmatrix(LM1, LM2, transpose(LM2), LM3)
 
         x = rand_vec(size(LM4, 2))
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM4, 1))
         EPMAfem.mul_with!(ws, y, LM4, x, true, false)
         @test y ≈ M4 * x
 
         x = rand_vec(size(LM4, 1))
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4)
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM4, 2))
         EPMAfem.mul_with!(ws, y, transpose(LM4), x, true, false)
@@ -773,7 +830,7 @@ end
 
     for (M, M_) in [(M2, M2_), (M3, M3_), (M4, M4_), (M5, M5_)]
         # we have no entry point for (Matrix) * (LazyMatrix) multiplication (this is not how it was designed..) however, internally we do at least try..
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, M)
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, M, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
 
         # Y = X * M
@@ -1352,7 +1409,7 @@ end
 
     s = EPMAfem.materialize(k1 + k2)
 
-    EPMAfem.required_workspace(EPMAfem.mul_with!, s)
+    EPMAfem.required_workspace(EPMAfem.mul_with!, s, ())
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, s, rand_vec)
 
     x = rand_vec(size(s, 2))
@@ -1562,8 +1619,8 @@ end
     L = rand_mat(2, 3)
     R = rand_mat(2, 3)
 
-    SL = EPMAfem.lazy(*, Ref(l), L)
-    SR = EPMAfem.lazy(*, R, Ref(r))
+    SL = l*lazy(L)
+    SR = lazy(R)*r
 
     SL_ref = l*L
     SR_ref = R*r

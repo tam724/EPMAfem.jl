@@ -12,18 +12,45 @@ struct ShouldNotBroadcastMaterialize <: BroadcastMaterialize end
 
 abstract type Workspace{VT} end
 
-@concrete struct PreallWorkspace{VT<:AbstractVector} <: Workspace{VT}
+struct Cache{VT<:AbstractVector}
+    cache::Dict{UInt64, Tuple{Base.RefValue{Bool}, VT}}
+    cache_notifier::Dict{UInt64, NTuple{N, Base.RefValue{Bool}} where N}
+end
+
+struct CacheStructure
+    cache::Dict{UInt64, Tuple{Base.RefValue{Bool}, Int64}}
+    cache_notifier::Dict{UInt64, NTuple{N, Base.RefValue{Bool}} where N}
+end
+
+function CacheStructure(::Nothing, ::Nothing)
+    CacheStructure(
+        Dict{UInt64, Tuple{Base.RefValue{Bool}, Int64}}(),
+        Dict{UInt64, Vector{Base.RefValue{Bool}}}()
+    )
+end
+
+function CacheStructure(cache, ::Nothing)
+    CacheStructure(
+        cache,
+        Dict{UInt64, Vector{Base.RefValue{Bool}}}()
+    )
+end
+
+function CacheStructure(::Nothing, cache_notifier)
+    CacheStructure(
+        Dict{UInt64, Tuple{Base.RefValue{Bool}, Int64}}(),
+        cache_notifier
+    )
+end
+
+@concrete struct PreallWorkspace{VT<:AbstractVector, CT<:Cache} <: Workspace{VT}
     workspace::VT
-    cache
+    cache::CT
 end
 
 @concrete struct WorkspaceSize{ST<:Integer}
     workspace::ST
-    cache
-end
-
-function WorkspaceSize(ws, ch)
-    return Workspace(ws, ch)
+    cache::CacheStructure
 end
 
 abstract type AbstractLazyMatrix{T} <: AbstractMatrix{T} end
@@ -31,7 +58,7 @@ const AbstractLazyMatrixOrTranspose{T} = Union{<:AbstractLazyMatrix{T}, Transpos
 Base.getindex(L::AbstractLazyMatrix{T}, I::CartesianIndex) where T = getindex(L, I.I...)
 Base.getindex(L::AbstractLazyMatrix{T}, i::Int, j::Int) where T = CUDA.@allowscalar lazy_getindex(L, i, j)
 lazy_getindex(Lt::Transpose{T, <:AbstractLazyMatrix{<:T}}, i::Int, j::Int) where T = CUDA.@allowscalar lazy_getindex(parent(Lt), j, i)
-Base.getindex(::AbstractLazyMatrix{T}, args...) where T = error("should be defined")
+# Base.getindex(::AbstractLazyMatrix{T}, args...) where T = error("should be defined")
 
 lazy_objectid(L::AbstractLazyMatrix) = objectid(L) # we give each matrix an objectid for caching
 lazy_objectid(::AbstractMatrix) = error("why cache base matrices?") 
@@ -45,14 +72,26 @@ broadcast_materialize((first, rem...)::Vararg{<:AbstractMatrix}) = combine_broad
 combine_broadcast_materialize(::BroadcastMaterialize, ::BroadcastMaterialize) = ShouldNotBroadcastMaterialize()
 combine_broadcast_materialize(::ShouldBroadcastMaterialize, ::ShouldBroadcastMaterialize) = ShouldBroadcastMaterialize() # the only case that survives..
 
+max_size(A::AbstractLazyMatrix, n::Integer) = max_size(A)[n]
+max_size(At::Transpose{T, <:AbstractLazyMatrix}) where T = reverse(max_size(parent(At)))
+function max_size(At::Transpose{T, <:AbstractLazyMatrix}, n::Integer) where T
+    if n == 1
+        return max_size(parent(At), 2)
+    elseif n == 2
+        return max_size(parent(At), 1)
+    else
+        error("Dimension $n out of bounds")
+    end
+end
+
 isdiagonal(::AbstractLazyMatrix) = error("should be defined")
 isdiagonal(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = isdiagonal(parent(Lt))
 LinearAlgebra.transpose(A::AbstractLazyMatrix) = isdiagonal(A) ? A : Transpose(A)
 mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractLazyMatrix, X::AbstractVecOrMat, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
 mul_with!(::Workspace, Y::AbstractMatrix, A::AbstractMatrix, X::AbstractLazyMatrix, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
 # this function should return the workspace size that is needed to mul_with! the AbstractLazyMatrix
-required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix) = error("should be defined: $(typeof(L))")
-required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(mul_with!, parent(Lt))
+required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix, cache_notifier) = error("should be defined: $(typeof(L))")
+required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}, cache_notifier) where T = required_workspace(mul_with!, parent(Lt), cache_notifier)
 
 # returns the matrix in materialized form (if provided, uses skeleton::AbstractMatrix to materialize AND if provided αβs to skeleton)
 materialize_with(::Workspace, ::AbstractLazyMatrix) = error("should be defined")
@@ -71,12 +110,22 @@ function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T
     return transpose(L), rem
 end
 # this function should only return the workspace size that is needed for the matrix to materialize NOT the workspace size for the matrix itself (prod(size(⋅))
-required_workspace(::typeof(materialize_with), ::AbstractLazyMatrix) = error("should be defined")
-required_workspace(::typeof(materialize_with), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(materialize_with, parent(Lt))
+required_workspace(::typeof(materialize_with), ::AbstractLazyMatrix, cache_notifier) = error("should be defined")
+required_workspace(::typeof(materialize_with), Lt::Transpose{T, <:AbstractLazyMatrix{T}}, cache_notifier) where T = required_workspace(materialize_with, parent(Lt), cache_notifier)
 
 # default dispatch for AbstractMatrices, they should not be AbstractLazyMatrices though..
-max_size(A::AbstractMatrix) = size(A)
-max_size(A::AbstractMatrix, n::Integer) = size(A, n)
+function max_size(A::AbstractMatrix)
+    if A isa AbstractLazyMatrixOrTranspose
+        @warn "max size default for $(typeof(A))"
+    end 
+    return size(A)
+end
+function max_size(A::AbstractMatrix, n::Integer)
+    if A isa AbstractLazyMatrixOrTranspose
+        @warn "max size default for $(typeof(A))"
+    end
+    return size(A, n)
+end
 
 # indirect the isdiagonal
 isdiagonal(A::AbstractMatrix) = false
@@ -112,7 +161,7 @@ function mul_with!(::Union{Workspace, Nothing}, Y::AbstractVecOrMat, A::Abstract
     end
 end
 
-required_workspace(::typeof(mul_with!), A::AbstractMatrix) = 0
+required_workspace(::typeof(mul_with!), A::AbstractMatrix, cache_notifier) = 0 # TODO: see below
 
 materialize_with(ws::Workspace, A::AbstractMatrix) = A, ws
 function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix)
@@ -124,7 +173,7 @@ function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMa
     return skeleton, ws
 end
 
-required_workspace(::typeof(materialize_with), A::AbstractMatrix) = 0
+required_workspace(::typeof(materialize_with), A::AbstractMatrix, cache_notifier) = 0 # TODO: make AbstractMAtrix Lazy + add cache Notifier
 
 materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
 @concrete struct LazyOpMatrix{T} <: AbstractLazyMatrix{T}

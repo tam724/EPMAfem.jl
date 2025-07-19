@@ -26,7 +26,7 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Tran
     mul_with!(nothing, Y, X, transpose(materialized_Mt), α, β)
 end
 # this may be extended to multiplications of multiple materialized matrices.. (we are good with only one now..)
-required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix) = required_workspace(materialize_with, M)
+required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix, cache_notifier) = required_workspace(materialize_with, M, cache_notifier)
 
 
 # the materialize_with is different for MaterializeMatrix and CachedMatrix though...
@@ -118,9 +118,9 @@ materialize_broadcasted(ws::Workspace, S::MaterializedMatrix) = materialize_broa
 function materialize_strategy(M::MaterializedMatrix)
     # return :mat # TODO: still unsure about this one..
     # this is a crude heuristic! (if it is "cheaper" to multiply with the matrix than to materialize, then materialize by multiplication)
-    mat = workspace_size(required_workspace(materialize_with, A(M)))
+    mat = workspace_size(required_workspace(materialize_with, A(M), ()))
     mA, nA = max_size(A(M))
-    mul = min(mA, nA) * workspace_size(required_workspace(mul_with!, A(M)))
+    mul = min(mA, nA) * workspace_size(required_workspace(mul_with!, A(M), ()))
     # @show mat, mA, nA, mul
     if mat < mul
         return :mat
@@ -131,14 +131,14 @@ function materialize_strategy(M::MaterializedMatrix)
     end
 end
 
-function required_workspace(::typeof(materialize_with), M::MaterializedMatrix)
+function required_workspace(::typeof(materialize_with), M::MaterializedMatrix, cache_notifier)
     strategy = materialize_strategy(M)
     if strategy == :mat
-        return required_workspace(structured_from_ws, A(M)) + required_workspace(materialize_with, A(M))
+        return required_workspace(structured_from_ws, A(M)) + required_workspace(materialize_with, A(M), cache_notifier)
     elseif strategy == :x_mul
-        return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M)) + max_size(A(M))[1] + max_size(A(M))[2] # because we cannot directly write into the memory for A
+        return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M), cache_notifier) + max_size(A(M))[1] + max_size(A(M))[2] # because we cannot directly write into the memory for A
     else # strategy == :mul_x
-        return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M)) + max_size(A(M))[2]
+        return required_workspace(structured_from_ws, A(M)) + required_workspace(mul_with!, A(M), cache_notifier) + max_size(A(M))[2]
     end
     return 
 end
@@ -146,8 +146,8 @@ materialize(M::Union{MaterializedMatrix{T}, Transpose{T, <:MaterializedMatrix{T}
 
 ##### CachedMatrix
 function materialize_with(ws::Workspace, C::CachedMatrix)
-    if !haskey(ws.cache, lazy_objectid(A(C))) @warn "$(typeof(A(C))) key not found" end
-    valid, memory = ws.cache[lazy_objectid(A(C))]
+    if !haskey(ws.cache.cache, lazy_objectid(A(C))) @warn "$(typeof(A(C))) key not found" end
+    valid, memory = ws.cache.cache[lazy_objectid(A(C))]
     C_cached = structured_mat_view(memory, C)
     if !valid[]
         CUDA.NVTX.@range "precompute cache" begin
@@ -173,15 +173,24 @@ end
 broadcast_materialize(::CachedMatrix) = ShouldBroadcastMaterialize()
 materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C))
 
-function required_workspace(::typeof(materialize_with), C::CachedMatrix)
+function required_workspace(::typeof(materialize_with), C::CachedMatrix, cache_notifier)
     cache_size = required_workspace(structured_from_ws, A(C))
+
+    valid = Ref(false)
+    cache_ws = WorkspaceSize(0, CacheStructure(
+        Dict(lazy_objectid(C) => (valid, cache_size)),
+        nothing,
+    ))
+
+    inner_cache_notifier = (cache_notifier..., valid)
+
     strategy = materialize_strategy(materialize(A(C)))
     if strategy == :mat
-        return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(materialize_with, A(C))
+        return cache_ws + required_workspace(materialize_with, A(C), inner_cache_notifier)
     elseif strategy == :x_mul
-        return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(mul_with!, A(C)) + max_size(A(C))[1] + max_size(A(C))[2] # because we cannot directly write into the memory for A
+        return cache_ws + required_workspace(mul_with!, A(C), inner_cache_notifier) + max_size(A(C))[1] + max_size(A(C))[2] # because we cannot directly write into the memory for A
     else # strategy == :mul_x
-        return WorkspaceSize(0, Dict(lazy_objectid(C) => cache_size)) + required_workspace(mul_with!, A(C)) + max_size(A(C))[2]
+        return cache_ws + required_workspace(mul_with!, A(C), inner_cache_notifier) + max_size(A(C))[2]
     end
 end
 

@@ -1,11 +1,13 @@
-const ScaleMatrixL{T} = LazyOpMatrix{T, typeof(*), <:Tuple{Base.RefValue{T}, <:AbstractMatrix}}
-const ScaleMatrixR{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix, Base.RefValue{T}}}
+const ScaleMatrixL{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:LazyScalar{T}, <:AbstractMatrix{T}}}
+const ScaleMatrixR{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:LazyScalar{T}}}
 const UnaryMinusMatrix{T} = LazyOpMatrix{T, typeof(-), <:Tuple{<:AbstractMatrix{T}}}
 const ScaleMatrix{T} = Union{ScaleMatrixL{T}, ScaleMatrixR{T}, UnaryMinusMatrix{T}}
 
 @inline a(S::ScaleMatrixL) = S.args[1][]
+@inline _a(S::ScaleMatrixL) = S.args[1]
 @inline A(S::ScaleMatrixL) = S.args[2]
 @inline a(S::ScaleMatrixR) = S.args[2][]
+@inline _a(S::ScaleMatrixR) = S.args[2]
 @inline A(S::ScaleMatrixR) = S.args[1]
 @inline a(::UnaryMinusMatrix{T}) where T = T(-1)
 @inline A(S::UnaryMinusMatrix) = only(S.args)
@@ -18,7 +20,12 @@ mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMa
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
 mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul_with!(ws, Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
-required_workspace(::typeof(mul_with!), S::ScaleMatrix) = required_workspace(mul_with!, A(S))
+function required_workspace(::typeof(mul_with!), S::ScaleMatrix, cache_notifier)
+    return register_cache_notifier(_a(S), cache_notifier) + required_workspace(mul_with!, A(S), cache_notifier)
+end
+function required_workspace(::typeof(mul_with!), S::UnaryMinusMatrix, cache_notifier)
+    return required_workspace(mul_with!, A(S), cache_notifier)
+end
 
 _rmul!(A::AbstractArray, α::Number) = rmul!(A, α)
 _rmul!(A::Diagonal, α::Number) = rmul!(A.diag, α)
@@ -31,7 +38,12 @@ end
 
 broadcast_materialize(S::ScaleMatrix) = broadcast_materialize(A(S))
 materialize_broadcasted(ws::Workspace, S::ScaleMatrix) = Base.Broadcast.broadcasted(*, a(S), materialize_broadcasted(ws, A(S)))
-required_workspace(::typeof(materialize_with), S::ScaleMatrix) = required_workspace(materialize_with, A(S))
+function required_workspace(::typeof(materialize_with), S::ScaleMatrix, cache_notifier)
+    return register_cache_notifier(_a(S), cache_notifier) + required_workspace(materialize_with, A(S), cache_notifier)
+end
+function required_workspace(::typeof(materialize_with), S::UnaryMinusMatrix, cache_notifier)
+    return required_workspace(materialize_with, A(S), cache_notifier)
+end
 
 # it seems as if now the fun starts :D this can be heavily optimized (matrix product chain, etc..) well only go for some simple heuristics here
 # let's start implementing this with only A*B (the general case follows later..)
@@ -117,8 +129,8 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdM
 end
 
 # assuming a vector input (matrix input is simply looped, TODO: maybe introduce threaded ? )
-function required_workspace(::typeof(mul_with!), M::TwoProdMatrix)
-    return size(B(M), 1) +  max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
+function required_workspace(::typeof(mul_with!), M::TwoProdMatrix, cache_notifier)
+    return max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), cache_notifier), required_workspace(mul_with!, A(M), cache_notifier))
 
     # this feels unneccesary, we allocate more space to potentially copy the array inputs, to have contiguous memory in the loops
     # return size(B(M), 1) + max(size(A(M), 1), size(B(M), 2)) + max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
@@ -133,8 +145,8 @@ function materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMat
     return skeleton, ws
 end
 
-function required_workspace(::typeof(materialize_with), M::TwoProdMatrix)
-    return required_workspace(materialize_with, materialize(A(M))) + required_workspace(materialize_with, materialize(B(M)))
+function required_workspace(::typeof(materialize_with), M::TwoProdMatrix, cache_notifier)
+    return required_workspace(materialize_with, materialize(A(M)), cache_notifier) + required_workspace(materialize_with, materialize(B(M)), cache_notifier)
 end
 
 # ProdMatrix
@@ -246,9 +258,9 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:ProdMatr
     end
 end
 
-function required_workspace(::typeof(mul_with!), M::ProdMatrix)
-    my_ws = maximum(A -> size(A, 2), As(M)) # we could skip the last here
-    int_ws = maximum(A -> required_workspace(mul_with!, A), As(M))
+function required_workspace(::typeof(mul_with!), M::ProdMatrix, cache_notifier)
+    my_ws = maximum(A -> max_size(A, 2), As(M)) # we could skip the last here
+    int_ws = maximum(A -> required_workspace(mul_with!, A, cache_notifier), As(M))
     return 2*my_ws + int_ws
 end
 
@@ -276,10 +288,10 @@ function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix
     return skeleton, ws
 end
 
-function required_workspace(::typeof(materialize_with), M::ProdMatrix)
+function required_workspace(::typeof(materialize_with), M::ProdMatrix, cache_notifier)
     # simply exaggerate here.. # TODO bring the workspace size down !
-    max_m = maximum(A -> size(A, 1), As(M))
-    max_n = maximum(A -> size(A, 2), As(M))
-    max_internals = maximum(A -> required_workspace(materialize_with, materialize(A)), As(M))
+    max_m = maximum(A -> max_size(A, 1), As(M))
+    max_n = maximum(A -> max_size(A, 2), As(M))
+    max_internals = maximum(A -> required_workspace(materialize_with, materialize(A), cache_notifier), As(M))
     return 2*max_m*max_n + max_internals
 end
