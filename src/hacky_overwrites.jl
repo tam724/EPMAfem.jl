@@ -10,26 +10,18 @@
     Base.unsafe_view(parent(A), j, i)
 @inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
     Base.unsafe_view(parent(A), j, i)
-
-
-# a inplace kronecker product for vectors, that fuses a multiply and an add #GPUARRAYS version for Diagonal
-@kernel function kron_αβ_kernel_vec!(z, @Const(x), @Const(y), α, β)
-    i, j = @index(Global, NTuple)
-    @inbounds z[(i-1)*length(y)+j] = Base.muladd(α, x[i] * y[j], β*z[(i-1)*length(y)+j])
-end
+    
 
 function LinearAlgebra.kron!(z::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T}, α::Number, β::Number) where T
     @assert length(z) == length(x) * length(y)
 
-    backend = KernelAbstractions.get_backend(z)
-    kernel = kron_αβ_kernel_vec!(backend)
-
-    kernel(z, x, y, α, β, ndrange=(length(x), length(y)))
+    Z = reshape(z, (length(y), length(x)))
+    Z .= α .* y .* transpose(x) .+ β .* Z
 
     return z
 end
 
-function LinearAlgebra.kron!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat, α::Number, β::Number)
+function LinearAlgebra.kron!(C::AbstractMatrix, A::AbstractMatrix, B::AbstractMatrix, α::Number, β::Number)
     size(C) == LinearAlgebra._kronsize(A, B) || throw(DimensionMismatch("kron!"))
     m = firstindex(C)
     @inbounds for j in axes(A,2), l in axes(B,2), i in axes(A,1)
@@ -44,7 +36,7 @@ end
 
 # https://github.com/JuliaLang/LinearAlgebra.jl/blob/b7fd6967c60b8408445d03442e04586bce0645d7/src/diagonal.jl#L809-L812
 function LinearAlgebra.kron!(C::Diagonal, A::Diagonal, B::Diagonal)
-    kron!(C.diag, A.diag, B.diag)
+    kron!(C.diag, A.diag, B.diag, true, false)
     return C
 end
 
@@ -52,7 +44,6 @@ function LinearAlgebra.kron!(C::Diagonal, A::Diagonal, B::Diagonal, α::Number, 
     kron!(C.diag, A.diag, B.diag, α, β)
     return C
 end
-
 
 
 # inplace inv! for Diagonal matrices

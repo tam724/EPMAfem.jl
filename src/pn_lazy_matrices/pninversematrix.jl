@@ -53,16 +53,28 @@ lazy_getindex(K::KrylovMinresMatrix, i::Int, j::Int) = error("Cannot getindex")
 
 function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovMinresMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(K), ws)
-    solver = Krylov.MinresSolver(A_, x) # this allocates!
-    Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
-    y .= α .* solver.x .+ β .* y
+    CUDA.NVTX.@range "minres allocate" begin
+        solver = Krylov.MinresSolver(A_, x) # this allocates!
+    end
+    CUDA.NVTX.@range "minres solve" begin
+        Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
+    end
+    CUDA.NVTX.@range "minres copy" begin
+        y .= α .* solver.x .+ β .* y
+    end
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KrylovMinresMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(parent(Kt)), ws)
-    solver = Krylov.MinresSolver(A_, x) # this allocates!
-    Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
-    y .= α .* solver.x .+ β .* y
+    CUDA.NVTX.@range "minres allocate" begin
+        solver = Krylov.MinresSolver(A_, x) # this allocates!
+    end
+    CUDA.NVTX.@range "minres solve" begin
+        Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
+    end
+    CUDA.NVTX.@range "minres copy" begin
+        y .= α .* solver.x .+ β .* y
+    end
 end
 
 required_workspace(::typeof(mul_with!), K::KrylovMinresMatrix, cache_notifier) = required_workspace(mul_with!, A(K), cache_notifier)
