@@ -47,10 +47,58 @@ Base.:-(L::AbstractLazyMatrixOrTranspose) = lazy(-, unwrap(L))
 # damn I implemented a weird version of kron...
 LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = transpose(lazy(kron_AXB, transpose(unwrap(B)), unwrap(A)))
 lazy(::typeof(kron), A::AbstractMatrix, B::AbstractMatrix) = transpose(lazy(kron_AXB, transpose(unwrap(B)), unwrap(A)))
-
 kron_AXB(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron_AXB, unwrap(A), unwrap(B))
-materialize(A::AbstractLazyMatrixOrTranspose) = lazy(materialize, unwrap(A))
-cache(A::AbstractLazyMatrixOrTranspose) = lazy(cache, unwrap(A))
+
+# materialize and cache logic
+broadcast_materialize(A::AbstractLazyMatrixOrTranspose) = lazy(broadcast_materialize, unwrap(A))
+mat_with_materialize(A::AbstractLazyMatrixOrTranspose) = lazy(mat_with_materialize, unwrap(A))
+mul_materialize(A::AbstractLazyMatrixOrTranspose) = lazy(mul_materialize, unwrap(A))
+
+cache(A::AbstractLazyMatrixOrTranspose) = lazy(cache, materialize(unwrap(A)))
+cache(M::MaterializedMatrix) = lazy(cache, M)
+
+function decide_materialize_strategy(A::AbstractLazyMatrixOrTranspose)
+    if should_broadcast_materialize(A) isa ShouldBroadcastMaterialize return :broadcast end
+    # return :mat # TODO: still unsure about this one..
+    # this is a crude heuristic! (if it is "cheaper" to multiply with the matrix than to materialize, then materialize by multiplication) TOOD: should be checked better
+    mat = workspace_size(required_workspace(materialize_with, A, ()))
+    mA, nA = max_size(A)
+    mul = min(mA, nA) * workspace_size(required_workspace(mul_with!, A, ()))
+    if mat < mul
+        return :mat_with
+    else
+        return :mul
+    end
+end
+
+function materialize(A::AbstractLazyMatrixOrTranspose)
+    strategy = decide_materialize_strategy(A)
+    if strategy == :broadcast
+        return lazy(broadcast_materialize, unwrap(A))
+    elseif strategy == :mat_with
+        return lazy(mat_with_materialize, unwrap(A))
+    else # strategy == :mul
+        return lazy(mul_materialize, unwrap(A))
+    end
+end
+
+function materialize(A::AbstractMatrix)
+    if A isa AbstractLazyMatrixOrTranspose
+        @warn "should not happen: $(typeof(A))"
+    end
+    return A
+end
+function cache(A::AbstractMatrix)
+    if A isa AbstractLazyMatrixOrTranspose
+        @warn "should not happen: $(typeof(A))"
+    end
+    return A
+end
+materialize(M::Union{MaterializedMatrix{T}, Transpose{T, <:MaterializedMatrix{T}}}) where T = M
+materialize(C::Union{CachedMatrix{T}, Transpose{T, <:CachedMatrix{T}}}) where T = C
+cache(C::Union{CachedMatrix{T}, Transpose{T, <:CachedMatrix{T}}}) where T = C
+
+
 LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(LinearAlgebra.inv!, unwrap(A))
 
 blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose, D::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C, D)

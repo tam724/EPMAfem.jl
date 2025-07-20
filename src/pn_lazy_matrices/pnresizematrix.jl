@@ -64,7 +64,7 @@ function materialize_with(ws::Workspace, Rt::Transpose{T, <:LazyResizeMatrix{T}}
     return transpose(_reshape_view(parent(Rt))), ws
 end
 
-broadcast_materialize(::LazyResizeMatrix) = ShouldBroadcastMaterialize()
+should_broadcast_materialize(::LazyResizeMatrix) = ShouldBroadcastMaterialize()
 materialize_broadcasted(::Workspace, R::LazyResizeMatrix) = _reshape_view(R)
 function required_workspace(::typeof(materialize_with), S::LazyResizeMatrix, cache_notifier)
     return 0 + register_cache_notifier(S, cache_notifier)

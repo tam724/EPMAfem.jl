@@ -6,6 +6,7 @@ function only_unique(iter)
     return a
 end
 
+# TODO: this should be simple true false stuff now...
 abstract type BroadcastMaterialize end
 struct ShouldBroadcastMaterialize <: BroadcastMaterialize end
 struct ShouldNotBroadcastMaterialize <: BroadcastMaterialize end
@@ -65,12 +66,11 @@ lazy_objectid(::AbstractMatrix) = error("why cache base matrices?")
 lazy_objectid(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = lazy_objectid(parent(Lt)) # transpose gets the same as the parent
 
 # generally opt out of broadcasting materialize..
-broadcast_materialize(::AbstractLazyMatrixOrTranspose) = ShouldNotBroadcastMaterialize()
+should_broadcast_materialize(::AbstractLazyMatrixOrTranspose) = ShouldNotBroadcastMaterialize()
 
-# whoa this is weird..
-broadcast_materialize((first, rem...)::Vararg{<:AbstractMatrix}) = combine_broadcast_materialize(broadcast_materialize(first), broadcast_materialize(rem...))
-combine_broadcast_materialize(::BroadcastMaterialize, ::BroadcastMaterialize) = ShouldNotBroadcastMaterialize()
-combine_broadcast_materialize(::ShouldBroadcastMaterialize, ::ShouldBroadcastMaterialize) = ShouldBroadcastMaterialize() # the only case that survives..
+should_broadcast_materialize((first, rem...)::Vararg{<:AbstractMatrix}) = combine_should_broadcast_materialize(should_broadcast_materialize(first), should_broadcast_materialize(rem...))
+combine_should_broadcast_materialize(::BroadcastMaterialize, ::BroadcastMaterialize) = ShouldNotBroadcastMaterialize()
+combine_should_broadcast_materialize(::ShouldBroadcastMaterialize, ::ShouldBroadcastMaterialize) = ShouldBroadcastMaterialize() # the only case that survives..
 
 max_size(A::AbstractLazyMatrix, n::Integer) = max_size(A)[n]
 max_size(At::Transpose{T, <:AbstractLazyMatrix}) where T = reverse(max_size(parent(At)))
@@ -86,6 +86,10 @@ end
 
 isdiagonal(::AbstractLazyMatrix) = error("should be defined")
 isdiagonal(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = isdiagonal(parent(Lt))
+# indirect the isdiagonal
+isdiagonal(A::AbstractMatrix) = false
+isdiagonal(A::Diagonal) = true
+
 LinearAlgebra.transpose(A::AbstractLazyMatrix) = isdiagonal(A) ? A : Transpose(A)
 mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractLazyMatrix, X::AbstractVecOrMat, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
 mul_with!(::Workspace, Y::AbstractMatrix, A::AbstractMatrix, X::AbstractLazyMatrix, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
@@ -109,7 +113,7 @@ function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T
     L, rem = materialize_with(ws, parent(Lt), transpose(skeleton), α, β)
     return transpose(L), rem
 end
-# this function should only return the workspace size that is needed for the matrix to materialize NOT the workspace size for the matrix itself (prod(size(⋅))
+
 required_workspace(::typeof(materialize_with), ::AbstractLazyMatrix, cache_notifier) = error("should be defined")
 required_workspace(::typeof(materialize_with), Lt::Transpose{T, <:AbstractLazyMatrix{T}}, cache_notifier) where T = required_workspace(materialize_with, parent(Lt), cache_notifier)
 
@@ -127,23 +131,8 @@ function max_size(A::AbstractMatrix, n::Integer)
     return size(A, n)
 end
 
-# indirect the isdiagonal
-isdiagonal(A::AbstractMatrix) = false
-isdiagonal(A::Diagonal) = true
-
-function materialize(A::AbstractMatrix)
-    if A isa AbstractLazyMatrixOrTranspose error("should not happen!") end
-    return A
-end
-
-function cache(A::AbstractMatrix)
-    if A isa AbstractLazyMatrixOrTranspose error("should not happen!") end
-    return A
-end
-
-
 # for all "normal" matrices this is probably useful..
-broadcast_materialize(::AbstractMatrix) = ShouldBroadcastMaterialize()
+should_broadcast_materialize(::AbstractMatrix) = ShouldBroadcastMaterialize()
 
 #use nothing here to explcitly say that the lazy path should end
 function mul_with!(::Union{Workspace, Nothing}, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
@@ -165,17 +154,19 @@ required_workspace(::typeof(mul_with!), A::AbstractMatrix, cache_notifier) = 0 #
 
 materialize_with(ws::Workspace, A::AbstractMatrix) = A, ws
 function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix)
+    @warn "Materializing a Matrix into skeleton"
     skeleton .= A
     return skeleton, ws
 end
 function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    @warn "Did you consider broadcasting?"
     skeleton .= α.*A .+ β.*skeleton
     return skeleton, ws
 end
 
-required_workspace(::typeof(materialize_with), A::AbstractMatrix, cache_notifier) = 0 # TODO: make AbstractMAtrix Lazy + add cache Notifier
-
+required_workspace(::typeof(materialize_with), A::AbstractMatrix, cache_notifier) = 0 # TODO: make AbstractMatrix Lazy + add cache Notifier
 materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
+
 @concrete struct LazyOpMatrix{T} <: AbstractLazyMatrix{T}
     op
     args
