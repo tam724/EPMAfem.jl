@@ -213,7 +213,7 @@ end
     BM = [A + D B
     Bt C1 + C2]
     
-    BMl_schur_gmres = EPMAfem.lazy((PNLazyMatrices.schur_complement, Krylov.gmres), BMl)
+    BMl_schur_gmres = EPMAfem.schur_complement(BMl, Krylov.gmres, LinearAlgebra.inv!)
 
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
@@ -223,7 +223,7 @@ end
 
     # backslash
 
-    BMl_schur_backslash = EPMAfem.lazy((PNLazyMatrices.schur_complement, \), BMl)
+    BMl_schur_backslash = EPMAfem.schur_complement(BMl, \, LinearAlgebra.inv!)
 
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
@@ -248,7 +248,7 @@ end
     BM = [A + D B
     transpose(B) C]
     
-    BMl_schur_minres = EPMAfem.lazy((PNLazyMatrices.schur_complement, Krylov.minres), BMl)
+    BMl_schur_minres = EPMAfem.schur_complement(BMl, EPMAfem.minres, LinearAlgebra.inv!)
 
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))

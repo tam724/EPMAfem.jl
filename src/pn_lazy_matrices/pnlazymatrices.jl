@@ -22,6 +22,6 @@ include("pnmatrixinterface.jl")
 
 export AbstractLazyMatrix, AbstractLazyMatrixOrTranspose, LazyScalar
 export lazy, blockmatrix, kron_AXB, materialize, cache, create_workspace, required_workspace, mul_with!, materialize_with, unlazy
-export invalidate_cache!
+export schur_complement
 
 end

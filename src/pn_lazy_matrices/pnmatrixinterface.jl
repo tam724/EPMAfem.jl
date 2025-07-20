@@ -25,6 +25,7 @@ unwrap(L::Union{<:AbstractLazyMatrix{T}, Transpose{T, <:AbstractLazyMatrix{T}}})
 Base.size(L::Lazy) = size(unwrap(L))
 Base.getindex(L::Lazy, i::Int, j::Int) = CUDA.@allowscalar getindex(unwrap(L), i, j)
 LinearAlgebra.transpose(L::Lazy) = lazy(transpose(L.A))
+isdiagonal(L::Lazy) = isdiagonal(L.A)
 
 Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::Number) where T = lazy(*, unwrap(L), LazyScalar(T(α)))
 Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, LazyScalar(T(α)), unwrap(L))
@@ -124,6 +125,13 @@ end
 Krylov.minres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.minres, unwrap(A))
 Krylov.gmres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.gmres, unwrap(A))
 Base.:\(A::AbstractLazyMatrixOrTranspose) = lazy(\, _force_materialize(A))
+
+function schur_complement(BM::BlockMatrix, solver, fast_solver)
+    A, B, C, D = lazy.(blocks(BM))
+    D⁻¹ = fast_solver(D)
+    inv_AmBD⁻¹C = solver(A - B * D⁻¹ * C)
+    return lazy(schur_complement, inv_AmBD⁻¹C, B, C, D⁻¹)
+end
 
 @concrete struct NotSoLazy{T} <: AbstractMatrix{T}
     A

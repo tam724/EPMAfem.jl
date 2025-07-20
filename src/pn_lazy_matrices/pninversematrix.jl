@@ -110,31 +110,44 @@ required_workspace(::typeof(mul_with!), K::KrylovGmresMatrix, cache_notifier) = 
 function schur_complement() end
 
 const SchurInnerSolver = Any # Union{typeof(Krylov.minres), typeof(Krylov.gmres), typeof(\), typeof(Krylov.minres ∘ cache), typeof(Krylov.gmres ∘ cache), typeof(\)}
-const SchurMatrix{T} = LazyOpMatrix{T, <:Tuple{typeof(schur_complement), <:SchurInnerSolver}, <:Tuple{Union{BlockMatrix{T}, Transpose{T, <:BlockMatrix{T}}}}}
-BM(S::SchurMatrix) = only(S.args)
-BM(St::Transpose{T, <:SchurMatrix{T}}) where T = transpose(BM(parent(St)))
-inner_solver(S::SchurMatrix) = S.op[2]
-inner_solver(St::Transpose{T, <:SchurMatrix{T}}) where T = parent(St).op[2]
+const SchurMatrix{T} = LazyOpMatrix{T, <:typeof(schur_complement), <:NTuple{4, AbstractMatrix{T}}}
+inv_AmBD⁻¹C(S::SchurMatrix) = S.args[1]
+B(S::SchurMatrix) = S.args[2]
+C(S::SchurMatrix) = S.args[3]
+D⁻¹(S::SchurMatrix) = S.args[4]
 
-Base.size(S::SchurMatrix) = size(BM(S))
-max_size(S::SchurMatrix) = max_size(BM(S))
-isdiagonal(S::SchurMatrix) = isdiagonal(BM(S))
+# inner_solver(S::SchurMatrix) = S.op[2]
+# inner_solver(St::Transpose{T, <:SchurMatrix{T}}) where T = parent(St).op[2]
+
+function block_size(S::SchurMatrix)
+    n1 = only_unique(size(inv_AmBD⁻¹C(S)))
+    n2 = only_unique(size(D⁻¹(S)))
+    return (n1, n2)
+end
+block_size(St::Transpose{T, <:SchurMatrix{T}}) where T = block_size(parent(St))
+
+function Base.size(S::SchurMatrix)
+    n1, n2 = block_size(S)
+    @assert size(B(S)) == (n1, n2)
+    @assert size(C(S)) == (n2, n1)
+    return duplicate(n1 + n2)
+end
+function max_size(S::SchurMatrix)
+    n1 = only_unique(max_size(inv_AmBD⁻¹C(S)))
+    n2 = only_unique(max_size(D⁻¹(S)))
+    @assert max_size(D(S)) == (n1, n2)
+    @assert max_size(C(S)) == (n2, n1)
+    return duplicate(n1 + n2)
+end
+isdiagonal(S::SchurMatrix) = false # should not happen..
 
 lazy_getindex(S::SchurMatrix, i::Int, j::Int) = error("Cannot getindex")
 
-_schur_blocks(S::SchurMatrix) = lazy.(blocks(BM(S)))
-
-function _schur_components(S::Union{SchurMatrix, Transpose{T, <:SchurMatrix{T}}}) where T
-    A, B, C, D = lazy.(blocks(BM(S)))
-    D⁻¹ = cache(inv!(D))
-    return B * D⁻¹, inner_solver(S)(A - B * D⁻¹ * C), unwrap(C), D⁻¹
-end
-
-function mul_with!(ws::Workspace, y::AbstractVector, S::Union{SchurMatrix, Transpose{T, <:SchurMatrix{T}}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, S::SchurMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
     @assert α
     @assert !β
 
-    n1, n2 = block_size(BM(S))
+    n1, n2 = block_size(S)
 
     u = @view(x[1:n1])
     v = @view(x[n1+1:n1+n2])
@@ -142,42 +155,35 @@ function mul_with!(ws::Workspace, y::AbstractVector, S::Union{SchurMatrix, Trans
     x_ = @view(y[1:n1])
     y_ = @view(y[n1+1:n1+n2])
 
-    BD⁻¹, inv_AmBD⁻¹C, C, D⁻¹ = _schur_components(S)
-
-    mul_with!(ws, u, BD⁻¹, v, -1, true)
-    mul_with!(ws, x_, inv_AmBD⁻¹C, u, true, false)
-    mul_with!(ws, v, C, x_, -1, true)
-    mul_with!(ws, y_, D⁻¹, v, true, false)
+    # TODO: HACK, remove once implemented Lazy as native matrix type
+    mul_with!(ws, u, lazy(*, B(S), D⁻¹(S)), v, T(-1), true)
+    mul_with!(ws, x_, inv_AmBD⁻¹C(S), u, true, false)
+    mul_with!(ws, v, C(S), x_, T(-1), true)
+    mul_with!(ws, y_, D⁻¹(S), v, true, false)
 end
 
-# function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:SchurMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-#     @assert α
-#     @assert !β
+function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:SchurMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+    @assert α
+    @assert !β
+    S = parent(St)
 
-#     n1, n2 = block_size(BM(parent(St)))
+    n1, n2 = block_size(St)
 
-#     u = @view(x[1:n1])
-#     v = @view(x[n1+1:n1+n2])
+    u = @view(x[1:n1])
+    v = @view(x[n1+1:n1+n2])
 
-#     x_ = @view(y[1:n1])
-#     y_ = @view(y[n1+1:n1+n2])
+    x_ = @view(y[1:n1])
+    y_ = @view(y[n1+1:n1+n2])
 
-#     t_BD⁻¹, t_inv_AmBD⁻¹C, t_C, t_D⁻¹ = _schur_components(St)
-
-#     mul_with!(ws, u, t_BD⁻¹, v, -1, true)
-#     mul_with!(ws, x_, t_inv_AmBD⁻¹C, u, true, false)
-#     mul_with!(ws, v, t_C, x_, -1, true)
-#     mul_with!(ws, y_, t_D⁻¹, v, true, false)
-# end
-
+    mul_with!(ws, u, lazy(*, transpose(C(S)), transpose(D⁻¹(S))), v, T(-1), true)
+    mul_with!(ws, x_, transpose(inv_AmBD⁻¹C(S)), u, true, false)
+    mul_with!(ws, v, transpose(B(S)), x_, T(-1), true)
+    mul_with!(ws, y_, transpose(D⁻¹(S)), v, true, false)
+end
 
 function required_workspace(::typeof(mul_with!), S::SchurMatrix, cache_notifier)
-    BD⁻¹, inv_AmBD⁻¹C, C, D⁻¹ = _schur_components(S)
-    ws = required_workspace(mul_with!, BD⁻¹, cache_notifier)
-    ws = max(ws, required_workspace(mul_with!, inv_AmBD⁻¹C, cache_notifier))
-    ws = max(ws, required_workspace(mul_with!, C, cache_notifier))
-    ws = max(ws, required_workspace(mul_with!, D⁻¹, cache_notifier))
-    return ws
+    maximum(A -> required_workspace(mul_with!, A, cache_notifier),
+        (inv_AmBD⁻¹C(S), lazy(*, B(S), D⁻¹(S)), C(S), D⁻¹(S), lazy(*, transpose(C(S)), transpose(D⁻¹(S))), transpose(B(S))))
 end
 
 # this is a weird one..
