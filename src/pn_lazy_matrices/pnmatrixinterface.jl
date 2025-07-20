@@ -99,7 +99,19 @@ materialize(C::Union{CachedMatrix{T}, Transpose{T, <:CachedMatrix{T}}}) where T 
 cache(C::Union{CachedMatrix{T}, Transpose{T, <:CachedMatrix{T}}}) where T = C
 
 
-LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(LinearAlgebra.inv!, unwrap(A))
+function _force_materialize(A::AbstractLazyMatrixOrTranspose)
+    A_ = unwrap(A)
+    if A_ isa AbstractLazyMatrixOrTranspose
+        return materialize(A_)
+    else
+        return lazy(broadcast_materialize, A_)
+    end
+end
+
+
+LinearAlgebra.inv!(A::MaterializedMatrix) = lazy(LinearAlgebra.inv!, unwrap(A))
+# force the matrix to copy here
+LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(LinearAlgebra.inv!, _force_materialize(A))
 
 blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose, D::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C, D)
 function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, Ms::Vararg{<:AbstractLazyMatrixOrTranspose, 4})
@@ -111,7 +123,7 @@ end
 
 Krylov.minres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.minres, unwrap(A))
 Krylov.gmres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.gmres, unwrap(A))
-Base.:\(A::AbstractLazyMatrixOrTranspose) = lazy(\, unwrap(A))
+Base.:\(A::AbstractLazyMatrixOrTranspose) = lazy(\, _force_materialize(A))
 
 @concrete struct NotSoLazy{T} <: AbstractMatrix{T}
     A

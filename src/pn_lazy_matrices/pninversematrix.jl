@@ -1,6 +1,7 @@
 # direct solver
-const BackslashMatrix{T} = LazyOpMatrix{T, typeof(\), <:Tuple{<:AbstractMatrix{T}}}
-A(K::BackslashMatrix) = only(K.args)
+const BackslashMatrix{T} = LazyOpMatrix{T, typeof(\), <:Tuple{<:MaterializedMatrix{T}}}
+M(K::BackslashMatrix) = only(K.args)
+A(K::BackslashMatrix) = A(M(K))
 
 Base.size(K::BackslashMatrix) = size(A(K))
 max_size(K::BackslashMatrix) = max_size(A(K))
@@ -9,16 +10,16 @@ isdiagonal(K::BackslashMatrix) = isdiagonal(A(K))
 lazy_getindex(K::BackslashMatrix, i::Int, j::Int) = error("Cannot getindex")
 
 function mul_with!(ws::Workspace, y::AbstractVector, K::BackslashMatrix, x::AbstractVector, α::Number, β::Number)
-    A_, rem = materialize_with(ws, materialize(A(K)))
+    A_, rem = materialize_with(ws, M(K))
     y .= α .* (A_ \ x) .+ β .* y
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:BackslashMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-    A_, rem = materialize_with(ws, materialize(A(parent(Kt))))
+    A_, rem = materialize_with(ws, M(parent(Kt)))
     y .= α .* (transpose(A_) \ x) .+ β .* y
 end
 
-required_workspace(::typeof(mul_with!), K::BackslashMatrix, cache_notifier) = required_workspace(materialize_with, materialize(A(K)), cache_notifier)
+required_workspace(::typeof(mul_with!), K::BackslashMatrix, cache_notifier) = required_workspace(materialize_with, M(K), cache_notifier)
 
 # krylov_minres
 const KrylovMinresMatrix{T} = LazyOpMatrix{T, typeof(Krylov.minres), <:Tuple{<:AbstractMatrix{T}}}

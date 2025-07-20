@@ -8,16 +8,16 @@ using Krylov
 
 include("pnmatrices.jl")
 include("pnscalar.jl")
-include("pntransposematrix.jl")
+include("pnresizematrix.jl")
+# include("pntransposematrix.jl")
 include("pnkronmatrix.jl")
 include("pnsummatrix.jl")
 include("pnprodmatrix.jl")
-include("pnblockmatrix.jl")
-include("pnresizematrix.jl")
-include("pninversematrix.jl")
 include("pncachedmatrix.jl")
-include("pnworkspace.jl")
+include("pnblockmatrix.jl")
+include("pninversematrix.jl")
 
+include("pnworkspace.jl")
 include("pnmatrixinterface.jl")
 
 export AbstractLazyMatrix, AbstractLazyMatrixOrTranspose, LazyScalar

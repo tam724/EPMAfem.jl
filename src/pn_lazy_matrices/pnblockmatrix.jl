@@ -99,29 +99,30 @@ end
 required_workspace(::typeof(materialize_with), BM::BlockMatrix, cache_notifier) = maximum(A -> required_workspace(materialize_with, A, cache_notifier), blocks(BM))
 
 ### INPLACE INV MATRIX
-const InplaceInverseMatrix{T} = LazyOpMatrix{T, typeof(LinearAlgebra.inv!), <:Tuple{<:AbstractMatrix}}
+const InplaceInverseMatrix{T} = LazyOpMatrix{T, typeof(LinearAlgebra.inv!), <:Tuple{<:MaterializedMatrix{T}}}
 
-@inline A(I::InplaceInverseMatrix) = only(I.args)
+@inline M(I::InplaceInverseMatrix) = only(I.args)
+@inline A(I::InplaceInverseMatrix) = A(M(I))
 Base.size(I::InplaceInverseMatrix) = size(A(I))
 max_size(I::InplaceInverseMatrix) = max_size(A(I))
 lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{<:Integer}) = NaN
 @inline isdiagonal(I::InplaceInverseMatrix) = isdiagonal(A(I))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, I::InplaceInverseMatrix, X::AbstractVecOrMat, α::Number, β::Number)
-    A_mat, _ = materialize_with(ws, materialize(A(I)))
+    A_mat, _ = materialize_with(ws, M(I))
     @assert !β
     @assert α
     ldiv!(Y, A_mat, X)
 end
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:InplaceInverseMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
-    A_mat, _ = materialize_with(ws, materialize(A(parent(It))))
+    A_mat, _ = materialize_with(ws, M(parent(It)))
     @assert !β
     @assert α
     ldiv!(Y, transpose(A_mat), X)
 end
 
-required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix, cache_notifier) = required_workspace(materialize_with, materialize(A(I)), cache_notifier)
+required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix, cache_notifier) = required_workspace(materialize_with, M(I), cache_notifier)
 
 function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::AbstractMatrix)
     CUDA.NVTX.@range "materialize inv" begin
