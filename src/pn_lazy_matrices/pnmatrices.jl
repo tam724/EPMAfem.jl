@@ -6,11 +6,6 @@ function only_unique(iter)
     return a
 end
 
-# TODO: this should be simple true false stuff now...
-abstract type BroadcastMaterialize end
-struct ShouldBroadcastMaterialize <: BroadcastMaterialize end
-struct ShouldNotBroadcastMaterialize <: BroadcastMaterialize end
-
 abstract type Workspace{VT} end
 
 struct Cache{VT<:AbstractVector}
@@ -64,13 +59,6 @@ lazy_getindex(Lt::Transpose{T, <:AbstractLazyMatrix{<:T}}, i::Int, j::Int) where
 lazy_objectid(L::AbstractLazyMatrix) = objectid(L) # we give each matrix an objectid for caching
 lazy_objectid(::AbstractMatrix) = error("why cache base matrices?") 
 lazy_objectid(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = lazy_objectid(parent(Lt)) # transpose gets the same as the parent
-
-# generally opt out of broadcasting materialize..
-should_broadcast_materialize(::AbstractLazyMatrixOrTranspose) = ShouldNotBroadcastMaterialize()
-
-should_broadcast_materialize((first, rem...)::Vararg{<:AbstractMatrix}) = combine_should_broadcast_materialize(should_broadcast_materialize(first), should_broadcast_materialize(rem...))
-combine_should_broadcast_materialize(::BroadcastMaterialize, ::BroadcastMaterialize) = ShouldNotBroadcastMaterialize()
-combine_should_broadcast_materialize(::ShouldBroadcastMaterialize, ::ShouldBroadcastMaterialize) = ShouldBroadcastMaterialize() # the only case that survives..
 
 max_size(A::AbstractLazyMatrix, n::Integer) = max_size(A)[n]
 max_size(At::Transpose{T, <:AbstractLazyMatrix}) where T = reverse(max_size(parent(At)))
@@ -131,9 +119,6 @@ function max_size(A::AbstractMatrix, n::Integer)
     return size(A, n)
 end
 
-# for all "normal" matrices this is probably useful..
-should_broadcast_materialize(::AbstractMatrix) = ShouldBroadcastMaterialize()
-
 #use nothing here to explcitly say that the lazy path should end
 function mul_with!(::Union{Workspace, Nothing}, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     if Y isa AbstractLazyMatrixOrTranspose error("should not happen! mul_with!(.., ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...)") end
@@ -163,9 +148,7 @@ function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMa
     skeleton .= α.*A .+ β.*skeleton
     return skeleton, ws
 end
-
 required_workspace(::typeof(materialize_with), A::AbstractMatrix, cache_notifier) = 0 # TODO: make AbstractMatrix Lazy + add cache Notifier
-materialize_broadcasted(::Workspace, A::AbstractMatrix) = A
 
 @concrete struct LazyOpMatrix{T} <: AbstractLazyMatrix{T}
     op

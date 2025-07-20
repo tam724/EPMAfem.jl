@@ -47,12 +47,18 @@ function materialize_with(ws::Workspace, M::MaterializedMatrix)
 end
 function materialize_with(ws::Workspace, M::BMaterializedMatrix, skeleton::AbstractMatrix; warn=true)
     if warn @warn "Materializing a materialized matrix" end
-    bcd = Base.Broadcast.instantiate(materialize_broadcasted(ws, A(M)))
+    bcd_, _ = materialize_broadcasted(ws, A(M))
+    bcd = Base.Broadcast.instantiate(bcd_)
     M_ = Base.Broadcast.materialize!(skeleton, bcd)
     return M_, ws
 end
 function materialize_with(ws::Workspace, M::BMaterializedMatrix, skeleton::AbstractMatrix, α::Number, β::Number; warn=true)
-    error("Not yet implemented")
+    if warn @warn "Materializing a materialized matrix" end
+    bcd_, _ = materialize_broadcasted(ws, A(M))
+    bcd_αβ = Base.Broadcast.broadcasted(+, Base.Broadcast.broadcasted(*, α, bcd_), Base.Broadcast.broadcasted(*, β, skeleton))
+    bcd = Base.Broadcast.instantiate(bcd_αβ)
+    M_ = Base.Broadcast.materialize!(skeleton, bcd)
+    return M_, ws
 end
 
 function materialize_with(ws::Workspace, M::MMaterializedMatrix, skeleton::AbstractMatrix; warn=true)
@@ -113,10 +119,6 @@ function materialize_with(ws::Workspace, M::XMaterializedMatrix, skeleton::Abstr
     return skeleton, ws
 end
 
-# simply pass through the broadcast materialize calls.. 
-should_broadcast_materialize(M::MaterializedMatrix) = should_broadcast_materialize(A(M)) # TODO: think about this, if M isa MaterializedMatrix, we can also materialize and then participate in the broadcasting..
-materialize_broadcasted(ws::Workspace, M::MaterializedMatrix) = materialize_broadcasted(ws, A(M))
-
 function required_workspace(::typeof(materialize_with), M::MaterializedMatrix, cache_notifier)
     return required_workspace(structured_from_ws, A(M)) + _required_workspace(materialize_with, M, cache_notifier)
 end
@@ -130,7 +132,6 @@ end
 function _required_workspace(::typeof(materialize_with), M::XMaterializedMatrix, cache_notifier)
     return required_workspace(mul_with!, A(M), cache_notifier) + sum(max_size(A(M))) # because we cannot directly write into the memory for A
 end
-
 
 ##### CachedMatrix
 function materialize_with(ws::Workspace, C::CachedMatrix)
@@ -159,9 +160,6 @@ function materialize_with(ws::Workspace, C::CachedMatrix, skeleton::AbstractMatr
     return skeleton, ws
 end
 
-should_broadcast_materialize(::CachedMatrix) = ShouldBroadcastMaterialize()
-materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C))
-
 function required_workspace(::typeof(materialize_with), C::CachedMatrix, cache_notifier)
     cache_size = required_workspace(structured_from_ws, A(C))
     valid = Ref(false)
@@ -170,4 +168,32 @@ function required_workspace(::typeof(materialize_with), C::CachedMatrix, cache_n
         nothing,
     ))
     return cache_ws + _required_workspace(materialize_with, M(C), (cache_notifier..., valid))
+end
+
+# broadcast materialize logic
+# generally opt out of broadcasting materialize..
+should_broadcast_materialize(::AbstractLazyMatrixOrTranspose) = false
+
+should_broadcast_materialize(::AbstractMatrix) = true
+materialize_broadcasted(ws::Workspace, A::AbstractMatrix) = A, ws
+
+should_broadcast_materialize(S::ScaleMatrix) = should_broadcast_materialize(A(S))
+function materialize_broadcasted(ws::Workspace, S::ScaleMatrix)
+    A_bcd, rem = materialize_broadcasted(ws, A(S))
+    return Base.Broadcast.broadcasted(*, a(S), A_bcd), rem
+end
+
+should_broadcast_materialize(::LazyResizeMatrix) = true
+materialize_broadcasted(ws::Workspace, R::LazyResizeMatrix) = _reshape_view(R), ws
+
+should_broadcast_materialize(S::SumMatrix) = all(should_broadcast_materialize, As(S))
+materialize_broadcasted(ws::Workspace, S::SumMatrix) = Base.Broadcast.broadcasted(+, first.(materialize_broadcasted.(Ref(ws), As(S)))...), ws
+
+should_broadcast_materialize(::CachedMatrix) = true
+materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C)), ws
+
+should_broadcast_materialize(M::MaterializedMatrix) = should_broadcast_materialize(A(M))
+function materialize_broadcasted(ws::Workspace, M::MaterializedMatrix)
+    @assert should_broadcast_materialize(A(M))
+    return materialize_broadcasted(ws, A(M))
 end

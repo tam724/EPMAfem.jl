@@ -7,7 +7,6 @@ max_size(S::SumMatrix) = only_unique(max_size(A) for A in As(S))
 lazy_getindex(S::SumMatrix, idx::Vararg{<:Integer}) = +(getindex.(As(S), idx...)...)
 isdiagonal(S::SumMatrix) = all(isdiagonal, As(S))
 
-should_broadcast_materialize(T::TSumMatrix) = should_broadcast_materialize(As(T)...)
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::VSumMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     for A in As(S)
@@ -62,7 +61,4 @@ function materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix,
     end
     return A_mat, ws
 end
-
-materialize_broadcasted(ws::Workspace, S::SumMatrix) = Base.Broadcast.broadcasted(+, materialize_broadcasted.(Ref(ws), As(S))...)
-
 required_workspace(::typeof(materialize_with), S::SumMatrix, cache_notifier) = maximum(required_workspace(materialize_with, A, cache_notifier) for A in As(S))

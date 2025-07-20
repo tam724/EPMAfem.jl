@@ -36,8 +36,6 @@ function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatri
     return A_mat, ws
 end
 
-should_broadcast_materialize(S::ScaleMatrix) = should_broadcast_materialize(A(S))
-materialize_broadcasted(ws::Workspace, S::ScaleMatrix) = Base.Broadcast.broadcasted(*, a(S), materialize_broadcasted(ws, A(S)))
 function required_workspace(::typeof(materialize_with), S::ScaleMatrix, cache_notifier)
     return register_cache_notifier(_a(S), cache_notifier) + required_workspace(materialize_with, A(S), cache_notifier)
 end

@@ -13,11 +13,12 @@ include("pnkronmatrix.jl")
 include("pnsummatrix.jl")
 include("pnprodmatrix.jl")
 include("pnblockmatrix.jl")
-include("pncachedmatrix.jl")
 include("pnresizematrix.jl")
-include("pnmatrixinterface.jl")
 include("pninversematrix.jl")
+include("pncachedmatrix.jl")
 include("pnworkspace.jl")
+
+include("pnmatrixinterface.jl")
 
 export AbstractLazyMatrix, AbstractLazyMatrixOrTranspose, LazyScalar
 export lazy, blockmatrix, kron_AXB, materialize, cache, create_workspace, required_workspace, mul_with!, materialize_with, unlazy
