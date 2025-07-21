@@ -43,7 +43,7 @@ function implicit_midpoint2(pbl::DiscretePNProblem, solver)
     arch = architecture(pbl)
 
     coeffs, lazy_BM = build_coeffs_and_mat_blocks(pbl)
-    lazy_BM⁻¹ = lazy(solver, lazy_BM)
+    lazy_BM⁻¹ = solver(lazy_BM)
 
     BM, BM⁻¹, coeffs_ = unlazy((lazy_BM, lazy_BM⁻¹, coeffs), vec_size -> allocate_vec(arch, vec_size))
     rhs = allocate_vec(arch, size(BM, 1))

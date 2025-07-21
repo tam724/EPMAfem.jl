@@ -47,7 +47,8 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
         coeffs.Δ*(A_V + coeffs.γ*D_V) coeffs.Δ*(coeffs.δ*B_V)
         -(coeffs.Δ*(coeffs.δt*transpose(B_V))) -(coeffs.Δ*C)
     ]
-    half_BM_V⁻¹ = lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BM_V)
+    # half_BM_V⁻¹ = lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BM_V)
+    half_BM_V⁻¹ = PNLazyMatrices.half_schur_complement(BM_V, Krylov.minres, cache ∘ LinearAlgebra.inv!)
 
     A_U = sum(kron_AXB(cache(Ut*ρp[i]*U), A_Ikp(i)) for i in 1:ns.ne)
     B_U = sum(kron_AXB(cache(Ut*∇pm[i]), Ωpm[i]) for i in 1:ns.nd)
@@ -57,7 +58,8 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
         coeffs.Δ*(A_U + coeffs.γ*D_U) coeffs.Δ*(coeffs.δ*B_U)
         -(coeffs.Δ*(coeffs.δt*transpose(B_U))) -(coeffs.Δ*C)
     ]
-    half_BM_U⁻¹ = lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BM_U)
+    # half_BM_U⁻¹ = lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BM_U)
+    half_BM_U⁻¹ = PNLazyMatrices.half_schur_complement(BM_U, Krylov.minres, cache ∘ LinearAlgebra.inv!)
 
     A_UV = sum(kron_AXB(cache(Ut*ρp[i]*U), cache(Vt*A_Ikp(i)*V)) for i in 1:ns.ne)
     B_UV = sum(kron_AXB(cache(Ut*∇pm[i]), cache(Ωpm[i]*V)) for i in 1:ns.nd)
@@ -67,7 +69,8 @@ function implicit_midpoint_dlr(pbl::DiscretePNProblem; max_rank=20)
         coeffs.Δ*(A_UV + coeffs.γ*D_UV) coeffs.Δ*(coeffs.δ*B_UV)
         -(coeffs.Δ*(coeffs.δt*transpose(B_UV))) -(coeffs.Δ*C)
     ]
-    BM_UV⁻¹ = lazy((PNLazyMatrices.schur_complement, Krylov.minres), BM_UV)
+    # BM_UV⁻¹ = lazy((PNLazyMatrices.schur_complement, Krylov.minres), BM_UV)
+    BM_UV⁻¹ = PNLazyMatrices.schur_complement(BM_UV, Krylov.minres, cache ∘ LinearAlgebra.inv!)
 
     # uBM, uhalf_BM_U⁻¹, uhalf_BM_V⁻¹, uBM_UV⁻¹ = unlazy((BM, half_BM_U⁻¹, half_BM_V⁻¹, BM_UV⁻¹), arch)
     uBM, uhalf_BM_U⁻¹, uhalf_BM_V⁻¹, uBM_UV⁻¹, coeffs_, Vt_, U_ = unlazy((BM, half_BM_U⁻¹, half_BM_V⁻¹, BM_UV⁻¹, coeffs, Vt, U), vec_size -> allocate_vec(arch, vec_size))
