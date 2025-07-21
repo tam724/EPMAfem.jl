@@ -7,11 +7,13 @@ using EPMAfem.Gridap
 using LinearAlgebra
 include("plot_overloads.jl")
 
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), (50)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 1)
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (50, 50)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 2)
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (20, 40, 40)))
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (40, 80, 80)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(15, 3)
 
 equations = EPMAfem.PNEquations()
@@ -20,8 +22,18 @@ model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
 
 # system4 = EPMAfem.implicit_midpoint2(problem, \)
-system5 = EPMAfem.implicit_midpoint2(problem, (PNLazyMatrices.schur_complement, Krylov.minres));
+system5 = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
 system6 = EPMAfem.implicit_midpoint_dlr(problem; max_rank=5);
+
+# Lazy = PNLazyMatrices
+# Lazy._half_schur_components(system6.mats.half_BM_U⁻¹.A)[1].args[2] |> Lazy.lazy_objectid
+# Lazy._half_schur_components(system6.mats.half_BM_V⁻¹.A)[1].args[2] |> Lazy.lazy_objectid
+
+# Lazy._half_schur_components(system6.mats.half_BM_U⁻¹.A)[1].args[2].args[1] |> Lazy.lazy_objectid
+# Lazy._half_schur_components(system6.mats.half_BM_V⁻¹.A)[1].args[2].args[1] |> Lazy.lazy_objectid
+
+# Lazy._half_schur_components(system6.mats.half_BM_U⁻¹.A)[1].args[2].args[1].args[1] |> size
+# Lazy._half_schur_components(system6.mats.half_BM_V⁻¹.A)[1].args[2].args[1].args[1] |> size
 
 # BM_V = system6.mats.half_BM_V⁻¹.A.args[1]
 # PNLazyMatrices.block_size(BM_V)
