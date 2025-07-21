@@ -3,6 +3,7 @@ include("pnsystemsolver.jl")
 include("pnimplicitmidpoint.jl")
 include("pnimplicitmidpoint2.jl")
 include("pnimplicitmidpointdlr.jl")
+include("pnimplicitmidpointdlr2.jl")
 include("pnlinsolver.jl")
 include("pnworkspace.jl")
 

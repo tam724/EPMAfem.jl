@@ -74,13 +74,13 @@ function compute(model, system, _rhs)
     return u, v
 end
 
-mdl = OnlyEnergyModel(-100:0.01:1);
+mdl = OnlyEnergyModel(-5:0.01:1);
 pbl = construct_problem(mdl, EPMAfem.cpu())
 rhs = construct_rhs(mdl, EPMAfem.cpu())
 
-u, v = compute(mdl, EPMAfem.implicit_midpoint2(pbl, \), rhs)
-u2, v2 = compute(mdl, EPMAfem.implicit_midpoint2(pbl, minres), rhs)
-u3, v3 = compute(mdl, EPMAfem.implicit_midpoint_dlr(pbl; max_rank=1), rhs)
+u, v = compute(mdl, EPMAfem.implicit_midpoint2(pbl, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!)), rhs)
+u2, v2 = compute(mdl, EPMAfem.implicit_midpoint_dlr(pbl; max_rank=1), rhs)
+u3, v3 = compute(mdl, EPMAfem.implicit_midpoint_dlr2(pbl; max_rank=1), rhs)
 
 plotly()
 plot(EPMAfem.energy_model(mdl), u)

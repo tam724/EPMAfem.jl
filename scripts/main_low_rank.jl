@@ -24,6 +24,7 @@ problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
 # system4 = EPMAfem.implicit_midpoint2(problem, \)
 system5 = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
 system6 = EPMAfem.implicit_midpoint_dlr(problem; max_rank=5);
+system7 = EPMAfem.implicit_midpoint_dlr2(problem; max_rank=5);
 
 # Lazy = PNLazyMatrices
 # Lazy._half_schur_components(system6.mats.half_BM_U⁻¹.A)[1].args[2] |> Lazy.lazy_objectid
@@ -64,8 +65,9 @@ discrete_extr = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())
 # sol4 = system4 * discrete_rhs2
 sol5 = system5 * discrete_rhs;
 sol6 = system6 * discrete_rhs;
+sol7 = system7 * discrete_rhs;
 
-anim = @animate for ((i5, ψ5), (i6, ψ6)) in zip(sol5, sol6)
+anim = @animate for ((i5, ψ5), (i6, ψ6),  (i7, ψ7)) in zip(sol5, sol6, sol7)
     ψp5, ψm5 = EPMAfem.pmview(ψ5, model)
     func5 = EPMAfem.SpaceModels.interpolable(ψp5[:, 1] |> collect, EPMAfem.space_model(model))
     p1 = heatmap(-1.0:0.01:0, -1.0:0.01:1.0, aspect_ratio=:equal, func5.interp, swapxy=true, label="schur minres")
@@ -73,7 +75,11 @@ anim = @animate for ((i5, ψ5), (i6, ψ6)) in zip(sol5, sol6)
     ψp6, ψm6 = EPMAfem.pmview(ψ6, model)
     func6 = EPMAfem.SpaceModels.interpolable(ψp6[:, 1] |> collect, EPMAfem.space_model(model))
     p2 = heatmap(-1.0:0.01:0, -1.0:0.01:1.0, aspect_ratio=:equal, func6.interp, swapxy=true, label="schur minres")
-    plot(p1, p2)
+
+    ψp7, ψm7 = EPMAfem.pmview(ψ7, model)
+    func7 = EPMAfem.SpaceModels.interpolable(ψp7[:, 1] |> collect, EPMAfem.space_model(model))
+    p3 = heatmap(-1.0:0.01:0, -1.0:0.01:1.0, aspect_ratio=:equal, func7.interp, swapxy=true, label="schur minres")
+    Plots.plot(p1, p2, p3)
 end
 gif(anim)
 
@@ -83,9 +89,11 @@ end
 
 discrete_extr * sol5
 discrete_extr * sol6
+discrete_extr * sol7
 
 CUDA.@profile discrete_extr * sol5
 CUDA.@profile discrete_extr * sol6
+CUDA.@profile discrete_extr * sol7
 
 @profview discrete_extr * sol5
 @profview discrete_extr * sol6
