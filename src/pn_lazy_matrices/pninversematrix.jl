@@ -109,8 +109,7 @@ required_workspace(::typeof(mul_with!), K::KrylovGmresMatrix, cache_notifier) = 
 
 function schur_complement() end
 
-const SchurInnerSolver = Any # Union{typeof(Krylov.minres), typeof(Krylov.gmres), typeof(\), typeof(Krylov.minres ∘ cache), typeof(Krylov.gmres ∘ cache), typeof(\)}
-const SchurMatrix{T} = LazyOpMatrix{T, <:typeof(schur_complement), <:NTuple{4, AbstractMatrix{T}}}
+const SchurMatrix{T} = LazyOpMatrix{T, typeof(schur_complement), <:NTuple{4, AbstractMatrix{T}}}
 inv_AmBD⁻¹C(S::SchurMatrix) = S.args[1]
 B(S::SchurMatrix) = S.args[2]
 C(S::SchurMatrix) = S.args[3]
@@ -175,6 +174,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:SchurMat
     x_ = @view(y[1:n1])
     y_ = @view(y[n1+1:n1+n2])
 
+    # TODO: HACK, remove once implemented Lazy as native matrix type
     mul_with!(ws, u, lazy(*, transpose(C(S)), transpose(D⁻¹(S))), v, T(-1), true)
     mul_with!(ws, x_, transpose(inv_AmBD⁻¹C(S)), u, true, false)
     mul_with!(ws, v, transpose(B(S)), x_, T(-1), true)
@@ -186,49 +186,78 @@ function required_workspace(::typeof(mul_with!), S::SchurMatrix, cache_notifier)
         (inv_AmBD⁻¹C(S), lazy(*, B(S), D⁻¹(S)), C(S), D⁻¹(S), lazy(*, transpose(C(S)), transpose(D⁻¹(S))), transpose(B(S))))
 end
 
-# this is a weird one..
-function half_schur_complement() end
-const HalfSchurMatrix{T} = LazyOpMatrix{T, <:Tuple{typeof(half_schur_complement), <:SchurInnerSolver}, <:Tuple{Union{BlockMatrix{T}, Transpose{T, <:BlockMatrix{T}}}}}
-BM(S::HalfSchurMatrix) = only(S.args)
-inner_solver(S::HalfSchurMatrix) = S.op[2]
+# this is a weird one.. (we implement the interface here..)
+function half_schur_complement(BM::BlockMatrix, solver, fast_solver)
+    # TODO: HACK, remove once implemented Lazy as native matrix type
+    A, B, C, D = lazy.(blocks(BM))
+    D⁻¹ = fast_solver(D)
+    inv_AmBD⁻¹C = solver(A - B * D⁻¹ * C)
+    return lazy(half_schur_complement, inv_AmBD⁻¹C, B, C, D⁻¹)
+end
 
-function Base.size(S::HalfSchurMatrix)
-    n1, n2 = block_size(BM(S))
+const HalfSchurMatrix{T} = LazyOpMatrix{T,  typeof(half_schur_complement), <:NTuple{4, AbstractMatrix{T}}}
+inv_AmBD⁻¹C(S::HalfSchurMatrix) = S.args[1]
+B(S::HalfSchurMatrix) = S.args[2]
+C(S::HalfSchurMatrix) = S.args[3]
+D⁻¹(S::HalfSchurMatrix) = S.args[4]
+
+function block_size(S::HalfSchurMatrix)
+    n1 = only_unique(size(inv_AmBD⁻¹C(S)))
+    n2 = only_unique(size(D⁻¹(S)))
+    return (n1, n2)
+end
+block_size(St::Transpose{T, <:HalfSchurMatrix{T}}) where T = block_size(parent(St))
+
+function Base.size(S::Union{HalfSchurMatrix, Transpose{T, <:HalfSchurMatrix{T}}}) where T
+    n1, n2 = block_size(S)
     return (n1, n1 + n2)
 end
-function max_size(S::HalfSchurMatrix)
-    n1, n2 = max_block_size(BM(S))
+function max_size(S::Union{HalfSchurMatrix, Transpose{T, <:HalfSchurMatrix{T}}}) where T
+    n1 = only_unique(max_size(inv_AmBD⁻¹C(S)))
+    n2 = only_unique(max_size(D⁻¹(S)))
+    @assert max_size(D(S)) == (n1, n2)
+    @assert max_size(C(S)) == (n2, n1)
     return (n1, n1 + n2)
 end
 isdiagonal(S::HalfSchurMatrix) = false # not even square :D
 
 lazy_getindex(S::HalfSchurMatrix, i::Int, j::Int) = error("Cannot getindex")
-
-function _half_schur_components(S)
-    A, B, C, D = lazy.(blocks(BM(S)))
-    D⁻¹ = cache(inv!(D))
-    return B * D⁻¹, inner_solver(S)(A - B * D⁻¹ * C)
+function LinearAlgebra.transpose(S::HalfSchurMatrix{T}) where T
+    @warn "this behaves weird!"
+    return Transpose(S)
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, S::HalfSchurMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, S::HalfSchurMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
     @assert α
     @assert !β
 
-    n1, n2 = block_size(BM(S))
+    n1, n2 = block_size(S)
 
     u = @view(x[1:n1])
     v = @view(x[n1+1:n1+n2])
     x_ = @view(y[1:n1])
 
-    BD⁻¹, inv_AmBD⁻¹C = _half_schur_components(S)
+    # TODO: HACK, remove once implemented Lazy as native matrix type
+    mul_with!(ws, u, lazy(*, B(S), D⁻¹(S)), v, T(-1), true)
+    mul_with!(ws, x_, inv_AmBD⁻¹C(S), u, true, false)
+end
 
-    mul_with!(ws, u, BD⁻¹, v, -1, true)
-    mul_with!(ws, x_, inv_AmBD⁻¹C, u, true, false)
+function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:HalfSchurMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+    @assert α
+    @assert !β
+    S = parent(St)
+
+    n1, n2 = block_size(St)
+
+    u = @view(x[1:n1])
+    v = @view(x[n1+1:n1+n2])
+    x_ = @view(y[1:n1])
+
+    # TODO: HACK, remove once implemented Lazy as native matrix type
+    mul_with!(ws, u, lazy(*, transpose(C(S)), transpose(D⁻¹(S))), v, T(-1), true)
+    mul_with!(ws, x_, transpose(inv_AmBD⁻¹C(S)), u, true, false)
 end
 
 function required_workspace(::typeof(mul_with!), S::HalfSchurMatrix, cache_notifier)
-    BD⁻¹, inv_AmBD⁻¹C = _half_schur_components(S)
-    ws = required_workspace(mul_with!, BD⁻¹, cache_notifier)
-    ws = max(ws, required_workspace(mul_with!, inv_AmBD⁻¹C, cache_notifier))
-    return ws
+    maximum(A -> required_workspace(mul_with!, A, cache_notifier), (inv_AmBD⁻¹C(S), lazy(*, B(S), D⁻¹(S)), lazy(*, transpose(C(S)), transpose(D⁻¹(S)))))
 end

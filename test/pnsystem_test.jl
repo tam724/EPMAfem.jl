@@ -182,9 +182,9 @@ end
     BM = [A + D B
     transpose(B) C1 + C2]
 
-    BMl_halfschur_minres = EPMAfem.lazy((PNLazyMatrices.half_schur_complement, Krylov.minres), BMl)
-    BMl_halfschur_gmres = EPMAfem.lazy((PNLazyMatrices.half_schur_complement, Krylov.gmres), BMl)
-    BMl_halfschur_backslash = EPMAfem.lazy((PNLazyMatrices.half_schur_complement, \), BMl)
+    BMl_halfschur_minres = PNLazyMatrices.half_schur_complement(BMl, Krylov.minres, LinearAlgebra.inv!)
+    BMl_halfschur_gmres = PNLazyMatrices.half_schur_complement(BMl, Krylov.gmres, LinearAlgebra.inv!)
+    BMl_halfschur_backslash = PNLazyMatrices.half_schur_complement(BMl, \, LinearAlgebra.inv!)
 
     x = rand(size(BMl_halfschur_minres, 2))
     y_ = (BM \ copy(x))[1:2]
@@ -195,6 +195,47 @@ end
     @test y_gmres ≈ y_
     y_backslash = unlazy(BMl_halfschur_backslash) * copy(x)
     @test y_backslash ≈ y_
+end
+
+@testset "transpose(HalfSchurMatrix) + solver" begin
+    A = rand(2, 2)
+    D = rand(2, 2)
+    B = rand(2, 3)
+    Bt = rand(3, 2)
+    C1 = Diagonal(rand(3))
+    C2 = Diagonal(rand(3))
+
+    Al, Dl, Bl, Btl, C1l, C2l = lazy.((A, D, B, Bt, C1, C2))
+    BMl = [Al + Dl Bl
+    Btl C1l + C2l]
+
+    BM = [A + D B
+    Bt C1 + C2]
+
+    BMl_halfschur_gmres = PNLazyMatrices.half_schur_complement(BMl, Krylov.gmres, LinearAlgebra.inv!)
+    BMl_halfschur_backslash = PNLazyMatrices.half_schur_complement(BMl, \, LinearAlgebra.inv!)
+
+    x = rand(size(BMl_halfschur_gmres, 2))
+    y_ = (BM \ copy(x))[1:2]
+
+    y_gmres = unlazy(BMl_halfschur_gmres) * copy(x)
+    @test y_gmres ≈ y_
+    y_backslash = unlazy(BMl_halfschur_backslash) * copy(x)
+    @test y_backslash ≈ y_
+
+    # transpose
+    x = rand(size(BMl_halfschur_gmres, 2))
+    y_ = (transpose(BM) \ copy(x))[1:2]
+
+    y_gmres = unlazy(transpose(BMl_halfschur_gmres)) * copy(x)
+    @test y_gmres ≈ y_
+    y_gmres2 = transpose(unlazy(BMl_halfschur_gmres)) * copy(x)
+    @test y_gmres2 ≈ y_
+
+    y_backslash = unlazy(transpose(BMl_halfschur_backslash)) * copy(x)
+    @test y_backslash ≈ y_
+    y_backslash2 = transpose(unlazy(BMl_halfschur_backslash)) * copy(x)
+    @test y_backslash2 ≈ y_
 end
 
 @testset "SchurMatrix + gmres & \\" begin

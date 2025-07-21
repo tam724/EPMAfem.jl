@@ -127,6 +127,7 @@ Krylov.gmres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.gmres, unwrap(A))
 Base.:\(A::AbstractLazyMatrixOrTranspose) = lazy(\, _force_materialize(A))
 
 function schur_complement(BM::BlockMatrix, solver, fast_solver)
+    # TODO: HACK, remove once implemented Lazy as native matrix type
     A, B, C, D = lazy.(blocks(BM))
     D⁻¹ = fast_solver(D)
     inv_AmBD⁻¹C = solver(A - B * D⁻¹ * C)
