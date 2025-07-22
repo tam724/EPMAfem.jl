@@ -54,11 +54,11 @@ function construct_rhs(mdl, arch::EPMAfem.PNArchitecture)
 
     ## assemble excitation 
     gϵ = Vector{T}([exp(-10*(ϵ - 0.8)^2) for ϵ ∈ ϵs])
+    # gϵ = Vector{T}([1.0 for ϵ ∈ ϵs])
     gxp = ones(1, 1) |> arch
     gΩp = ones(1, 1) |> arch
     return EPMAfem.Rank1DiscretePNVector(false, mdl, arch, gϵ, gxp, gΩp)
 end
-
 
 function compute(model, system, _rhs)
     sol = system * _rhs
@@ -81,6 +81,7 @@ rhs = construct_rhs(mdl, EPMAfem.cpu())
 u, v = compute(mdl, EPMAfem.implicit_midpoint2(pbl, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!)), rhs)
 u2, v2 = compute(mdl, EPMAfem.implicit_midpoint_dlr(pbl; max_rank=1), rhs)
 u3, v3 = compute(mdl, EPMAfem.implicit_midpoint_dlr2(pbl; max_rank=1), rhs)
+u4, v4 = compute(mdl, EPMAfem.implicit_midpoint_dlr3(pbl; max_rank=1), rhs)
 
 plotly()
 plot(EPMAfem.energy_model(mdl), u)
@@ -89,3 +90,6 @@ plot!(EPMAfem.energy_model(mdl), u2)
 plot!(EPMAfem.energy_model(mdl), v2)
 plot!(EPMAfem.energy_model(mdl), u3)
 plot!(EPMAfem.energy_model(mdl), v3)
+plot!(EPMAfem.energy_model(mdl), u4)
+plot!(EPMAfem.energy_model(mdl), v4)
+

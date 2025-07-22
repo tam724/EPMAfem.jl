@@ -199,7 +199,7 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem3, rhs_ass::PNVectorAsse
         mul!(S₁, system.mats.inv_AᵤᵥmBᵤᵥCBᵤᵥᵀ, rhs_S, true, false)
     end
     CUDA.NVTX.@range "finalize schur" begin
-        mul!(system.tmp.tmp3, transpose(system.mats.Bᵤᵥ), S₁, true, -1)
+        mul!(system.tmp.tmp3, transpose(system.mats.Bᵤᵥ), S₁, -1, -1)
         mul!(x._xm, system.mats.matC⁻¹, system.tmp.tmp3, true, false)
 
         copyto!(U₀, U₁)
