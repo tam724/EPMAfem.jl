@@ -181,7 +181,7 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem3, rhs_ass::PNVectorAsse
         reshape(rhs_S, (x.rank[], x.rank[])) .= -transpose(U₁)*reshape(u, nxp, nΩp)*V₁
         # compute A₀Ŝ₀
         S₀_hat = @view(system.tmp.tmp1[1:x.rank[]*x.rank[]])
-        S₀_hat .= M * S₀ * transpose(N)
+        reshape(S₀_hat, x.rank[], x.rank[]) .= M * S₀ * transpose(N)
 
         mul!(rhs_S, system.mats.rhsAᵤᵥ, S₀_hat, -1, true)
 
@@ -206,12 +206,6 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem3, rhs_ass::PNVectorAsse
         copyto!(Vt₀, transpose(V₁))
         copyto!(S₀, @view(S₁[1:x.rank[]*x.rank[]]))
     end
-end
-
-function vec_V!(û::AbstractVector, u::AbstractVector, V::AbstractMatrix)
-    
-    mul!(reshape(û, (nxp, rank)), reshape(u, nxp, nΩp), V)
-
 end
 
 function allocate_solution_vector(system::DiscreteDLRPNSystem3)
