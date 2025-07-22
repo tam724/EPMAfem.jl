@@ -190,7 +190,6 @@ function vec_K!(x::AbstractVector, Up, Sp, xm)
     rank = size(Sp, 2)
     Xp = reshape(@view(x[1:nxp*rank]), nxp, rank)
     mul!(Xp, Up, Sp)
-    # Xp .= Up*Sp*Vtp # TODO: allocates!
     _xm = @view(x[nxp*rank+1:end])
     _xm .= xm
     return x
@@ -202,7 +201,6 @@ function vec_L!(x::AbstractVector, Sp, Vtp, xm)
     nΩp = size(Vtp, 2)
     Xp = reshape(@view(x[1:rank*nΩp]), rank, nΩp)
     mul!(Xp, Sp, Vtp)
-    # Xp .= Up*Sp*Vtp # TODO: allocates!
     _xm = @view(x[rank*nΩp+1:end])
     _xm .= xm
     return x

@@ -14,6 +14,7 @@ lazy(::typeof(*), A::ProdMatrix, B::ProdMatrix) = lazy(*, A.args..., B.args...)
     A
 end
 
+lazy(a::Number) = LazyScalar(a)
 lazy(A::AbstractMatrix{T}) where T = Lazy{T}(A)
 # lazy(At::Transpose{T, <:AbstractMatrix{T}}) where T = transpose(Lazy{T}(parent(At)))
 lazy(L::AbstractLazyMatrixOrTranspose) = L
