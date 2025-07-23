@@ -14,7 +14,7 @@ function lazy_getindex(K::KronMatrix, i::Int, j::Int)
 end
 @inline isdiagonal(K::KronMatrix) = isdiagonal(A(K)) && isdiagonal(B(K))
 
-function mul_strategy(K::KronMatrix)
+function mul_strategy(K::KronMatrix) # TODO: should we use max_size here ?
     mA, nA = size(A(K))
     mB, nB = size(B(K))
     # A * (X * B) # cost (assuming dense n^3 algorithm): nA*nB*(mB + mA)

@@ -282,6 +282,7 @@ function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix
     max_intermediate = max_m*max_n
     T1, rem = take_ws(ws, max_intermediate)
 
+    # todo: this looks buggy (probably there is not enough ws: required only allocates the maximum, here we take ws for the first two..)
     Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))))
     Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]))
     mul_with!(nothing, mat_view(T1, size(Aₙ₋₁, 1), size(Aₙ, 2)), Aₙ₋₁, Aₙ, true, false)
@@ -304,4 +305,63 @@ function required_workspace(::typeof(materialize_with), M::ProdMatrix, cache_not
     max_n = maximum(A -> max_size(A, 2), As(M))
     max_internals = maximum(A -> required_workspace(materialize_with, materialize(A), cache_notifier), As(M))
     return 2*max_m*max_n + max_internals
+end
+
+# we want to add an additional dispatch for A * X * B (this probably be treated generally in ProdMatrix)
+const ThreeProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}}
+@inline A(M::ThreeProdMatrix) = M.args[1]
+@inline X(M::ThreeProdMatrix) = M.args[2]
+@inline B(M::ThreeProdMatrix) = M.args[3]
+
+function mul_strategy(M::ThreeProdMatrix)
+    mA, nA = max_size(A(M))
+    mB, nB = max_size(B(M))
+
+    if (nA*nB)*(mA+mB) < (mA*mB)*(nA+nB)
+        return :A_XB
+    else
+        return :AX_B
+    end
+end 
+
+function materialize_with(ws::Workspace, M::ThreeProdMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    mA, nA = size(A(M))
+    mB, nB = size(B(M))
+    strategy = mul_strategy(M)
+    if strategy == :A_XB
+        tmp, rem = take_ws(ws, (nA, nB))
+        X_, rem_ = materialize_with(rem, materialize(X(M)))
+        B_, _ = materialize_with(rem_, materialize(B(M)))
+        mul_with!(nothing, tmp, X_, B_, true, false)
+        A_, _ = materialize_with(rem, materialize(A(M)))
+        mul_with!(nothing, skeleton, A_, tmp, α, β)
+    else
+        tmp, rem = take_ws(ws, (mA, mB))
+        A_, rem_ = materialize_with(rem, materialize(A(M)))
+        X_, _ = materialize_with(rem_, materialize(X(M)))
+        mul_with!(nothing, tmp, A_, X_, true, false)
+        B_, _ = materialize_with(rem, materialize(B(M)))
+        mul_with!(nothing, skeleton, tmp, B_, α, β)
+    end
+    return skeleton, ws
+end
+
+function required_workspace(::typeof(materialize_with), M::ThreeProdMatrix, cache_notifier)
+    mA, nA = max_size(A(M))
+    mB, nB = max_size(B(M))
+
+    strategy = mul_strategy(M)
+    if strategy == :A_XB
+        tmp_size = nA*nB
+        return tmp_size + max(
+            required_workspace(materialize_with, materialize(X(M)), cache_notifier) + required_workspace(materialize_with, materialize(B(M)), cache_notifier),
+            required_workspace(materialize_with, materialize(A(M)), cache_notifier)
+        )
+    else # strategy == :AX_B
+        tmp_size = mA*mB
+        return tmp_size + max(
+            required_workspace(materialize_with, materialize(X(M)), cache_notifier) + required_workspace(materialize_with, materialize(A(M)), cache_notifier),
+            required_workspace(materialize_with, materialize(B(M)), cache_notifier)
+        )
+    end
 end

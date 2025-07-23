@@ -8,12 +8,51 @@ using SparseArrays
 
 Lazy = EPMAfem.PNLazyMatrices
 
-A_ = rand(3, 3)
-B_ = rand(3, 3)
-C_ = rand(3, 3)
-D_ = Diagonal(rand(3))
 
-A, B, C, D = lazy.((A_, B_, C_, D_))
+A_ = rand(1, 2)
+B_ = rand(2, 3)
+C_ = rand(3, 4)
+
+A, B, C = lazy.((A_, B_, C_))
+
+P = materialize(A * B * C)
+
+Lazy.mul_strategy(P.args[1])
+Lazy.required_workspace(Lazy.materialize_with, P, ())
+
+Pu = unlazy(P)
+x = rand(size(P, 2))
+@test A_*B_*C_*x ≈ Pu*x
+x = rand(1, size(P, 1))
+@test x*A_*B_*C_ ≈ x*Pu
+
+
+A2_ = rand(4, 3)
+B2_ = rand(3, 2)
+C2_ = rand(2, 1)
+
+A2, B2, C2 = lazy.((A2_, B2_, C2_))
+
+P2 = materialize(A2 * B2 * C2)
+
+Lazy.mul_strategy(P2.args[1])
+Lazy.required_workspace(Lazy.materialize_with, P2, ())
+
+P2u = unlazy(P2)
+x = rand(size(P2, 2))
+@test A2_*B2_*C2_*x ≈ P2u*x
+x = rand(1, size(P2, 1))
+@test x*A2_*B2_*C2_ ≈ x*P2u
+
+
+
+
+
+
+P isa Lazy.ThreeProdMatrix
+
+m
+
 
 
 BM = [A+B C
