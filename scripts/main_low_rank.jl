@@ -25,7 +25,11 @@ problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
 system5 = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
 system6 = EPMAfem.implicit_midpoint_dlr(problem; max_rank=5);
 system7 = EPMAfem.implicit_midpoint_dlr2(problem; max_rank=5);
+system8 = EPMAfem.implicit_midpoint_dlr3(problem; max_rank=20);
 
+include("../src/pn_lazy_matrices/pnlazymatrixanalysis.jl")
+p, _, _ = plot(build_graph2(system8.mats...; flat=false), layout=Stress(dim=2))
+p
 # Lazy = PNLazyMatrices
 # Lazy._half_schur_components(system6.mats.half_BM_U⁻¹.A)[1].args[2] |> Lazy.lazy_objectid
 # Lazy._half_schur_components(system6.mats.half_BM_V⁻¹.A)[1].args[2] |> Lazy.lazy_objectid
@@ -66,8 +70,9 @@ discrete_extr = EPMAfem.discretize_extraction(extraction, model, EPMAfem.cuda())
 sol5 = system5 * discrete_rhs;
 sol6 = system6 * discrete_rhs;
 sol7 = system7 * discrete_rhs;
+sol8 = system8 * discrete_rhs;
 
-anim = @animate for ((i5, ψ5), (i6, ψ6),  (i7, ψ7)) in zip(sol5, sol6, sol7)
+anim = @animate for ((i5, ψ5), (i6, ψ6),  (i7, ψ7), (i8, ψ8)) in zip(sol5, sol6, sol7, sol8)
     ψp5, ψm5 = EPMAfem.pmview(ψ5, model)
     func5 = EPMAfem.SpaceModels.interpolable(ψp5[:, 1] |> collect, EPMAfem.space_model(model))
     p1 = heatmap(-1.0:0.01:0, -1.0:0.01:1.0, aspect_ratio=:equal, func5.interp, swapxy=true, label="schur minres")
@@ -79,7 +84,12 @@ anim = @animate for ((i5, ψ5), (i6, ψ6),  (i7, ψ7)) in zip(sol5, sol6, sol7)
     ψp7, ψm7 = EPMAfem.pmview(ψ7, model)
     func7 = EPMAfem.SpaceModels.interpolable(ψp7[:, 1] |> collect, EPMAfem.space_model(model))
     p3 = heatmap(-1.0:0.01:0, -1.0:0.01:1.0, aspect_ratio=:equal, func7.interp, swapxy=true, label="schur minres")
-    Plots.plot(p1, p2, p3)
+
+    ψp8, ψm8 = EPMAfem.pmview(ψ8, model)
+    func8 = EPMAfem.SpaceModels.interpolable(ψp8[:, 1] |> collect, EPMAfem.space_model(model))
+    p4 = heatmap(-1.0:0.01:0, -1.0:0.01:1.0, aspect_ratio=:equal, func8.interp, swapxy=true, label="schur minres")
+    p = Plots.plot(p1, p2, p3, p4)
+    display(p)
 end
 gif(anim)
 
@@ -90,13 +100,17 @@ end
 discrete_extr * sol5
 discrete_extr * sol6
 discrete_extr * sol7
+discrete_extr * sol8
 
 CUDA.@profile discrete_extr * sol5
 CUDA.@profile discrete_extr * sol6
 CUDA.@profile discrete_extr * sol7
+CUDA.@profile discrete_extr * sol8
 
 @profview discrete_extr * sol5
 @profview discrete_extr * sol6
+@profview discrete_extr * sol7
+@profview discrete_extr * sol8
 
 @time discrete_extr * sol5
 @time discrete_extr * sol6

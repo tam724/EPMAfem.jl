@@ -60,35 +60,56 @@ label(A::Transpose) = "transpose()"
 
 @concrete struct LazyMatrixGraph
     graph
+    roots
     v_to_A_dict
     A_to_v_dict
 end
 
-
-function build_graph(L::Lazy.AbstractLazyMatrixOrTranspose; flat=true)
+function build_graph2(As...; flat=true)
     g = DiGraph()
     v_to_A_dict = Dict{Int, Any}()
     A_to_v_dict = Dict{UInt64, Int}()
-    
-    add_node!(g, L, A_to_v_dict, v_to_A_dict; flat=flat)
-    return LazyMatrixGraph(g, v_to_A_dict, A_to_v_dict)
+    roots = UInt64[]
+
+    for A in As
+        if A isa Lazy.AbstractLazyMatrixOrTranspose
+            r = add_node!(g, A, A_to_v_dict, v_to_A_dict; flat=flat)
+            push!(roots, r)
+        elseif A isa Lazy.NotSoLazy
+            r = add_node!(g, A.A, A_to_v_dict, v_to_A_dict; flat=flat)
+            push!(roots, r)
+        end
+    end
+        
+    return LazyMatrixGraph(g, roots, v_to_A_dict, A_to_v_dict)
 end
 
-function node_hover_highlight_deps(p::GraphPlot, g::SimpleDiGraph)
+function node_hover_highlight_deps(p::GraphPlot, LMG::LazyMatrixGraph)
     action = (state, idx, _, _) -> begin
-        for node in BFSIterator(g, idx)
-            p.node_color[][node] = state ? colorant"gray" : colorant"lightgray"
+        for node in BFSIterator(LMG.graph, idx; neighbors_type=inneighbors) # Graphs.inneighbors(LMG.graph, idx)
+            p.node_color[][node] = state ? colorant"lightblue" : node_base_color(LMG, node)
         end
+        for node in BFSIterator(LMG.graph, idx)
+            p.node_color[][node] = state ? colorant"coral" : node_base_color(LMG, node)
+        end
+        p.node_color[][idx] = state ? colorant"white" : node_base_color(LMG, idx)
         p.node_color[] = p.node_color[]
+        if state
+            @show size(LMG.v_to_A_dict[idx])
+        end
         end
     return GraphMakie.NodeHoverHandler(action)
 end
 
+
+node_base_color(LMG, idx) = (idx ∈ LMG.roots) ? colorant"gray" : colorant"lightgray"
+
 function plot(LMG::LazyMatrixGraph; layout=Stress(dim=2))
     nodelabel = [label(LMG.v_to_A_dict[i]) for i in 1:nv(LMG.graph)]
-    f, ax, p = GraphMakie.graphplot(LMG.graph, layout=layout, ilabels=nodelabel, node_color=fill(colorant"lightgray", nv(LMG.graph)))
+    node_color = [node_base_color(LMG, idx) for idx in 1:nv(LMG.graph)]
+    f, ax, p = GraphMakie.graphplot(LMG.graph, layout=layout, ilabels=nodelabel, node_color=node_color, edgewidth=1.0)
     GraphMakie.deregister_interaction!(ax, :rectanglezoom)
-    register_interaction!(ax, :nhover, node_hover_highlight_deps(p, LMG.graph))
+    register_interaction!(ax, :nhover, node_hover_highlight_deps(p, LMG))
     register_interaction!(ax, :nodedrag, NodeDrag(p))
     return f, ax, p
 end

@@ -34,39 +34,44 @@ function implicit_midpoint_dlr3(pbl::DiscretePNProblem; max_rank=20)
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl)
 
-    Ikp(i, cf) = cf.a[i]*Ip + sum(cf.c[i][j]*kp[i][j] for j in 1:ns.nσ)
-    Ikm(i, cf) = cf.a[i]*Im + sum(cf.c[i][j]*km[i][j] for j in 1:ns.nσ)
+    Ikp(i, cf) = materialize(cf.a[i]*Ip + sum(cf.c[i][j]*kp[i][j] for j in 1:ns.nσ))
+    Ikm(i, cf) = materialize(cf.a[i]*Im + sum(cf.c[i][j]*km[i][j] for j in 1:ns.nσ))
 
     # A(cf)   = cfs.Δ*(sum(kron_AXB(   ρp[i],      Ikp(i, cf)  ) for i in 1:ns.ne) + sum(kron_AXB(   ∂p[i],   cfs.γ *    absΩp[i]  ) for i in 1:ns.nd))
-    Aᵥ(cf)  = cfs.Δ*(sum(kron_AXB(   ρp[i],   Vt*Ikp(i, cf)*V) for i in 1:ns.ne) + sum(kron_AXB(   ∂p[i],   cfs.γ * Vt*absΩp[i]*V) for i in 1:ns.nd))
-    Aᵤ(cf)  = cfs.Δ*(sum(kron_AXB(Ut*ρp[i]*U,    Ikp(i, cf)  ) for i in 1:ns.ne) + sum(kron_AXB(Ut*∂p[i]*U, cfs.γ *    absΩp[i]  ) for i in 1:ns.nd))
-    Aᵤᵥ(cf) = cfs.Δ*(sum(kron_AXB(Ut*ρp[i]*U, Vt*Ikp(i, cf)*V) for i in 1:ns.ne) + sum(kron_AXB(Ut*∂p[i]*U, cfs.γ * Vt*absΩp[i]*V) for i in 1:ns.nd))
+    Aᵥ(cf)  = cfs.Δ*(sum(kron_AXB(         ρp[i]   , cache(Vt*Ikp(i, cf)*V)) for i in 1:ns.ne) + sum(kron_AXB(         ∂p[i]   , cache(cfs.γ * Vt*absΩp[i]*V)) for i in 1:ns.nd))
+    Aᵤ(cf)  = cfs.Δ*(sum(kron_AXB(cache(Ut*ρp[i]*U),          Ikp(i, cf)   ) for i in 1:ns.ne) + sum(kron_AXB(cache(Ut*∂p[i]*U),       cfs.γ *    absΩp[i]   ) for i in 1:ns.nd))
+    Aᵤᵥ(cf) = cfs.Δ*(sum(kron_AXB(cache(Ut*ρp[i]*U), cache(Vt*Ikp(i, cf)*V)) for i in 1:ns.ne) + sum(kron_AXB(cache(Ut*∂p[i]*U), cache(cfs.γ * Vt*absΩp[i]*V)) for i in 1:ns.nd))
     
     # minus to symmetrize
     C(cf) = -(cfs.Δ*sum(kron_AXB(ρm[i], Ikm(i, cf)) for i in 1:ns.ne))
 
     # B   = cfs.Δ*cfs.δ*sum(kron_AXB(   ∇pm[i], Ωpm[i]  ) for i in 1:ns.nd)
-    Bᵥ  = cfs.Δ*(cfs.δ*sum(kron_AXB(   ∇pm[i], Ωpm[i]*V) for i in 1:ns.nd))
-    Bᵤ  = cfs.Δ*(cfs.δ*sum(kron_AXB(Ut*∇pm[i], Ωpm[i]  ) for i in 1:ns.nd))
-    Bᵤᵥ = cfs.Δ*(cfs.δ*sum(kron_AXB(Ut*∇pm[i], Ωpm[i]*V) for i in 1:ns.nd))
+    Bᵥ  = cfs.Δ*(cfs.δ*sum(kron_AXB(         ∇pm[i] , cache(Ωpm[i]*V)) for i in 1:ns.nd))
+    Bᵤ  = cfs.Δ*(cfs.δ*sum(kron_AXB(cache(Ut*∇pm[i]),       Ωpm[i]   ) for i in 1:ns.nd))
+    Bᵤᵥ = cfs.Δ*(cfs.δ*sum(kron_AXB(cache(Ut*∇pm[i]), cache(Ωpm[i]*V)) for i in 1:ns.nd))
 
+    rhsC = C(cfs.rhs)
+    matC⁻¹ = cache(LinearAlgebra.inv!(C(cfs.mat)))
+    inv_AᵥmBᵥCBᵥᵀ    = Krylov.minres( Aᵥ(cfs.mat) - Bᵥ  * matC⁻¹ * transpose(Bᵥ )) # TODO: maybe there is a way to make this term cheap?
+    inv_AᵤmBᵤCBᵤᵀ    = Krylov.minres( Aᵤ(cfs.mat) - Bᵤ  * matC⁻¹ * transpose(Bᵤ ))
+    inv_AᵤᵥmBᵤᵥCBᵤᵥᵀ = Krylov.minres(Aᵤᵥ(cfs.mat) - Bᵤᵥ * matC⁻¹ * transpose(Bᵤᵥ))
 
     mats = (
         Vt = Vt,
         U = U,
-        rhsC = C(cfs.rhs),
-        matC⁻¹ = LinearAlgebra.inv!(C(cfs.mat)),
+        rhsC = rhsC,
+        matC⁻¹ = matC⁻¹,
         rhsAᵥ = Aᵥ(cfs.rhs),
         Bᵥ = Bᵥ,
-        inv_AᵥmBᵥCBᵥᵀ = Krylov.minres(Aᵥ(cfs.mat) - Bᵥ*LinearAlgebra.inv!(C(cfs.mat))*transpose(Bᵥ)),
+        inv_AᵥmBᵥCBᵥᵀ = inv_AᵥmBᵥCBᵥᵀ,
 
         rhsAᵤ = Aᵤ(cfs.rhs),
         Bᵤ = Bᵤ,
-        inv_AᵤmBᵤCBᵤᵀ = Krylov.minres(Aᵤ(cfs.mat) - Bᵤ*LinearAlgebra.inv!(C(cfs.mat))*transpose(Bᵤ)),
+        inv_AᵤmBᵤCBᵤᵀ = inv_AᵤmBᵤCBᵤᵀ,
 
         rhsAᵤᵥ = Aᵤᵥ(cfs.rhs),
         Bᵤᵥ = Bᵤᵥ,
-        inv_AᵤᵥmBᵤᵥCBᵤᵥᵀ = Krylov.minres(Aᵤᵥ(cfs.mat) - Bᵤᵥ*LinearAlgebra.inv!(C(cfs.mat))*transpose(Bᵤᵥ)),
+        inv_AᵤᵥmBᵤᵥCBᵤᵥᵀ = inv_AᵤᵥmBᵤᵥCBᵤᵥᵀ,
     )
 
     ucfs, umats = unlazy((cfs, mats), vec_size -> allocate_vec(arch, vec_size))
@@ -116,6 +121,7 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem3, rhs_ass::PNVectorAsse
     U₀, S₀, Vt₀ = USVt(x)
 
     CUDA.NVTX.@range "copy basis" begin
+        # TODO: maybe we can skip this (this is written to the system mats before the s step..)
         # K-step (prep)
         PNLazyMatrices.resize_copyto!(system.mats.Vt, Vt₀)
         # L-step (prep)
@@ -165,7 +171,7 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem3, rhs_ass::PNVectorAsse
 
         mul!(rhs_Lt, system.mats.Bᵤ, system.tmp.tmp2, -1, true)
     end
-    CUDA.NVTX.@range "K-step" begin
+    CUDA.NVTX.@range "L-step" begin
         Lt₁ = @view(system.tmp.tmp1[1:x.rank[]*nΩp])
         mul!(Lt₁, system.mats.inv_AᵤmBᵤCBᵤᵀ, rhs_Lt, true, false)
         V₁ = (qr(transpose(reshape(Lt₁, (x.rank[], nΩp)))).Q |> mat_type(architecture(system.problem)))[1:size(Vt₀, 2), 1:size(Vt₀, 1)]

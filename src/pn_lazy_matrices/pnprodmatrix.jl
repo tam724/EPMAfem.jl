@@ -76,24 +76,26 @@ function mul_with!(ws::Workspace, y::AbstractVector, M::TwoProdMatrix, x::Abstra
 end
 
 function mul_with!(ws::Workspace, Y::AbstractMatrix, M::TwoProdMatrix, X::AbstractMatrix, α::Number, β::Number)
-    WS, rem = take_ws(ws, size(B(M), 1))
-    # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-    # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
+    CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin
+        WS, rem = take_ws(ws, size(B(M), 1))
+        # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
+        # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
 
-    # temp, rem = take_ws(rem, max(size(X, 1), size(Y, 1)))
-    for j in 1:size(X, 2)
-        # if Base.iscontiguous(@view(X[:, j]))
-            mul_with!(rem, WS, B(M), @view(X[:, j]), true, false)
-        # else
-        #     @view(temp[1:size(X, 1)]) .= @view(X[:, j])
-        #     mul_with!(rem, WS, B(M), @view(temp[1:size(X, 1)]), true, false)
-        # end
-        # if Base.iscontiguous(@view(Y[:, j]))
-            mul_with!(rem, @view(Y[:, j]), A(M), WS, α, β)
-        # else
-        #     mul_with!(rem, @view(temp[1:size(Y, 1)]), A(M), WS, α, β)
-        #     @view(Y[:, j]) .= @view(temp[1:size(Y, 1)])
-        # end
+        # temp, rem = take_ws(rem, max(size(X, 1), size(Y, 1)))
+        for j in 1:size(X, 2)
+            # if Base.iscontiguous(@view(X[:, j]))
+                mul_with!(rem, WS, B(M), @view(X[:, j]), true, false)
+            # else
+            #     @view(temp[1:size(X, 1)]) .= @view(X[:, j])
+            #     mul_with!(rem, WS, B(M), @view(temp[1:size(X, 1)]), true, false)
+            # end
+            # if Base.iscontiguous(@view(Y[:, j]))
+                mul_with!(rem, @view(Y[:, j]), A(M), WS, α, β)
+            # else
+            #     mul_with!(rem, @view(temp[1:size(Y, 1)]), A(M), WS, α, β)
+            #     @view(Y[:, j]) .= @view(temp[1:size(Y, 1)])
+            # end
+        end
     end
 end
 
@@ -105,24 +107,26 @@ function mul_with!(ws::Workspace, y::AbstractVector, Mt::Transpose{T, <:TwoProdM
 end
 
 function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
-    M = parent(Mt)
-    WS, rem = take_ws(ws, size(B(M), 1)) # == size(A(M), 2)
-    # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-    # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
-    # temp, rem = take_ws(rem, max(size(X, 1), size(Y, 1)))
-    for j in 1:size(X, 2)
-        # if Base.iscontiguous(@view(X[:, j]))
-            mul_with!(rem, WS, transpose(A(M)), @view(X[:, j]), true, false)
-        # else
-        #     copyto!(@view(temp[1:size(X, 1)]), @view(X[:, j]))
-        #     mul_with!(rem, WS, transpose(A(M)), @view(temp[1:size(X, 1)]), true, false)
-        # end
-        # if Base.iscontiguous(@view(Y[:, j]))
-            mul_with!(rem, @view(Y[:, j]), transpose(B(M)), WS, α, β)
-        # else
-        #     mul_with!(rem, @view(temp[1:size(Y, 1)]), transpose(B(M)), WS, α, β)
-        #     copyto!(@view(Y[:, j]), @view(temp[1:size(Y, 1)]))
-        # end
+    CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin
+        M = parent(Mt)
+        WS, rem = take_ws(ws, size(B(M), 1)) # == size(A(M), 2)
+        # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
+        # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
+        # temp, rem = take_ws(rem, max(size(X, 1), size(Y, 1)))
+        for j in 1:size(X, 2)
+            # if Base.iscontiguous(@view(X[:, j]))
+                mul_with!(rem, WS, transpose(A(M)), @view(X[:, j]), true, false)
+            # else
+            #     copyto!(@view(temp[1:size(X, 1)]), @view(X[:, j]))
+            #     mul_with!(rem, WS, transpose(A(M)), @view(temp[1:size(X, 1)]), true, false)
+            # end
+            # if Base.iscontiguous(@view(Y[:, j]))
+                mul_with!(rem, @view(Y[:, j]), transpose(B(M)), WS, α, β)
+            # else
+            #     mul_with!(rem, @view(temp[1:size(Y, 1)]), transpose(B(M)), WS, α, β)
+            #     copyto!(@view(Y[:, j]), @view(temp[1:size(Y, 1)]))
+            # end
+        end
     end
 end
 
@@ -189,70 +193,78 @@ mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, 
 
 # no strategy here, simply multiply right to left for now.. (its vector anyways)
 function mul_with!(ws::Workspace, y::AbstractVector, M::ProdMatrix, x::AbstractVector, α::Number, β::Number)
-    my_ws = maximum(A -> size(A, 2), As(M))
-    r_, rem = take_ws(ws, my_ws)
-    l_, rem = take_ws(rem, my_ws)
-    mul_with!(rem, @view(r_[1:size(last(As(M)), 1)]), last(As(M)), x, true, false)
-    for (i, A) in enumerate(reverse(As(M)))
-        if i == 1 || i == length(As(M)) continue end # skip the first and last iteration
-        mul_with!(rem, @view(l_[1:size(A, 1)]), A, @view(r_[1:size(A, 2)]), true, false)
-        r_, l_ = l_, r_
-    end
-    mul_with!(rem, y, first(As(M)), @view(r_[1:size(first(As(M)), 2)]), α, β)
-end
-
-# simply loop over the multiple X's (consider materializing first...)
-function mul_with!(ws::Workspace, Y::AbstractMatrix, M::ProdMatrix, X::AbstractMatrix, α::Number, β::Number)
-    my_ws_size = maximum(A -> size(A, 2), As(M))
-    r_, rem = take_ws(ws, my_ws_size)
-    l_, rem = take_ws(rem, my_ws_size)
-    # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-    # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
-    for j in 1:size(X, 2)
-        mul_with!(rem, @view(r_[1:size(last(As(M)), 1)]), last(As(M)), @view(X[:, j]), true, false)
+    CUDA.NVTX.@range "mul_with! ProdMatrix" begin
+        my_ws = maximum(A -> size(A, 2), As(M))
+        r_, rem = take_ws(ws, my_ws)
+        l_, rem = take_ws(rem, my_ws)
+        mul_with!(rem, @view(r_[1:size(last(As(M)), 1)]), last(As(M)), x, true, false)
         for (i, A) in enumerate(reverse(As(M)))
             if i == 1 || i == length(As(M)) continue end # skip the first and last iteration
             mul_with!(rem, @view(l_[1:size(A, 1)]), A, @view(r_[1:size(A, 2)]), true, false)
             r_, l_ = l_, r_
         end
-        mul_with!(rem, @view(Y[:, j]), first(As(M)), @view(r_[1:size(first(As(M)), 2)]), α, β)
+        mul_with!(rem, y, first(As(M)), @view(r_[1:size(first(As(M)), 2)]), α, β)
+    end
+end
+
+# simply loop over the multiple X's (consider materializing first...)
+function mul_with!(ws::Workspace, Y::AbstractMatrix, M::ProdMatrix, X::AbstractMatrix, α::Number, β::Number)
+    CUDA.NVTX.@range "mul_with! ProdMatrix" begin
+        my_ws_size = maximum(A -> size(A, 2), As(M))
+        r_, rem = take_ws(ws, my_ws_size)
+        l_, rem = take_ws(rem, my_ws_size)
+        # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
+        # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
+        for j in 1:size(X, 2)
+            mul_with!(rem, @view(r_[1:size(last(As(M)), 1)]), last(As(M)), @view(X[:, j]), true, false)
+            for (i, A) in enumerate(reverse(As(M)))
+                if i == 1 || i == length(As(M)) continue end # skip the first and last iteration
+                mul_with!(rem, @view(l_[1:size(A, 1)]), A, @view(r_[1:size(A, 2)]), true, false)
+                r_, l_ = l_, r_
+            end
+            mul_with!(rem, @view(Y[:, j]), first(As(M)), @view(r_[1:size(first(As(M)), 2)]), α, β)
+        end
     end
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, Mt::Transpose{T, <:ProdMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-    M = parent(Mt)
-    n = length(As(M))
-    my_ws = maximum(A -> size(A, 1), As(M))
-    r_, rem = take_ws(ws, my_ws)
-    l_, rem = take_ws(rem, my_ws)
-    # Start with the first (transposed) matrix (which is last in the original product)
-    mul_with!(rem, @view(r_[1:size(first(As(M)), 2)]), transpose(first(As(M))), x, true, false)
-    for (i, A) in enumerate(As(M))
-        if i == 1 || i == n continue end # skip the first and last iteration
-        mul_with!(rem, @view(l_[1:size(A, 2)]), transpose(A), @view(r_[1:size(A, 1)]), true, false)
-        r_, l_ = l_, r_
-    end
-    mul_with!(rem, y, transpose(last(As(M))), @view(r_[1:size(last(As(M)), 1)]), α, β)
-end
-
-# simply loop over the multiple X's (consider materializing first...)
-function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:ProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
-    M = parent(Mt)
-    n = length(As(M))
-    my_ws = maximum(A -> size(A, 1), As(M))
-    r_, rem = take_ws(ws, my_ws)
-    l_, rem = take_ws(rem, my_ws)
-    # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-    # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
-    for j in 1:size(X, 2)
+    CUDA.NVTX.@range "mul_with! ProdMatrix" begin
+        M = parent(Mt)
+        n = length(As(M))
+        my_ws = maximum(A -> size(A, 1), As(M))
+        r_, rem = take_ws(ws, my_ws)
+        l_, rem = take_ws(rem, my_ws)
         # Start with the first (transposed) matrix (which is last in the original product)
-        mul_with!(rem, @view(r_[1:size(first(As(M)), 2)]), transpose(first(As(M))), @view(X[:, j]), true, false)
+        mul_with!(rem, @view(r_[1:size(first(As(M)), 2)]), transpose(first(As(M))), x, true, false)
         for (i, A) in enumerate(As(M))
             if i == 1 || i == n continue end # skip the first and last iteration
             mul_with!(rem, @view(l_[1:size(A, 2)]), transpose(A), @view(r_[1:size(A, 1)]), true, false)
             r_, l_ = l_, r_
         end
-        mul_with!(rem, @view(Y[:, j]), transpose(last(As(M))), @view(r_[1:size(last(As(M)), 1)]), α, β)
+        mul_with!(rem, y, transpose(last(As(M))), @view(r_[1:size(last(As(M)), 1)]), α, β)
+    end
+end
+
+# simply loop over the multiple X's (consider materializing first...)
+function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:ProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
+    CUDA.NVTX.@range "mul_with! ProdMatrix" begin
+        M = parent(Mt)
+        n = length(As(M))
+        my_ws = maximum(A -> size(A, 1), As(M))
+        r_, rem = take_ws(ws, my_ws)
+        l_, rem = take_ws(rem, my_ws)
+        # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
+        # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
+        for j in 1:size(X, 2)
+            # Start with the first (transposed) matrix (which is last in the original product)
+            mul_with!(rem, @view(r_[1:size(first(As(M)), 2)]), transpose(first(As(M))), @view(X[:, j]), true, false)
+            for (i, A) in enumerate(As(M))
+                if i == 1 || i == n continue end # skip the first and last iteration
+                mul_with!(rem, @view(l_[1:size(A, 2)]), transpose(A), @view(r_[1:size(A, 1)]), true, false)
+                r_, l_ = l_, r_
+            end
+            mul_with!(rem, @view(Y[:, j]), transpose(last(As(M))), @view(r_[1:size(last(As(M)), 1)]), α, β)
+        end
     end
 end
 
