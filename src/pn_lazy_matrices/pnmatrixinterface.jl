@@ -61,6 +61,7 @@ cache(M::MaterializedMatrix) = lazy(cache, M)
 
 function decide_materialize_strategy(A::AbstractLazyMatrixOrTranspose)
     if should_broadcast_materialize(A) return :broadcast end
+    return :mat_with
     # return :mat # TODO: still unsure about this one..
     # this is a crude heuristic! (if it is "cheaper" to multiply with the matrix than to materialize, then materialize by multiplication) TOOD: should be checked better
     mat = workspace_size(required_workspace(materialize_with, A, ()))
