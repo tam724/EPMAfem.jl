@@ -230,8 +230,21 @@ const KronMatrix{T} = LazyOpMatrix{T, typeof(kron), <:Tuple{Vararg{<:AbstractMat
 @inline As(K::KronMatrix) = K.args
 Base.size(K::KronMatrix) = (prod(A -> size(A, 1), As(K)), prod(A -> size(A, 2), As(K)))
 max_size(K::KronMatrix) = (prod(A -> max_size(A, 1), As(K)), prod(A -> max_size(A, 2), As(K)))
-function lazy_getindex(S::KronMatrix, i::Integer, j::Integer)
-    return NaN
+function lazy_getindex(K::KronMatrix{T}, i::Integer, j::Integer) where T
+    mx = map(A -> size(A, 1), As(K))
+    nx = map(A -> size(A, 2), As(K))
+    
+    val = one(T)
+    for (t, A) in enumerate(As(K))
+        m_stride = prod(mx[t+1:end])
+        n_stride = prod(nx[t+1:end])
+        i_t = div(i - 1, m_stride) % mx[t] + 1
+        j_t = div(j - 1, n_stride) % nx[t] + 1
+
+        val *= A[i_t, j_t]
+    end
+
+    return val
 end
 isdiagonal(K::KronMatrix) = all(isdiagonal, As(K))
 
