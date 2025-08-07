@@ -72,7 +72,21 @@ function batched_mul!(Y::AbstractArray{T, 3}, A::TwoDiagonalMatrix{T}, X::Abstra
 end
 
 function LinearAlgebra.mul!(Y::AbstractMatrix{T}, A::TwoDiagonalMatrix{T}, X::AbstractMatrix{T}, α::Number, β::Number) where T
-    batched_mul!(reshape(Y, (size(Y)..., 1)), A, reshape(X, (size(X)..., 1)), false, α, β)
+    @assert size(Y, 1) + 1 == size(X, 1) == A.n
+    @assert size(Y, 2) == size(X, 2)
+
+    αa = T(α * A.a)
+    αb = T(α * A.b)
+
+    backend = get_backend(Y)
+
+    if iszero(β)
+        kernel! = AX_mul_kernel!(backend)
+        kernel!(Y, αa, αb, X, ndrange=(size(Y)..., 1))
+    else
+        kernel! = AX_mulβ_kernel!(backend)
+        kernel!(Y, αa, αb, β, X, ndrange=(size(Y)..., 1))
+    end
     return Y
 end
 
@@ -191,7 +205,29 @@ function batched_mul!(Y::AbstractArray{T}, X::AbstractArray{T}, A::TwoDiagonalMa
 end
 
 function LinearAlgebra.mul!(Y::AbstractMatrix{T}, X::AbstractMatrix{T}, A::TwoDiagonalMatrix{T}, α::Number, β::Number) where T
-    batched_mul!(reshape(Y, (size(Y)..., 1)), reshape(X, (size(X)..., 1)), A, false, α, β)
+    @assert size(Y, 2) == size(X, 2) + 1 == A.n
+    @assert size(Y, 1) == size(X, 1)
+
+    αa = T(α * A.a)
+    αb = T(α * A.b)
+    
+    backend = get_backend(Y)
+
+    if iszero(β)
+        kernel! = XA1_mul_kernel!(backend)
+        kernel!(Y, αa, X, ndrange=(size(Y, 1), 1))
+        kernel! = XA_mul_kernel!(backend)
+        kernel!(Y, αa, αb, X, ndrange=(size(Y, 1), size(Y, 2)-2, 1))
+        kernel! = XAn_mul_kernel!(backend)
+        kernel!(Y, A.n, αb, X, ndrange=(size(Y, 1), 1))
+    else
+        kernel! = XA1_mulβ_kernel!(backend)
+        kernel!(Y, αa, β, X, ndrange=(size(Y, 1), 1))
+        kernel! = XA_mulβ_kernel!(backend)
+        kernel!(Y, αa, αb, β, X, ndrange=(size(Y, 1), size(Y, 2)-2, 1))
+        kernel! = XAn_mulβ_kernel!(backend)
+        kernel!(Y, A.n, αb, β, X, ndrange=(size(Y, 1), 1))
+    end
     return Y
 end
 
@@ -319,7 +355,34 @@ function batched_mul!(Y::AbstractArray{T}, At::Transpose{T,<:TwoDiagonalMatrix{T
 end
 
 function LinearAlgebra.mul!(Y::AbstractMatrix{T}, At::Transpose{T,<:TwoDiagonalMatrix{T}}, X::AbstractMatrix{T}, α::Number, β::Number) where T
-    batched_mul!(reshape(Y, (size(Y)..., 1)), At, reshape(X, (size(X)..., 1)), false, α, β)
+    n = parent(At).n
+    @assert size(Y, 1) == size(X, 1) + 1 == n
+    @assert size(Y, 2) == size(X, 2)
+
+    # on CPU launching 3 kernels is faster than branching in kernel (on GPU same runtime)
+    αa = T(α * parent(At).a)
+    αb = T(α * parent(At).b)
+
+    backend = get_backend(Y)
+    if iszero(β)
+        kernel! = AtX1_mul_kernel!(backend)
+        kernel!(Y, αa, X, ndrange=(size(Y, 2), 1))
+
+        kernel! = AtX_mul_kernel!(backend)
+        kernel!(Y, αa, αb, X, ndrange=(size(Y, 1) - 2, size(Y, 2), 1))
+
+        kernel! = AtXn_mul_kernel!(backend)
+        kernel!(Y, n, αb, X, ndrange=(size(Y, 2), 1))
+    else
+        kernel! = AtX1_mulβ_kernel!(backend)
+        kernel!(Y, αa, β, X, ndrange=(size(Y, 2), 1))
+
+        kernel! = AtX_mulβ_kernel!(backend)
+        kernel!(Y, αa, αb, β, X, ndrange=(size(Y, 1) - 2, size(Y, 2), 1))
+
+        kernel! = AtXn_mulβ_kernel!(backend)
+        kernel!(Y, n, αb, β, X, ndrange=(size(Y, 2), 1))
+    end
     return Y
 end
 
@@ -357,6 +420,18 @@ function batched_mul!(Y::AbstractArray{T}, X::AbstractArray{T}, At::Transpose{T,
 end
 
 function LinearAlgebra.mul!(Y::AbstractMatrix{T}, X::AbstractMatrix{T}, At::Transpose{T, <:TwoDiagonalMatrix{T}}, α::Number, β::Number) where T
-    batched_mul!(reshape(Y, (size(Y)..., 1)), reshape(X, (size(X)..., 1)), At, false, α, β)
+    n = parent(At).n
+    @assert size(Y, 2) + 1 == size(X, 2) == n
+    @assert size(Y, 1) == size(X, 1)
+    αa = T(α * parent(At).a)
+    αb = T(α * parent(At).b)
+    backend = get_backend(Y)
+    if iszero(β) # probably too micro-optimized :D
+        kernel! = XAt_mul_kernel!(backend)
+        kernel!(Y, αa, αb, X, ndrange=(size(Y)..., 1))
+    else
+        kernel! = XAt_mulβ_kernel!(backend)
+        kernel!(Y, αa, αb, β, X, ndrange=(size(Y)..., 1))
+    end
     return Y
 end
