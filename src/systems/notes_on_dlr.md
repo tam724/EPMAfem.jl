@@ -69,3 +69,15 @@ then (together with the S-step)
 $$
     C_{i+1} y_{i+1} = -\left[\hat{B}^T \hat{x}_i + C_i y_i + v - \hat{B}^T \hat{x}_{i+1} \right]
 $$
+
+## new stuff
+
+Blockmatrix ($A$ invertierbar, $C$ diagonal und invertierbar) 
+$$\begin{pmatrix} A & B \\ B^T & C \end{pmatrix}$$
+-> lösen mittels schur komplement $A - B C^{-1} B^T$ 
+
+low-rank approximation ($VV^T = I$, aber $V^T V \neq I$, genauso für $U$)
+$$\begin{pmatrix} V A V^T & V B U^T \\
+U B^T V^T & U C U^T \end{pmatrix}$$
+
+$$V A V^T - V B U^T (U C U^T)^{-1} U B^T V^T$$

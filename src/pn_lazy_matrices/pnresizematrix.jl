@@ -1,13 +1,14 @@
 
-@concrete struct LazyResizeMatrix{T, MT<:AbstractMatrix{T}} <: AbstractLazyMatrix{T}
-    A::MT # not a AbstractLazyArray
-    size::Tuple{Base.RefValue{Int}, Base.RefValue{Int}}
+@concrete struct LazyResizeMatrix{T, VT<:AbstractVector{T}} <: AbstractLazyMatrix{T}
+    A_::Base.RefValue{VT} # not Lazy (probably dense)
+    max_size::Tuple{Int64, Int64}
+    size::Tuple{Base.RefValue{Int64}, Base.RefValue{Int64}}
 end
 
-_reshape_view(R::LazyResizeMatrix) = reshape(@view(R.A[1:prod(size(R))]), size(R))
+_reshape_view(R::LazyResizeMatrix) = reshape(@view(R.A_[][1:prod(size(R))]), size(R))
 
 function quiet_resize!(R::LazyResizeMatrix, (m, n)::Tuple{<:Integer, <:Integer})
-    if size(R.A, 1) < m || size(R.A, 2) < n
+    if R.max_size[1] < m || R.max_size[2] < n
         error("size too big!")
     end
     R.size[1][] = m
@@ -24,8 +25,8 @@ resize!(R::LazyResizeMatrix, (_, n)::Tuple{Colon, <:Integer}, ws::Workspace) = r
 
 @inline A(R::LazyResizeMatrix) = _reshape_view(R)
 Base.size(R::LazyResizeMatrix) = (R.size[1][], R.size[2][])
-max_size(R::LazyResizeMatrix) = size(R.A)
-max_size(R::LazyResizeMatrix, n::Integer) = size(R.A, n)
+max_size(R::LazyResizeMatrix) = R.max_size
+max_size(R::LazyResizeMatrix, n::Integer) = R.max_size[n]
 lazy_getindex(R::LazyResizeMatrix, i::Integer, j::Integer) = getindex(_reshape_view(R), i, j)
 @inline isdiagonal(R::LazyResizeMatrix) = false
 
@@ -45,6 +46,12 @@ function resize_copyto!(ws::Workspace, R::LazyResizeMatrix, A_)
     copyto!(ws, R, A_)
 end
 
+function set_memory!(ws::Workspace, R::LazyResizeMatrix, A_, size)
+    if R.A_[] === A_ && size(R, 1) == size[1] && size(R, 2) == size[2] return end # if the underlying memory and the size did not change (this is happening in every dlr step..)
+    R.A_[] = A_
+    quiet_resize!(R, size)
+    notify_cache(ws, R)
+end
 
 
 mul_with!(::Workspace, Y::AbstractVecOrMat, S::LazyResizeMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(nothing, Y, A(S), X, α, β)

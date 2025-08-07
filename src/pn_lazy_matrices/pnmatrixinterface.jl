@@ -198,4 +198,5 @@ end
 Base.copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_::AbstractMatrix) where T = copyto!(R.ws, R.A, A_)
 Base.copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_) where T = copyto!(R.ws, R.A, A_)
 resize_copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_::AbstractMatrix) where T = resize_copyto!(R.ws, R.A, A_)
+set_memory!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, v_::AbstractVector, size) where T = set_memory!(R.ws, R.A, v_, size)
 

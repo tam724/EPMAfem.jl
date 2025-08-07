@@ -9,6 +9,42 @@ using SparseArrays
 Lazy = EPMAfem.PNLazyMatrices
 
 
+using LinearAlgebra
+C = Diagonal(rand(5))
+B = rand(5, 5)
+
+
+U, S, V = svd(rand(5, 5))
+U = U[1:3, :]
+V = V[1:3, :]
+
+X = inv(U * C * transpose(U)) * U * transpose(B) * transpose(V)
+U * inv(C) * transpose(B) * transpose(V)
+
+(U * C * transpose(U)) \ (U * transpose(B) * transpose(V))
+
+U * ((C * transpose(U)) * X .- (transpose(B) * transpose(V)))
+((C * transpose(U)) * X .- (transpose(B) * transpose(V)))
+
+
+X2 = U * inv(C) * transpose(B) * transpose(V)
+
+C * transpose(U) * X2 .- transpose(B) * transpose(V)
+
+A = rand(3, 3)
+B_ = Lazy.LazyResizeMatrix(Ref(rand(10*10)), (10, 10), (Ref(1), Ref(1)))
+
+C, B = unlazy((cache(3.0*B_), B_))
+
+Lazy.resize_copyto!(B, ones(1, 1))
+
+Lazy.set_memory!(B.ws, B_, rand(10*10), (1, 1))
+
+C * ones(1, 1)
+C.ws. 
+C
+
+
 A_ = rand(1, 2)
 B_ = rand(2, 3)
 C_ = rand(3, 4)
