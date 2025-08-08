@@ -145,15 +145,15 @@ end
 # notsolazy(a::LazyScalar{T}, ws) where T = NotSoLazyScalar{T}(a, ws)
 # notsolazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws) where T = transpose(NotSoLazy{T}(parent(At), ws))
 
-function unlazy(A::AbstractLazyMatrix{T}, ws_alloc=zeros) where T
-    ws_size = required_workspace(mul_with!, A, ())
+function unlazy(A::AbstractLazyMatrix{T}, ws_alloc=zeros; n=1) where T
+    ws_size = required_workspace(mul_with!, A, n, ())
     @info "allocating workspace of size $(ws_size)."
     ws = create_workspace(ws_size, ws_alloc)
     return NotSoLazy{T}(A, ws)
 end
 
-function unlazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws_alloc=zeros) where T
-    ws_size = required_workspace(mul_with!, parent(At), ())
+function unlazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws_alloc=zeros; n=1) where T
+    ws_size = required_workspace(mul_with!, parent(At), n, ())
     @info "allocating workspace of size $(ws_size)."
     ws = create_workspace(ws_size, ws_alloc)
     return NotSoLazy{T}(At, ws)

@@ -251,9 +251,11 @@ isdiagonal(K::KronMatrix) = all(isdiagonal, As(K))
 _r_view(A::AbstractArray, n...) = reshape(@view(A[1:prod(n)]), n...)
 
 function mul_with!(ws::Workspace, y::AbstractVector, K::KronMatrix, x::AbstractVector, α::Number, β::Number)
+    mx = map(A -> size(A, 1), As(K))
     nx = map(A -> size(A, 2), As(K))
+    max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
 
-    buffer1, rem = take_ws(ws, max(size(K)...))
+    buffer1, rem = take_ws(ws, max_x)
 
     xi = reshape(x, last(nx), :)
     Aiᵀ = transpose(last(As(K)))
@@ -261,7 +263,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, K::KronMatrix, x::AbstractV
     mul_with!(rem, yi, transpose(xi), Aiᵀ, true, false)
 
     if length(As(K)) > 2
-        buffer2, rem = take_ws(rem, max(size(K)...))
+        buffer2, rem = take_ws(rem, max_x)
 
         for i in length(As(K))-1:-1:2
             xi = reshape(yi, nx[i], :)
@@ -276,7 +278,34 @@ function mul_with!(ws::Workspace, y::AbstractVector, K::KronMatrix, x::AbstractV
     xi = reshape(yi, nx[1], :)
     Aiᵀ = transpose(first(As(K)))
     yi = _r_view(y, size(xi, 2), size(Aiᵀ, 2))
+    mul_with!(rem, yi, transpose(xi), Aiᵀ, α, β)
+end
+
+function mul_with!(ws::Workspace, y::AbstractMatrix, K::KronMatrix, x::AbstractMatrix, α::Number, β::Number)
+    mx = map(A -> size(A, 1), As(K))
+    nx = map(A -> size(A, 2), As(K))
+    max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
+
+    buffer1, rem = take_ws(ws, max_x*size(x, 2))
+    buffer2, rem = take_ws(rem, max_x*size(x, 2))
+
+    xi = reshape(x, last(nx), :)
+    Aiᵀ = transpose(last(As(K)))
+    yi = _r_view(buffer1, size(xi, 2), size(Aiᵀ, 2))
     mul_with!(rem, yi, transpose(xi), Aiᵀ, true, false)
+
+    for i in length(As(K))-1:-1:1
+        xi = reshape(yi, nx[i], :)
+        Aiᵀ = transpose(As(K)[i])
+        yi = _r_view(buffer2, size(xi, 2), size(Aiᵀ, 2))
+        mul_with!(rem, yi, transpose(xi), Aiᵀ, true, false)
+
+        buffer1, buffer2 = buffer2, buffer1
+    end
+
+    xi = reshape(yi, size(x, 2), :)
+    transpose!(y, xi, α, β)
+    return y
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KronMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
@@ -307,12 +336,17 @@ function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KronMatr
     xi = reshape(yi, nx[1], :)
     Ai = first(As(K))
     yi = _r_view(y, size(xi, 2), size(Ai, 2))
-    mul_with!(rem, yi, transpose(xi), Ai, true, false)
+    mul_with!(rem, yi, transpose(xi), Ai, α, β)
 end
 
-function required_workspace(::typeof(mul_with!), K::KronMatrix, cache_notifier)
-    ws_size = max(max_size(K)...)
-    if length(As(K)) > 2
+required_workspace(::typeof(mul_with!), K::KronMatrix, cache_notifier) = required_workspace(mul_with!, K, 1, cache_notifier)
+
+function required_workspace(::typeof(mul_with!), K::KronMatrix, n::Integer, cache_notifier)
+    mx = map(A -> size(A, 1), As(K))
+    nx = map(A -> size(A, 2), As(K))
+    max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
+    ws_size = max_x*n
+    if length(As(K)) > 2 || n != 1
         return 2 * ws_size + maximum(required_workspace(mul_with!, transpose(A), cache_notifier) for A in As(K))
     else
         return ws_size + maximum(required_workspace(mul_with!, transpose(A), cache_notifier) for A in As(K))

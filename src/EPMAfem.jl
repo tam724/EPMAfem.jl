@@ -4,6 +4,7 @@ using ConcreteStructs
 using Gridap
 using CUDA
 using KernelAbstractions
+using GPUArrays
 using SparseArrays
 using LinearAlgebra
 using HCubature

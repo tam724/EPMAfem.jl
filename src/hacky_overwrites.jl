@@ -123,8 +123,6 @@ function LinearAlgebra.isdiag(A::SparseArrays.SparseMatrixCSC)
     return all(rv == cp for (rv, cp) ∈ zip(A.rowval, @view(A.colptr[1:end-1])))
 end
 
-
-
 # we need transpose(A) * Diagonal() on CUDA:
 function LinearAlgebra.mul!(B::CUDA.GPUArrays.AbstractGPUVecOrMat,
                             D::Diagonal{<:Any, <:CUDA.GPUArrays.AbstractGPUArray},
@@ -156,5 +154,75 @@ function LinearAlgebra.mul!(B::CUDA.GPUArrays.AbstractGPUVecOrMat,
     ddT = transpose(dd)
     @. B = α * At * ddT + β * B
 
+    B
+end
+
+
+## transpose! overloads
+# https://github.com/JuliaLang/LinearAlgebra.jl/blob/2c3fe9b7e0ca4e2c7bf506bd16ae5900f04a8023/src/transpose.jl#L41
+function LinearAlgebra.transpose!(Bt::Transpose, A::AbstractMatrix)
+    LinearAlgebra.check_transpose_axes(axes(Bt), axes(A))
+    copyto!(parent(Bt), A)
+    return Bt
+end
+
+function LinearAlgebra.transpose!(Bt::Transpose, A::AbstractMatrix, α::Number, β::Number)
+    LinearAlgebra.check_transpose_axes(axes(Bt), axes(A))
+    parent(Bt) .= α .* A .+ β .* parent(Bt)
+    return Bt
+end
+
+LinearAlgebra.transpose!(B::AbstractMatrix, A::AbstractMatrix, α::Number, β::Number) = LinearAlgebra.transpose_f!(transpose, B, A, α, β)
+
+# https://github.com/JuliaLang/LinearAlgebra.jl/blob/2c3fe9b7e0ca4e2c7bf506bd16ae5900f04a8023/src/transpose.jl#L99-L137
+const transposebaselength=64
+function LinearAlgebra.transpose_f!(f, B::AbstractMatrix, A::AbstractMatrix, α::Number, β::Number)
+    inds = axes(A)
+    LinearAlgebra.check_transpose_axes(axes(B), inds)
+
+    m, n = length(inds[1]), length(inds[2])
+    if m*n<=4*transposebaselength
+        @inbounds begin
+            for j = inds[2]
+                for i = inds[1]
+                    B[j, i] = α * f(A[i, j]) + β * B[j, i]
+                end
+            end
+        end
+    else
+        LinearAlgebra.transposeblock!(f,B,A,m,n,first(inds[1])-1,first(inds[2])-1, α, β)
+    end
+    return B
+end
+function LinearAlgebra.transposeblock!(f, B::AbstractMatrix, A::AbstractMatrix, m::Int, n::Int, offseti::Int, offsetj::Int, α::Number, β::Number)
+    if m * n<=transposebaselength
+        @inbounds begin
+            for j = offsetj .+ (1:n)
+                for i = offseti .+ (1:m)
+                    B[j, i] = α * f(A[i, j]) + β * B[j, i]
+                end
+            end
+        end
+    elseif m>n
+        newm=m>>1
+        LinearAlgebra.transposeblock!(f,B,A,newm,n,offseti,offsetj, α, β)
+        LinearAlgebra.transposeblock!(f,B,A,m-newm,n,offseti+newm,offsetj, α, β)
+    else
+        newn=n>>1
+        LinearAlgebra.transposeblock!(f,B,A,m,newn,offseti,offsetj, α, β)
+        LinearAlgebra.transposeblock!(f,B,A,m,n-newn,offseti,offsetj+newn, α, β)
+    end
+    return B
+end
+
+# https://github.com/JuliaGPU/GPUArrays.jl/blob/49a339c63a50f1a00ac84844675bcb3a11070cb0/src/host/linalg.jl#L34C1-L44C4
+LinearAlgebra.transpose!(B::GPUArrays.AbstractGPUArray, A::GPUArrays.AnyGPUMatrix, α::Number, β::Number) = GPUArrays.transpose_f!(transpose, B, A, α, β)
+function GPUArrays.transpose_f!(f, B::GPUArrays.AbstractGPUArray{T}, A::GPUArrays.AnyGPUMatrix{T}, α::Number, β::Number) where T
+    axes(B,1) == axes(A,2) && axes(B,2) == axes(A,1) || throw(DimensionMismatch(string(f)))
+    @kernel function transpose_kernel_αβ!(B, @Const(A), α, β)
+        i, j = @index(Global, Cartesian)
+        @inbounds B[j, i] = α * f(A[i, j]) + β * B[j, i]
+    end
+    transpose_kernel_αβ!(get_backend(B))(B, A, α, β; ndrange = size(A))
     B
 end

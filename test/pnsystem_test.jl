@@ -70,7 +70,7 @@ const PNLazyMatrices = EPMAfem.PNLazyMatrices
 # end
 
 lazy(A) = EPMAfem.lazy(A)
-unlazy(A) = EPMAfem.unlazy(A, zeros)
+unlazy(A; kwargs...) = EPMAfem.unlazy(A, zeros; kwargs...)
 
 cpu_T = Float64
 rand_mat(m, n) = rand(cpu_T, m, n)
@@ -104,6 +104,84 @@ function test_cached_LK_K(LK, K)
     end
     EPMAfem.mul_with!(ws, y, LK, x, true, false)
     @test !(y ≈ K * x)
+end
+
+@testset "default kron" begin
+    for N in (2, rand(3:5))
+        As = [rand_mat(rand(1:5), rand(1:5)) for _ in 1:N]
+        K_ = kron(As...)
+        K = PNLazyMatrices.lazy(kron, lazy.(As)...)
+
+        Ku = unlazy(K)
+
+        x = rand_vec(size(Ku, 2))
+        y = rand_vec(size(Ku, 1))
+        y_ = rand_vec(size(Ku, 1))
+
+        @test Ku * x ≈ K_ * x
+
+        mul!(y_, K_, x)
+        mul!(y, Ku, x)
+        @test y ≈ y_
+
+        y .= rand(size(K, 1))
+        y_ .= y
+
+        α = rand_scal()
+        β = rand_scal()
+
+        mul!(y_, K_, x, α, β)
+        mul!(y, Ku, x, α, β)
+        @test y ≈ y_
+
+        # transpose
+        Kut = transpose(Ku)
+        Kt_ = transpose(K_)
+
+        x = rand(size(Kut, 2))
+        y = rand(size(Kut, 1))
+        y_ = rand(size(Kut, 1))
+
+        @test Kut * x ≈ Kt_ * x
+
+        mul!(y_, Kt_, x)
+        mul!(y, Kut, x)
+        @test y ≈ y_
+
+        y .= rand(size(Kut, 1))
+        y_ .= y
+
+        α = rand_scal()
+        β = rand_scal()
+
+        mul!(y_, Kt_, x, α, β)
+        mul!(y, Kut, x, α, β)
+        @test y ≈ y_
+
+        # # matrix valued:
+        N = rand(2:10)
+        Ku = unlazy(K, n=N)
+
+        X = rand_mat(size(Ku, 2), N)
+        Y = rand_mat(size(Ku, 1), N)
+        Y_ = rand_mat(size(Ku, 1), N)
+
+        @test Ku * X ≈ K_ * X
+
+        mul!(Y_, K_, X)
+        mul!(Y, Ku, X)
+        @test Y ≈ Y_
+
+        Y .= rand(size(K, 1))
+        Y_ .= Y
+
+        α = rand_scal()
+        β = rand_scal()
+
+        mul!(Y_, K_, X, α, β)
+        mul!(Y, Ku, X, α, β)
+        @test Y ≈ Y_
+    end
 end
 
 @testset "materialized A*X*B" begin
