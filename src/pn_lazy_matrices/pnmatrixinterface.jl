@@ -47,8 +47,7 @@ Base.:-(L::AbstractLazyMatrixOrTranspose, A::AbstractMatrix) = lazy(+, unwrap(L)
 Base.:-(L::AbstractLazyMatrixOrTranspose) = lazy(-, unwrap(L))
 
 # damn I implemented a weird version of kron...
-LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = transpose(lazy(kron_AXB, transpose(unwrap(B)), unwrap(A)))
-# lazy(::typeof(kron), A::AbstractMatrix, B::AbstractMatrix) = transpose(lazy(kron, transpose(unwrap(B)), unwrap(A)))
+LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron, unwrap(A), unwrap(B))
 kron_AXB(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron_AXB, unwrap(A), unwrap(B))
 
 # materialize and cache logic
@@ -140,10 +139,6 @@ end
     A
     ws
 end
-
-# notsolazy(A::AbstractLazyMatrix{T}, ws) where T = NotSoLazy{T}(A, ws)
-# notsolazy(a::LazyScalar{T}, ws) where T = NotSoLazyScalar{T}(a, ws)
-# notsolazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws) where T = transpose(NotSoLazy{T}(parent(At), ws))
 
 function unlazy(A::AbstractLazyMatrix{T}, ws_alloc=zeros; n=1) where T
     ws_size = required_workspace(mul_with!, A, n, ())

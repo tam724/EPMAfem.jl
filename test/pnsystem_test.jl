@@ -160,7 +160,6 @@ end
 
         # # matrix valued:
         N = rand(3:10)
-        @show N
         Ku = unlazy(K, n=N)
 
         X = rand_mat(size(Ku, 2), N)

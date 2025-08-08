@@ -27,9 +27,6 @@ function required_workspace(::typeof(mul_with!), S::UnaryMinusMatrix, n, cache_n
     return required_workspace(mul_with!, A(S), n, cache_notifier)
 end
 
-_rmul!(A::AbstractArray, α::Number) = rmul!(A, α)
-_rmul!(A::Diagonal, α::Number) = rmul!(A.diag, α)
-
 materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix) = materialize_with(ws, S, skeleton, true, false)
 function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
     A_mat, _ = materialize_with(ws, A(S), skeleton, α*a(S), β)
@@ -75,33 +72,42 @@ function mul_with!(ws::Workspace, y::AbstractVector, M::TwoProdMatrix, x::Abstra
     mul_with!(rem, y, A(M), WS, α, β)
 end
 
+function _iterate_mul_with(M::TwoProdMatrix)
+    return true
+    # return !(hasmethod(mul_with!, (Workspace, AbstractMatrix, typeof(A(M)), AbstractMatrix, Number, Number)) && 
+        # hasmethod(mul_with!, (Workspace, AbstractMatrix, typeof(B(M)), AbstractMatrix, Number, Number)))
+end
+
+function _iterated_mul_with!(ws::Workspace, Y::AbstractMatrix, M::TwoProdMatrix, X::AbstractMatrix, α::Number, β::Number)
+    WS, rem = take_ws(ws, size(B(M), 1))
+    for j in 1:size(X, 2)
+        mul_with!(rem, WS, B(M), @view(X[:, j]), true, false)
+        mul_with!(rem, @view(Y[:, j]), A(M), WS, α, β)
+    end
+end
+
+function _iterated_mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
+    M = parent(Mt)
+    WS, rem = take_ws(ws, size(B(M), 1))
+    for j in 1:size(X, 2)
+        mul_with!(rem, WS, transpose(A(M)), @view(X[:, j]), true, false)
+        mul_with!(rem, @view(Y[:, j]), transpose(B(M)), WS, α, β)
+    end
+end
+
 function mul_with!(ws::Workspace, Y::AbstractMatrix, M::TwoProdMatrix, X::AbstractMatrix, α::Number, β::Number)
     CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin
-        WS, rem = take_ws(ws, size(B(M), 1))
-        # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-        # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
-
-        # temp, rem = take_ws(rem, max(size(X, 1), size(Y, 1)))
-        for j in 1:size(X, 2)
-            # if Base.iscontiguous(@view(X[:, j]))
-                mul_with!(rem, WS, B(M), @view(X[:, j]), true, false)
-            # else
-            #     @view(temp[1:size(X, 1)]) .= @view(X[:, j])
-            #     mul_with!(rem, WS, B(M), @view(temp[1:size(X, 1)]), true, false)
-            # end
-            # if Base.iscontiguous(@view(Y[:, j]))
-                mul_with!(rem, @view(Y[:, j]), A(M), WS, α, β)
-            # else
-            #     mul_with!(rem, @view(temp[1:size(Y, 1)]), A(M), WS, α, β)
-            #     @view(Y[:, j]) .= @view(temp[1:size(Y, 1)])
-            # end
-        end
+        if _iterate_mul_with(M) return _iterated_mul_with!(ws, Y, M, X, α, β) end
+        
+        WS, rem = take_ws(ws, (size(B(M), 1), size(X, 2)))
+        mul_with!(rem, WS, B(M), X, true, false)
+        mul_with!(rem, Y, A(M), WS, α, β)
     end
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, Mt::Transpose{T, <:TwoProdMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
     M = parent(Mt)
-    WS, rem = take_ws(ws, size(B(M), 1)) # == size(A(M), 2)
+    WS, rem = take_ws(ws, size(B(M), 1))
     mul_with!(rem, WS, transpose(A(M)), x, true, false)
     mul_with!(rem, y, transpose(B(M)), WS, α, β)
 end
@@ -109,34 +115,20 @@ end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
     CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin
         M = parent(Mt)
-        WS, rem = take_ws(ws, size(B(M), 1)) # == size(A(M), 2)
-        # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-        # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
-        # temp, rem = take_ws(rem, max(size(X, 1), size(Y, 1)))
-        for j in 1:size(X, 2)
-            # if Base.iscontiguous(@view(X[:, j]))
-                mul_with!(rem, WS, transpose(A(M)), @view(X[:, j]), true, false)
-            # else
-            #     copyto!(@view(temp[1:size(X, 1)]), @view(X[:, j]))
-            #     mul_with!(rem, WS, transpose(A(M)), @view(temp[1:size(X, 1)]), true, false)
-            # end
-            # if Base.iscontiguous(@view(Y[:, j]))
-                mul_with!(rem, @view(Y[:, j]), transpose(B(M)), WS, α, β)
-            # else
-            #     mul_with!(rem, @view(temp[1:size(Y, 1)]), transpose(B(M)), WS, α, β)
-            #     copyto!(@view(Y[:, j]), @view(temp[1:size(Y, 1)]))
-            # end
-        end
+        if _iterate_mul_with(M) return _iterated_mul_with!(ws, Y, Mt, X, α, β) end
+
+        WS, rem = take_ws(ws, (size(B(M), 1), size(X, 2)))
+        mul_with!(rem, WS, transpose(A(M)), X, true, false)
+        mul_with!(rem, Y, transpose(B(M)), WS, α, β)
     end
 end
 
-# assuming a vector input (matrix input is simply looped, TODO: maybe introduce threaded ? )
 function required_workspace(::typeof(mul_with!), M::TwoProdMatrix, n, cache_notifier)
-    @assert n == 1
-    return max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), n, cache_notifier), required_workspace(mul_with!, A(M), n, cache_notifier))
-
-    # this feels unneccesary, we allocate more space to potentially copy the array inputs, to have contiguous memory in the loops
-    # return size(B(M), 1) + max(size(A(M), 1), size(B(M), 2)) + max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
+    if _iterate_mul_with(M)
+        return max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), 1, cache_notifier), required_workspace(mul_with!, A(M), 1, cache_notifier))
+    else
+        return n * max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), n, cache_notifier), required_workspace(mul_with!, A(M), n, cache_notifier))
+    end
 end
 
 materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix) = materialize_with(ws, M, skeleton, true, false)
@@ -270,9 +262,9 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:ProdMatr
 end
 
 function required_workspace(::typeof(mul_with!), M::ProdMatrix, n, cache_notifier)
-    @assert n == 1
+    #TODO this is currently an endpoint for batched mul, since we iterate in prodmatrix
     my_ws = maximum(A -> max_size(A, 2), As(M)) # we could skip the last here
-    int_ws = maximum(A -> required_workspace(mul_with!, A, n, cache_notifier), As(M))
+    int_ws = maximum(A -> required_workspace(mul_with!, A, 1, cache_notifier), As(M))
     return 2*my_ws + int_ws
 end
 
