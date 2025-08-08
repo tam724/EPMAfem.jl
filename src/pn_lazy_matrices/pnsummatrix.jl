@@ -54,9 +54,6 @@ required_workspace(::typeof(mul_with!), S::SumMatrix, cache_notifier) = maximum(
 _fillzero!(A::AbstractArray) = fill!(A, zero(eltype(A)))
 _fillzero!(D::Diagonal) = fill!(D.diag, zero(eltype(D)))
 
-_add!(A::AbstractArray, B::AbstractArray) = axpy!(true, B, A)
-_add!(A::Diagonal, B::Diagonal) = axpy!(true, B.diag, A.diag)
-
 materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix) = materialize_with(ws, S, skeleton, true, false)
 function materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
     A_mat, _ = materialize_with(ws, first(As(S)), skeleton, α, β)
