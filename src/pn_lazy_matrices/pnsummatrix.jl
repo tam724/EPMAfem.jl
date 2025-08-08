@@ -49,7 +49,7 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Tran
         end
     end
 end
-required_workspace(::typeof(mul_with!), S::SumMatrix, cache_notifier) = maximum(required_workspace(mul_with!, A, cache_notifier) for A in As(S))
+required_workspace(::typeof(mul_with!), S::SumMatrix, n, cache_notifier) = maximum(required_workspace(mul_with!, A, n, cache_notifier) for A in As(S))
 
 _fillzero!(A::AbstractArray) = fill!(A, zero(eltype(A)))
 _fillzero!(D::Diagonal) = fill!(D.diag, zero(eltype(D)))

@@ -37,7 +37,7 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Tran
     materialized_Mt, _ = materialize_with(ws, parent(Mt))
     mul_with!(nothing, Y, X, transpose(materialized_Mt), α, β)
 end
-required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix, cache_notifier) = required_workspace(materialize_with, M, cache_notifier)
+required_workspace(::typeof(mul_with!), M::MaterializedOrCachedMatrix, n, cache_notifier) = required_workspace(materialize_with, M, cache_notifier)
 
 # the materialize_with is different for MaterializeMatrix and CachedMatrix though...
 ##### MaterializedMatrix
@@ -130,7 +130,8 @@ function _required_workspace(::typeof(materialize_with), M::MMaterializedMatrix,
     return required_workspace(materialize_with, A(M), cache_notifier)
 end
 function _required_workspace(::typeof(materialize_with), M::XMaterializedMatrix, cache_notifier)
-    return required_workspace(mul_with!, A(M), cache_notifier) + sum(max_size(A(M))) # because we cannot directly write into the memory for A
+    # TODO: generalize n = 1 to size(M) by multyplying with I
+    return required_workspace(mul_with!, A(M), 1, cache_notifier) + sum(max_size(A(M))) # because we cannot directly write into the memory for A
 end
 
 ##### CachedMatrix

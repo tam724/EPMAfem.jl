@@ -82,8 +82,9 @@ LinearAlgebra.transpose(A::AbstractLazyMatrix) = isdiagonal(A) ? A : Transpose(A
 mul_with!(::Workspace, Y::AbstractVecOrMat, A::AbstractLazyMatrix, X::AbstractVecOrMat, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
 mul_with!(::Workspace, Y::AbstractMatrix, A::AbstractMatrix, X::AbstractLazyMatrix, ::Number, ::Number) = error("mul_with!(::Workspace, ::$(typeof(Y)), ::$(typeof(A)), ::$(typeof(X)), ...) should be defined")
 # this function should return the workspace size that is needed to mul_with! the AbstractLazyMatrix
-required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix, cache_notifier) = error("should be defined: $(typeof(L))")
-required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}, cache_notifier) where T = required_workspace(mul_with!, parent(Lt), cache_notifier)
+required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix, n, cache_notifier) = error("should be defined: $(typeof(L))")
+required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix, cache_notifier) = required_workspace(mul_with!, L, 1, cache_notifier) # TODO: remove usage, deprecated
+required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}, n, cache_notifier) where T = required_workspace(mul_with!, parent(Lt), n, cache_notifier)
 
 # returns the matrix in materialized form (if provided, uses skeleton::AbstractMatrix to materialize AND if provided αβs to skeleton)
 materialize_with(::Workspace, ::AbstractLazyMatrix) = error("should be defined")
@@ -135,7 +136,7 @@ function mul_with!(::Union{Workspace, Nothing}, Y::AbstractVecOrMat, A::Abstract
     end
 end
 
-required_workspace(::typeof(mul_with!), A::AbstractMatrix, cache_notifier) = 0 # TODO: see below
+required_workspace(::typeof(mul_with!), A::AbstractMatrix, n, cache_notifier) = 0 # TODO: see below
 
 materialize_with(ws::Workspace, A::AbstractMatrix) = A, ws
 function materialize_with(ws::Workspace, A::AbstractMatrix, skeleton::AbstractMatrix)

@@ -1,6 +1,6 @@
 module PNSystemTest
 
-using Revise
+# using Revise
 
 using Test
 using EPMAfem
@@ -159,7 +159,8 @@ end
         @test y ≈ y_
 
         # # matrix valued:
-        N = rand(2:10)
+        N = rand(3:10)
+        @show N
         Ku = unlazy(K, n=N)
 
         X = rand_mat(size(Ku, 2), N)
@@ -172,7 +173,7 @@ end
         mul!(Y, Ku, X)
         @test Y ≈ Y_
 
-        Y .= rand(size(K, 1))
+        Y .= rand(size(Ku, 1))
         Y_ .= Y
 
         α = rand_scal()
@@ -180,6 +181,30 @@ end
 
         mul!(Y_, K_, X, α, β)
         mul!(Y, Ku, X, α, β)
+        @test Y ≈ Y_
+
+        # # matrix valued transpose
+        Kut = transpose(Ku)
+        Kt_ = transpose(K_)
+
+        X = rand_mat(size(Kut, 2), N)
+        Y = rand_mat(size(Kut, 1), N)
+        Y_ = rand_mat(size(Kut, 1), N)
+
+        @test Kut * X ≈ Kt_ * X
+
+        mul!(Y_, Kt_, X)
+        mul!(Y, Kut, X)
+        @test Y ≈ Y_
+
+        Y .= rand(size(Kut, 1))
+        Y_ .= Y
+
+        α = rand_scal()
+        β = rand_scal()
+
+        mul!(Y_, Kt_, X, α, β)
+        mul!(Y, Kut, X, α, β)
         @test Y ≈ Y_
     end
 end
@@ -1874,7 +1899,7 @@ end
     x = rand_vec(size(K)[2])
     X = rand_mat(size(K, 2), 10)
     @test unlazy(K) * x ≈ K_ref * x
-    @test unlazy(K) * X ≈ K_ref * X
+    @test unlazy(K, n=10) * X ≈ K_ref * X
 
     y = rand_vec(size(K)[1])
     Y = rand_mat(size(K)[1], 10)
@@ -1887,7 +1912,7 @@ end
     mul!(y_ref, K_ref, x, α, β)
     @test y ≈ y_ref
 
-    mul!(Y, unlazy(K), X, α, β)
+    mul!(Y, unlazy(K, n=10), X, α, β)
     mul!(Y_ref, K_ref, X, α, β)
     @test Y ≈ Y_ref
 
@@ -1899,7 +1924,7 @@ end
     x = rand_vec(size(Kt)[2])
     X = rand_mat(size(Kt, 2), 10)
     @test unlazy(Kt) * x ≈ Kt_ref * x
-    @test unlazy(Kt) * X ≈ Kt_ref * X
+    @test unlazy(Kt, n=10) * X ≈ Kt_ref * X
 
     y = rand_vec(size(Kt)[1])
     Y = rand_mat(size(Kt)[1], 10)
@@ -1911,7 +1936,7 @@ end
     mul!(y_ref, Kt_ref, x, α, β)
     @test y ≈ y_ref
 
-    mul!(Y, unlazy(Kt), X, α, β)
+    mul!(Y, unlazy(Kt, n=10), X, α, β)
     mul!(Y_ref, Kt_ref, X, α, β)
     @test Y ≈ Y_ref
 

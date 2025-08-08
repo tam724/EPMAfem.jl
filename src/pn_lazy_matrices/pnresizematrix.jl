@@ -51,7 +51,7 @@ mul_with!(::Workspace, Y::AbstractVecOrMat, S::LazyResizeMatrix, X::AbstractVecO
 mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::LazyResizeMatrix, α::Number, β::Number) = mul_with!(nothing, Y, X, A(S), α, β)
 mul_with!(::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:LazyResizeMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul_with!(nothing, Y, transpose(A(parent(St))), X, α, β)
 mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:LazyResizeMatrix{T}}, α::Number, β::Number) where T = mul_with!(nothing, Y, X, transpose(A(parent(St))), α, β)
-function required_workspace(::typeof(mul_with!), S::LazyResizeMatrix, cache_notifier)
+function required_workspace(::typeof(mul_with!), S::LazyResizeMatrix, n, cache_notifier)
     return 0 + register_cache_notifier(S, cache_notifier)
 end
 

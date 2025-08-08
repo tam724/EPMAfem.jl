@@ -152,7 +152,8 @@ has_batched_mul!(A) = false
 # strategy AX_B: B: (mA, mB), A: (nA, mB)
 # strategy AX_B: B: (mA, nB), A: (mA, mB)
 
-function required_workspace(::typeof(mul_with!), K::KronAXBMatrix, cache_notifier)
+function required_workspace(::typeof(mul_with!), K::KronAXBMatrix, n, cache_notifier)
+    @assert n == 1
     mA, nA = max_size(A(K))
     mB, nB = max_size(B(K))
 
@@ -167,7 +168,7 @@ function required_workspace(::typeof(mul_with!), K::KronAXBMatrix, cache_notifie
         size_B = (mA, max(nB, mB))
     end
 
-    return inner_ws + max(required_workspace(mul_with!, A(K), cache_notifier), required_workspace(mul_with!, B(K), cache_notifier))
+    return inner_ws + max(required_workspace(mul_with!, A(K), n, cache_notifier), required_workspace(mul_with!, B(K), n, cache_notifier))
 end
 
 # function required_workspace(::typeof(mul_with!), K::KronMatrix, (mx, nx))
@@ -228,6 +229,7 @@ end
 ## more general kron matrix
 const KronMatrix{T} = LazyOpMatrix{T, typeof(kron), <:Tuple{Vararg{<:AbstractMatrix{T}}}}
 @inline As(K::KronMatrix) = K.args
+@inline As(Kt::Transpose{T, <:KronMatrix{T}}) where T = map(transpose, parent(Kt).args)
 Base.size(K::KronMatrix) = (prod(A -> size(A, 1), As(K)), prod(A -> size(A, 2), As(K)))
 max_size(K::KronMatrix) = (prod(A -> max_size(A, 1), As(K)), prod(A -> max_size(A, 2), As(K)))
 function lazy_getindex(K::KronMatrix{T}, i::Integer, j::Integer) where T
@@ -250,7 +252,7 @@ isdiagonal(K::KronMatrix) = all(isdiagonal, As(K))
 
 _r_view(A::AbstractArray, n...) = reshape(@view(A[1:prod(n)]), n...)
 
-function mul_with!(ws::Workspace, y::AbstractVector, K::KronMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, K::Union{KronMatrix, Transpose{T, <:KronMatrix{T}}}, x::AbstractVector, α::Number, β::Number) where T
     mx = map(A -> size(A, 1), As(K))
     nx = map(A -> size(A, 2), As(K))
     max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
@@ -281,7 +283,8 @@ function mul_with!(ws::Workspace, y::AbstractVector, K::KronMatrix, x::AbstractV
     mul_with!(rem, yi, transpose(xi), Aiᵀ, α, β)
 end
 
-function mul_with!(ws::Workspace, y::AbstractMatrix, K::KronMatrix, x::AbstractMatrix, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractMatrix, K::Union{KronMatrix, <:Transpose{T, <:KronMatrix{T}}}, x::AbstractMatrix, α::Number, β::Number) where T
+    if size(x, 2) == 1 return mul_with!(ws, vec(y), K, vec(x), α, β) end
     mx = map(A -> size(A, 1), As(K))
     nx = map(A -> size(A, 2), As(K))
     max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
@@ -308,47 +311,46 @@ function mul_with!(ws::Workspace, y::AbstractMatrix, K::KronMatrix, x::AbstractM
     return y
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KronMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-    K = parent(Kt)
-    nx = map(A -> size(A, 1), As(K))
-
-    buffer1, rem = take_ws(ws, max(size(K)...))
-
-    xi = reshape(x, last(nx), :)
-    Ai = last(As(K))
-    yi = _r_view(buffer1, size(xi, 2), size(Ai, 2))
-    mul_with!(rem, yi, transpose(xi), Ai, true, false)
-
-    if length(As(K)) > 2
-        buffer2, rem = take_ws(rem, max(size(K)...))
-
-        for i in length(As(K))-1:-1:2
-
-            xi = reshape(yi, nx[i], :)
-            Ai = As(K)[i]
-            yi = _r_view(buffer2, size(xi, 2), size(Ai, 2))
-            mul_with!(rem, yi, transpose(xi), Ai, true, false)
-
-            buffer1, buffer2 = buffer2, buffer1
-        end
-    end
-
-    xi = reshape(yi, nx[1], :)
-    Ai = first(As(K))
-    yi = _r_view(y, size(xi, 2), size(Ai, 2))
-    mul_with!(rem, yi, transpose(xi), Ai, α, β)
-end
-
-required_workspace(::typeof(mul_with!), K::KronMatrix, cache_notifier) = required_workspace(mul_with!, K, 1, cache_notifier)
-
 function required_workspace(::typeof(mul_with!), K::KronMatrix, n::Integer, cache_notifier)
     mx = map(A -> size(A, 1), As(K))
     nx = map(A -> size(A, 2), As(K))
     max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
+    batch_dim = map(i -> max(prod(mx[k] for k in 1:length(mx) if k != i), prod(nx[k] for k in 1:length(mx) if k != i)), 1:length(mx))
     ws_size = max_x*n
     if length(As(K)) > 2 || n != 1
-        return 2 * ws_size + maximum(required_workspace(mul_with!, transpose(A), cache_notifier) for A in As(K))
+        return 2 * ws_size + maximum(required_workspace(mul_with!, transpose(A), batch_dim[i], cache_notifier) for (i, A) in enumerate(As(K)))
     else
-        return ws_size + maximum(required_workspace(mul_with!, transpose(A), cache_notifier) for A in As(K))
+        return ws_size + maximum(required_workspace(mul_with!, transpose(A), batch_dim[i], cache_notifier) for (i, A) in enumerate(As(K)))
     end
+end
+
+function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix)
+    @assert length(As(K)) == 2
+    A_ = materialize(As(K)[1])
+    B_ = materialize(As(K)[2])
+
+    A_mat, rem_ = materialize_with(ws, A_)
+    B_mat, _ = materialize_with(rem_, B_)
+    
+    kron!(skeleton, A_mat, B_mat)
+    return skeleton, ws
+end
+
+function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    @assert length(As(K)) == 2
+    A_ = materialize(As(K)[1])
+    B_ = materialize(As(K)[2])
+    
+    A_mat, rem_ = materialize_with(ws, A_)
+    B_mat, _ = materialize_with(rem_, B_)
+    
+    kron!(skeleton, A_mat, B_mat, α, β)
+    return skeleton, ws
+end
+
+function required_workspace(::typeof(materialize_with), K::KronMatrix, cache_notifier)
+    @assert length(As(K)) == 2
+    A_ = materialize(As(K)[1])
+    B_ = materialize(As(K)[2])
+    return required_workspace(materialize_with, A_, cache_notifier) + required_workspace(materialize_with, B_, cache_notifier)
 end

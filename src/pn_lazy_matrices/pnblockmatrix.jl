@@ -85,7 +85,10 @@ function mul_with!(ws::Workspace, y::AbstractVector, BMt::Transpose{T, <:BlockMa
     mul_with!(ws, y2, transpose(D(parent(BMt))), x2, α, true)
 end
 
-required_workspace(::typeof(mul_with!), BM::BlockMatrix, cache_notifier) = maximum(required_workspace(mul_with!, A_, cache_notifier) for A_ in (A(BM), B(BM), C(BM), D(BM)))
+function required_workspace(::typeof(mul_with!), BM::BlockMatrix, n, cache_notifier)
+    @assert n == 1
+    return maximum(required_workspace(mul_with!, A_, n, cache_notifier) for A_ in (A(BM), B(BM), C(BM), D(BM)))
+end
 
 materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatrix) = materialize_with(ws, BM, skeleton, true, false)
 function materialize_with(ws::Workspace, BM::BlockMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
@@ -122,7 +125,7 @@ function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:Inplac
     ldiv!(Y, transpose(A_mat), X)
 end
 
-required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix, cache_notifier) = required_workspace(materialize_with, M(I), cache_notifier)
+required_workspace(::typeof(mul_with!), I::InplaceInverseMatrix, n, cache_notifier) = required_workspace(materialize_with, M(I), cache_notifier)
 
 function materialize_with(ws::Workspace, I::InplaceInverseMatrix, skeleton::AbstractMatrix)
     CUDA.NVTX.@range "materialize inv" begin

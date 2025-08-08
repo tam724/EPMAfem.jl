@@ -20,11 +20,11 @@ mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMa
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
 mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul_with!(ws, Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
-function required_workspace(::typeof(mul_with!), S::ScaleMatrix, cache_notifier)
-    return register_cache_notifier(_a(S), cache_notifier) + required_workspace(mul_with!, A(S), cache_notifier)
+function required_workspace(::typeof(mul_with!), S::ScaleMatrix, n, cache_notifier)
+    return register_cache_notifier(_a(S), cache_notifier) + required_workspace(mul_with!, A(S), n, cache_notifier)
 end
-function required_workspace(::typeof(mul_with!), S::UnaryMinusMatrix, cache_notifier)
-    return required_workspace(mul_with!, A(S), cache_notifier)
+function required_workspace(::typeof(mul_with!), S::UnaryMinusMatrix, n, cache_notifier)
+    return required_workspace(mul_with!, A(S), n, cache_notifier)
 end
 
 _rmul!(A::AbstractArray, α::Number) = rmul!(A, α)
@@ -131,8 +131,9 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdM
 end
 
 # assuming a vector input (matrix input is simply looped, TODO: maybe introduce threaded ? )
-function required_workspace(::typeof(mul_with!), M::TwoProdMatrix, cache_notifier)
-    return max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), cache_notifier), required_workspace(mul_with!, A(M), cache_notifier))
+function required_workspace(::typeof(mul_with!), M::TwoProdMatrix, n, cache_notifier)
+    @assert n == 1
+    return max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), n, cache_notifier), required_workspace(mul_with!, A(M), n, cache_notifier))
 
     # this feels unneccesary, we allocate more space to potentially copy the array inputs, to have contiguous memory in the loops
     # return size(B(M), 1) + max(size(A(M), 1), size(B(M), 2)) + max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
@@ -268,9 +269,10 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:ProdMatr
     end
 end
 
-function required_workspace(::typeof(mul_with!), M::ProdMatrix, cache_notifier)
+function required_workspace(::typeof(mul_with!), M::ProdMatrix, n, cache_notifier)
+    @assert n == 1
     my_ws = maximum(A -> max_size(A, 2), As(M)) # we could skip the last here
-    int_ws = maximum(A -> required_workspace(mul_with!, A, cache_notifier), As(M))
+    int_ws = maximum(A -> required_workspace(mul_with!, A, n, cache_notifier), As(M))
     return 2*my_ws + int_ws
 end
 
