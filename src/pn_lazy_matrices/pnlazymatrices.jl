@@ -7,9 +7,10 @@ using ConcreteStructs
 using Krylov
 
 include("pnmatrices.jl")
+include("pnlazymatrix.jl")
 include("pnscalar.jl")
 include("pnresizematrix.jl")
-# include("pntransposematrix.jl")
+include("pntransposematrix.jl")
 include("pnkronmatrix.jl")
 include("pnsummatrix.jl")
 include("pnprodmatrix.jl")

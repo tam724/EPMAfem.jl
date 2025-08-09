@@ -47,14 +47,14 @@ function materialize_with(ws::Workspace, M::MaterializedMatrix)
 end
 function materialize_with(ws::Workspace, M::BMaterializedMatrix, skeleton::AbstractMatrix; warn=true)
     if warn @warn "Materializing a materialized matrix" end
-    bcd_, _ = materialize_broadcasted(ws, A(M))
+    bcd_, _ = materialize_broadcasted(ws, A(M), false)
     bcd = Base.Broadcast.instantiate(bcd_)
     M_ = Base.Broadcast.materialize!(skeleton, bcd)
     return M_, ws
 end
 function materialize_with(ws::Workspace, M::BMaterializedMatrix, skeleton::AbstractMatrix, α::Number, β::Number; warn=true)
     if warn @warn "Materializing a materialized matrix" end
-    bcd_, _ = materialize_broadcasted(ws, A(M))
+    bcd_, _ = materialize_broadcasted(ws, A(M), false)
     bcd_αβ = Base.Broadcast.broadcasted(+, Base.Broadcast.broadcasted(*, α, bcd_), Base.Broadcast.broadcasted(*, β, skeleton))
     bcd = Base.Broadcast.instantiate(bcd_αβ)
     M_ = Base.Broadcast.materialize!(skeleton, bcd)
@@ -171,30 +171,40 @@ function required_workspace(::typeof(materialize_with), C::CachedMatrix, cache_n
     return cache_ws + _required_workspace(materialize_with, M(C), (cache_notifier..., valid))
 end
 
+# transpose simplification
+
+
 # broadcast materialize logic
 # generally opt out of broadcasting materialize..
-should_broadcast_materialize(::AbstractLazyMatrixOrTranspose) = false
+should_broadcast_materialize(::AbstractLazyMatrix) = false
 
-should_broadcast_materialize(::AbstractMatrix) = true
-materialize_broadcasted(ws::Workspace, A::AbstractMatrix) = A, ws
+should_broadcast_materialize(::LazyMatrix) = true
+should_broadcast_materialize(::Transpose{T, <:LazyMatrix}) where T = true
+materialize_broadcasted(ws::Workspace, L::LazyMatrix, trans::Bool) = trans ? (transpose(A(L)), ws) : (A(L), ws)
+
+should_broadcast_materialize(Lt::Transpose{T, <:AbstractLazyMatrix}) where T = should_broadcast_materialize(parent(Lt))
+materialize_broadcasted(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix}, trans::Bool) where T = materialize_broadcasted(ws, parent(Lt), !trans)
+
+# should_broadcast_materialize(::AbstractMatrix) = true
+# materialize_broadcasted(ws::Workspace, A::AbstractMatrix) = A, ws
 
 should_broadcast_materialize(S::ScaleMatrix) = should_broadcast_materialize(A(S))
-function materialize_broadcasted(ws::Workspace, S::ScaleMatrix)
-    A_bcd, rem = materialize_broadcasted(ws, A(S))
+function materialize_broadcasted(ws::Workspace, S::ScaleMatrix, trans::Bool)
+    A_bcd, rem = materialize_broadcasted(ws, A(S), trans)
     return Base.Broadcast.broadcasted(*, a(S), A_bcd), rem
 end
 
 should_broadcast_materialize(::LazyResizeMatrix) = true
-materialize_broadcasted(ws::Workspace, R::LazyResizeMatrix) = _reshape_view(R), ws
+materialize_broadcasted(ws::Workspace, R::LazyResizeMatrix, trans::Bool) = trans ? (transpose(_reshape_view(R)), ws) : (_reshape_view(R), ws)
 
 should_broadcast_materialize(S::SumMatrix) = all(should_broadcast_materialize, As(S))
-materialize_broadcasted(ws::Workspace, S::SumMatrix) = Base.Broadcast.broadcasted(+, first.(materialize_broadcasted.(Ref(ws), As(S)))...), ws
+materialize_broadcasted(ws::Workspace, S::SumMatrix, trans::Bool) = Base.Broadcast.broadcasted(+, first.(materialize_broadcasted.(Ref(ws), As(S), Ref(trans)))...), ws
 
 should_broadcast_materialize(::CachedMatrix) = true
-materialize_broadcasted(ws::Workspace, C::CachedMatrix) = first(materialize_with(ws, C)), ws
+materialize_broadcasted(ws::Workspace, C::CachedMatrix, trans::Bool) = trans ? (transpose(first(materialize_with(ws, C))), ws) : (first(materialize_with(ws, C)), ws)
 
 should_broadcast_materialize(M::MaterializedMatrix) = should_broadcast_materialize(A(M))
-function materialize_broadcasted(ws::Workspace, M::MaterializedMatrix)
+function materialize_broadcasted(ws::Workspace, M::MaterializedMatrix, trans::Bool)
     @assert should_broadcast_materialize(A(M))
-    return materialize_broadcasted(ws, A(M))
+    return materialize_broadcasted(ws, A(M), trans)
 end

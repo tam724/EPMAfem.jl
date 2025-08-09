@@ -136,7 +136,7 @@ materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix) = ma
 function materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
     A_mat, rem = materialize_with(ws, materialize(A(M)))
     B_mat, _ = materialize_with(rem, materialize(B(M)))
-    mul_with!(nothing, skeleton, A_mat, B_mat, α, β)
+    mul!(skeleton, A_mat, B_mat, α, β)
     return skeleton, ws
 end
 
@@ -289,7 +289,7 @@ function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix
     A₁, _ = materialize_with(rem_, materialize(As(M)[1]))
 
     # the final result is always T1
-    mul_with!(nothing, skeleton, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)), α, β)
+    mul_with!(nothing, skeleton, lazy(A₁), mat_view(T1, size(A₁, 2), size(Aₙ, 2)), α, β)
     return skeleton, ws
 end
 

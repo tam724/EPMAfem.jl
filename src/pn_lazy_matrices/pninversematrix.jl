@@ -194,8 +194,7 @@ end
 
 # this is a weird one.. (we implement the interface here..)
 function half_schur_complement(BM::BlockMatrix, solver, fast_solver)
-    # TODO: HACK, remove once implemented Lazy as native matrix type
-    A, B, C, D = lazy.(blocks(BM))
+    A, B, C, D = blocks(BM)
     D⁻¹ = fast_solver(D)
     inv_AmBD⁻¹C = solver(A - B * D⁻¹ * C)
     return lazy(half_schur_complement, inv_AmBD⁻¹C, B, C, D⁻¹)

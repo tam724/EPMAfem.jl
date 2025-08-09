@@ -1,6 +1,6 @@
 module PNSystemTest
 
-# using Revise
+using Revise
 
 using Test
 using EPMAfem
@@ -104,6 +104,71 @@ function test_cached_LK_K(LK, K)
     end
     EPMAfem.mul_with!(ws, y, LK, x, true, false)
     @test !(y ≈ K * x)
+end
+
+function unlazy_materialize(A)
+    req_ws = PNLazyMatrices.required_workspace(PNLazyMatrices.materialize_with, PNLazyMatrices.materialize(A), ())
+    ws = PNLazyMatrices.create_workspace(req_ws, zeros)
+    return PNLazyMatrices.materialize_with(ws, A)[1]
+end
+
+@testset "broadcast_materialize" begin
+    A_ = rand(2, 2)
+    B_ = rand(2, 2)
+    C_ = rand(2, 2)
+    D_ = rand(2, 2)
+    E_ = Diagonal(rand(2))
+    F_ = rand(2, 1)
+    G_ = rand(2, 1)
+
+    A, B, C, D, E, F, G = lazy.((A_, B_, C_, D_, E_, F_, G_))
+
+    MM = PNLazyMatrices.materialize(A + 1.0 * transpose(B))
+    @test MM isa PNLazyMatrices.BMaterializedMatrix
+    M = unlazy_materialize(MM)
+    @test M ≈ A_ + 1.0 * transpose(B_)
+
+    MM = PNLazyMatrices.materialize(A + transpose(2.0 * B))
+    @test MM isa PNLazyMatrices.BMaterializedMatrix
+    M = unlazy_materialize(MM)
+    @test M ≈ A_ + 2.0 * transpose(B_)
+
+    MM = PNLazyMatrices.materialize(A + transpose(2.0 * B) + E)
+    @test MM isa PNLazyMatrices.BMaterializedMatrix
+    M = unlazy_materialize(MM)
+    @test M ≈ A_ + 2.0 * transpose(B_) + E_
+
+    MM = PNLazyMatrices.materialize(A + transpose(2.0 * B + C) + E)
+    @test MM isa PNLazyMatrices.BMaterializedMatrix
+    M = unlazy_materialize(MM)
+    @test M ≈ A_ + transpose(2.0 * B_ + C_) + E_
+
+    MM = PNLazyMatrices.materialize(A + transpose(2.0 * B + C) + transpose(E + transpose(D)))
+    @test MM isa PNLazyMatrices.BMaterializedMatrix
+    M = unlazy_materialize(MM)
+    @test M ≈ A_ + transpose(2.0 * B_ + C_) + transpose(E_ + transpose(D_))
+
+    MM = PNLazyMatrices.materialize(A + kron(F, transpose(G)) + E)
+    @test !(MM isa PNLazyMatrices.BMaterializedMatrix)
+    MM = PNLazyMatrices.materialize(A + PNLazyMatrices.cache(kron(F, transpose(G))) + E)
+    @test MM isa PNLazyMatrices.BMaterializedMatrix
+    M = unlazy_materialize(MM)
+    @test M ≈ A_ + kron(F_, transpose(G_)) + E_
+
+    MM = PNLazyMatrices.materialize(A + transpose(PNLazyMatrices.cache(kron(F, transpose(G)))) + E)
+    @test MM isa PNLazyMatrices.BMaterializedMatrix
+    M = unlazy_materialize(MM)
+    @test M ≈ A_ + transpose(kron(F_, transpose(G_))) + E_
+
+    A_ = Diagonal(rand(4))
+    B_ = Diagonal(rand(2))
+    C_ = Diagonal(rand(2))
+
+    A, B, C = lazy.((A_, B_, C_))
+    MM = PNLazyMatrices.materialize(transpose(transpose(A) + transpose(PNLazyMatrices.cache(kron(B, C)))))
+    @test MM isa PNLazyMatrices.BMaterializedMatrix
+    M = unlazy_materialize(MM)
+    @test M ≈ transpose(transpose(A_) + transpose(kron(B_, C_)))
 end
 
 @testset "default kron" begin
@@ -1701,7 +1766,7 @@ end
     b = rand_mat(10, 15)
     c = rand_mat(15, 15)
 
-    B = EPMAfem.lazy(EPMAfem.blockmatrix, a, b, transpose(b), c)
+    B = EPMAfem.lazy(EPMAfem.blockmatrix, lazy(a), lazy(b), transpose(lazy(b)), lazy(c))
     B_ref = [
         a b
         transpose(b) c
@@ -1720,13 +1785,13 @@ end
 
 # stich KronMatrix and BlockMatrix together
 @testset "KronMatrix + BlockMatrix" begin
-    KA = EPMAfem.lazy(EPMAfem.kron_AXB, rand_mat(10, 10), rand_mat(11, 11))
+    KA = EPMAfem.lazy(EPMAfem.kron_AXB, lazy(rand_mat(10, 10)), lazy(rand_mat(11, 11)))
     KA_ref = do_materialize(KA)
 
-    KB = EPMAfem.lazy(EPMAfem.kron_AXB, rand_mat(10, 9), rand_mat(12, 11))
+    KB = EPMAfem.lazy(EPMAfem.kron_AXB, lazy(rand_mat(10, 9)), lazy(rand_mat(12, 11)))
     KB_ref = do_materialize(KB)
 
-    KC = EPMAfem.lazy(EPMAfem.kron_AXB, rand_mat(9, 9), rand_mat(12, 12))
+    KC = EPMAfem.lazy(EPMAfem.kron_AXB, lazy(rand_mat(9, 9)), lazy(rand_mat(12, 12)))
     KC_ref = do_materialize(KC)
 
     B = EPMAfem.blockmatrix(KA, KB, transpose(KB), KC)
@@ -1742,9 +1807,9 @@ end
 
 # stich KronMatrix and SumMatrix together
 @testset "KronMatrix + SumMatrix" begin
-    K1 = EPMAfem.lazy(kron, rand_mat(10, 11), rand_mat(12, 13))
+    K1 = EPMAfem.lazy(kron, lazy(rand_mat(10, 11)), lazy(rand_mat(12, 13)))
     K1_ref = do_materialize(K1)
-    K2 = EPMAfem.lazy(kron, rand_mat(10, 11), rand_mat(12, 13))
+    K2 = EPMAfem.lazy(kron, lazy(rand_mat(10, 11)), lazy(rand_mat(12, 13)))
     K2_ref = do_materialize(K2)
 
     S1 = EPMAfem.lazy(+, K1, K2)
@@ -1759,10 +1824,10 @@ end
     @test transpose(S1_ref) * x ≈ unlazy(S1t) * x
 
     # stich the two together
-    S1 = EPMAfem.lazy(+, rand_mat(10, 11), rand_mat(10, 11))
+    S1 = EPMAfem.lazy(+, lazy(rand_mat(10, 11)), lazy(rand_mat(10, 11)))
     S1_ref = do_materialize(S1)
 
-    S2 = EPMAfem.lazy(+, rand_mat(12, 13), rand_mat(12, 13))
+    S2 = EPMAfem.lazy(+, lazy(rand_mat(12, 13)), lazy(rand_mat(12, 13)))
     S2_ref = do_materialize(S2)
 
     K1 = EPMAfem.lazy(kron, S1, S2)
@@ -1772,10 +1837,10 @@ end
     x = rand_vec(size(K1, 2))
     @test unlazy(K1)*x ≈ K1_ref*x
 
-    S3 = EPMAfem.lazy(+, rand_mat(10, 11), rand_mat(10, 11))
+    S3 = EPMAfem.lazy(+, lazy(rand_mat(10, 11)), lazy(rand_mat(10, 11)))
     S3_ref = do_materialize(S3)
 
-    S4 = EPMAfem.lazy(+, rand_mat(12, 13), rand_mat(12, 13))
+    S4 = EPMAfem.lazy(+, lazy(rand_mat(12, 13)), lazy(rand_mat(12, 13)))
     S4_ref = do_materialize(S4)
 
     K2 = EPMAfem.lazy(kron, S3, S4)
@@ -1840,8 +1905,8 @@ end
     A1 = rand_mat(10, 11)
     A2 = rand_mat(10, 11)
     A3 = rand_mat(10, 11)
-    S = PNLazyMatrices.LazyOpMatrix{eltype(A1)}(+, [A1, A2, A3])
-    S_tuple = EPMAfem.lazy(+, A1, A2, A3)
+    S = PNLazyMatrices.LazyOpMatrix{eltype(A1)}(+, [lazy(A1), lazy(A2), lazy(A3)])
+    S_tuple = EPMAfem.lazy(+, lazy(A1), lazy(A2), lazy(A3))
 
     S_ref = A1 .+ A2 .+ A3
     if cpu
@@ -1886,7 +1951,7 @@ end
     A = rand_mat(10, 11)
     B = rand_mat(12, 13)
 
-    K = EPMAfem.lazy(kron, A, B)
+    K = EPMAfem.lazy(kron, lazy(A), lazy(B))
     K_ref = kron(A, B)
     if cpu @test Matrix(K) ≈ K_ref end
     # @test K_ref_ ≈ K_ref
@@ -2019,7 +2084,7 @@ end
     @test unlazy(B) * x ≈ B_ref * x
     # Diagonal + scalar
     α = rand_scal()
-    S = D + α * Diagonal(ones_vec(6));
+    S = D + α * lazy(Diagonal(ones_vec(6)));
     S_ref = Diagonal(d .+ α)
     x = rand_vec(size(S, 2))
     @test unlazy(S) * x ≈ S_ref * x
