@@ -159,8 +159,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, S::SchurMatrix{T}, x::Abstr
     x_ = @view(y[1:n1])
     y_ = @view(y[n1+1:n1+n2])
 
-    # TODO: HACK, remove once implemented Lazy as native matrix type
-    mul_with!(ws, u, lazy(*, B(S), D⁻¹(S)), v, T(-1), true)
+    mul_with!(ws, u, B(S)*D⁻¹(S), v, T(-1), true)
     mul_with!(ws, x_, inv_AmBD⁻¹C(S), u, true, false)
     mul_with!(ws, v, C(S), x_, T(-1), true)
     mul_with!(ws, y_, D⁻¹(S), v, true, false)
@@ -179,8 +178,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:SchurMat
     x_ = @view(y[1:n1])
     y_ = @view(y[n1+1:n1+n2])
 
-    # TODO: HACK, remove once implemented Lazy as native matrix type
-    mul_with!(ws, u, lazy(*, transpose(C(S)), transpose(D⁻¹(S))), v, T(-1), true)
+    mul_with!(ws, u, transpose(C(S)) * transpose(D⁻¹(S)), v, T(-1), true)
     mul_with!(ws, x_, transpose(inv_AmBD⁻¹C(S)), u, true, false)
     mul_with!(ws, v, transpose(B(S)), x_, T(-1), true)
     mul_with!(ws, y_, transpose(D⁻¹(S)), v, true, false)
@@ -242,8 +240,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, S::HalfSchurMatrix{T}, x::A
     v = @view(x[n1+1:n1+n2])
     x_ = @view(y[1:n1])
 
-    # TODO: HACK, remove once implemented Lazy as native matrix type
-    mul_with!(ws, u, lazy(*, B(S), D⁻¹(S)), v, T(-1), true)
+    mul_with!(ws, u, B(S)*D⁻¹(S), v, T(-1), true)
     mul_with!(ws, x_, inv_AmBD⁻¹C(S), u, true, false)
 end
 
@@ -258,12 +255,11 @@ function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:HalfSchu
     v = @view(x[n1+1:n1+n2])
     x_ = @view(y[1:n1])
 
-    # TODO: HACK, remove once implemented Lazy as native matrix type
-    mul_with!(ws, u, lazy(*, transpose(C(S)), transpose(D⁻¹(S))), v, T(-1), true)
+    mul_with!(ws, u, transpose(C(S))*transpose(D⁻¹(S)), v, T(-1), true)
     mul_with!(ws, x_, transpose(inv_AmBD⁻¹C(S)), u, true, false)
 end
 
 function required_workspace(::typeof(mul_with!), S::HalfSchurMatrix, n, cache_notifier)
     @assert n == 1
-    maximum(A -> required_workspace(mul_with!, A, n, cache_notifier), (inv_AmBD⁻¹C(S), lazy(*, B(S), D⁻¹(S)), lazy(*, transpose(C(S)), transpose(D⁻¹(S)))))
+    maximum(A -> required_workspace(mul_with!, A, n, cache_notifier), (inv_AmBD⁻¹C(S), B(S)*D⁻¹(S), transpose(C(S))*transpose(D⁻¹(S))))
 end
