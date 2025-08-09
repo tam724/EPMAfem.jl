@@ -187,7 +187,7 @@ end
 function required_workspace(::typeof(mul_with!), S::SchurMatrix, n, cache_notifier)
     @assert n == 1
     maximum(A -> required_workspace(mul_with!, A, n, cache_notifier),
-        (inv_AmBD⁻¹C(S), lazy(*, B(S), D⁻¹(S)), C(S), D⁻¹(S), lazy(*, transpose(C(S)), transpose(D⁻¹(S))), transpose(B(S))))
+        (inv_AmBD⁻¹C(S), B(S)*D⁻¹(S), C(S), D⁻¹(S), transpose(C(S))*transpose(D⁻¹(S)), transpose(B(S))))
 end
 
 # this is a weird one.. (we implement the interface here..)
