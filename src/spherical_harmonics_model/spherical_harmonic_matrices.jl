@@ -37,7 +37,7 @@ int_func(::Val{:∫S²_Ωzuv}, Ω) = Ωz(Ω)
 int_func(::Val{:∫S²_absΩxuv}, Ω) = abs(Ωx(Ω))
 int_func(::Val{:∫S²_absΩyuv}, Ω) = abs(Ωy(Ω))
 int_func(::Val{:∫S²_absΩzuv}, Ω) = abs(Ωz(Ω))
-int_func(::Val{:∫S²_fσuv}, Ω) = 1
+int_func(::Val{:∫S²_fσuv}, Ω) = error("numerische quadratur geht nicht")
 
 @concrete struct LegendreBasisExp
     coeffs

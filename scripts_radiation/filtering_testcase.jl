@@ -9,7 +9,7 @@ using QuadGK
 include("../scripts/plot_overloads.jl")
 Makie.inline!(false)
 
-
+plotly()
 ## 1D exact solution
 function interval_ray_intersection(R, x, Ω)
     if iszero(Ω) return (nothing, nothing) end
@@ -62,6 +62,20 @@ function intensity(x; R, kwargs...)
     end
 end
 
+function flux(x; R, kwargs...)
+    if norm(x) <= R
+        return quadgk(Ω -> Ω*0.5*distr_func(x, Ω; R=R, kwargs...), -1.0, 1.0)[1]
+    elseif x > R
+        return quadgk(Ω -> Ω*0.5*distr_func(x, Ω; R=R, kwargs...), 0.0, 1.0)[1]
+    elseif x < R
+        return quadgk(Ω -> Ω*0.5*distr_func(x, Ω; R=R, kwargs...), -1.0, 0.0)[1]
+    end
+end
+
+kwargs_analytic = (R=0.15, b=10.0, μ_in=50.0, μ_out=0.01)
+I_0 = intensity(0; kwargs_analytic...)
+
+
 ### 1D numerical solution
 
 @concrete struct DummyPNEquations <: EPMAfem.AbstractMonochromPNEquations end
@@ -73,10 +87,22 @@ function EPMAfem.mass_concentrations(::DummyPNEquations, e, x)
     return (norm(x) < 0.15) ? 50.0 : 0.01
 end
 
+function distr_func_numeric(x, Ω, N, σ_f, α)
+    direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1, σ_f, α)
+    xp, xm = EPMAfem.SpaceModels.eval_basis(space_model, VectorValue(x))
+    θ = acos(Ω)
+    Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(direction_model, VectorValue(Ω, sin(θ)))
+
+    solp, solm = sol["N"*string(N)*","*"σ_f"*string(σ_f)*","*"α"*string(α)]
+    return dot(xp, solp * Ωp) + dot(xm, solm * Ωm)
+end
+
 eq = DummyPNEquations()
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5, 0.5), (300)))
 
 sol = Dict()
+Ω0th = Dict()
+Ω1st = Dict()
 for N in [1,3,7,15,21,27]
     for σ_f in [0.0,0.01,0.1,1.0]
         for α in [1.0,5.0,15.0]
@@ -96,28 +122,90 @@ for N in [1,3,7,15,21,27]
             solution = EPMAfem.allocate_solution_vector(system)
             EPMAfem.solve(solution, system, rhs)
             solp, solm = EPMAfem.pmview(solution, model)
+            
+            Ωp_0th, Ωm_0th = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0)
+            Ωp_1st, Ωm_1st = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), EPMAfem.Dimensions.Ωz)
+
             sol["N"*string(N)*","*"σ_f"*string(σ_f)*","*"α"*string(α)] = [solp, solm]
+            Ω0th["N"*string(N)*","*"σ_f"*string(σ_f)*","*"α"*string(α)] = [Ωp_0th, Ωm_0th]
+            Ω1st["N"*string(N)*","*"σ_f"*string(σ_f)*","*"α"*string(α)] = [Ωp_1st, Ωm_1st]
         end
     end
 end
 
+Ω0th["N3,σ_f0.0,α1.0"][1][2]
 
-plot()
-for key in collect(keys(sol))
-    if startswith(key, "27,0.01")
+# Plot 0th moment with and without filtering
+no_filter_keys = ["N1,σ_f0.0,α1.0","N3,σ_f0.0,α1.0","N7,σ_f0.0,α1.0","N21,σ_f0.0,α1.0","N27,σ_f0.0,α1.0"]
+no_filter = plot()
+for key in no_filter_keys
         solp, solm = sol[key]
-        func = EPMAfem.SpaceModels.interpolable((p=solp[:, 1] |> collect, ), space_model)
-        p = plot!(-0.5:0.0001:0.5  , (z -> func(Gridap.VectorValue(z))), label=key)
-        display(p)
-    end
+        Ωp_0th, Ωm_0th = Ω0th[key]
+        func = EPMAfem.SpaceModels.interpolable((p=solp*Ωp_0th|> collect, m=solm*Ωm_0th |> collect), space_model)
+        plot!(-0.5:0.0001:0.5  , (z -> func(Gridap.VectorValue(z))), label=key)
 end
-# p2 = plot()
-# for key in keys(sol)
-#     if startswith(key, "27") && occursin(key, "0.1")
-#         solp, solm = sol[key]
-#         func = EPMAfem.SpaceModels.interpolable((p=solp[:, 1] |> collect, ), space_model)
-#         plot!(-0.5:0.0001:0.5  , (z -> func(Gridap.VectorValue(z))), label=key)
-#     end
-# end
+plot!(-0.5:0.0001:0.5, x -> 4*pi*intensity(x; kwargs_analytic...), label="analytical")
 
-# plot(p1, p2, size=(700, 300))
+filter_keys = ["N1,σ_f0.1,α1.0","N3,σ_f0.1,α1.0","N7,σ_f0.1,α1.0","N21,σ_f0.1,α1.0","N27,σ_f0.1,α1.0"]
+filter = plot()
+for key in filter_keys
+        solp, solm = sol[key]
+        Ωp_0th, Ωm_0th = Ω0th[key]
+        func = EPMAfem.SpaceModels.interpolable((p=solp*Ωp_0th|> collect, m=solm*Ωm_0th |> collect), space_model)
+        plot!(-0.5:0.0001:0.5  , (z -> func(Gridap.VectorValue(z))), label=key)
+end
+plot!(-0.5:0.0001:0.5, x -> 4*pi*intensity(x; kwargs_analytic...), label="analytical")
+
+filter2_keys = ["N1,σ_f0.01,α15.0","N3,σ_f0.01,α15.0","N7,σ_f0.01,α15.0","N21,σ_f0.01,α15.0","N27,σ_f0.01,α15.0"]
+filter2 = plot()
+for key in filter2_keys
+        solp, solm = sol[key]
+        Ωp_0th, Ωm_0th = Ω0th[key]
+        func = EPMAfem.SpaceModels.interpolable((p=solp*Ωp_0th|> collect, m=solm*Ωm_0th |> collect), space_model)
+        plot!(-0.5:0.0001:0.5  , (z -> func(Gridap.VectorValue(z))), label=key)
+end
+plot!(-0.5:0.0001:0.5, x -> 4*pi*intensity(x; kwargs_analytic...), label="analytical")
+
+plot(no_filter, filter)
+
+# Plot Heatmaps aswell
+no_filter_heatmap = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.0, 1.0), clims=(-0.1,0.3))
+filter_heatmap = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.1, 1.0), clims=(-0.1,0.3))
+filter2_heatmap = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.1, 15.0), clims=(-0.1,0.3))
+
+plot(no_filter_heatmap, filter2_heatmap, size=(700, 300))
+
+
+
+# Plot 1st Moment 
+no_filter_1st_eys = ["N1,σ_f0.0,α1.0","N3,σ_f0.0,α1.0","N7,σ_f0.0,α1.0","N21,σ_f0.0,α1.0","N27,σ_f0.0,α1.0"]
+no_filter_1st = plot()
+for key in no_filter_1st_keys
+        solp, solm = sol[key]
+        Ωp_1st, Ωm_1st = Ω1st[key]
+        func = EPMAfem.SpaceModels.interpolable((p=solp*Ωp_1st|> collect, m=solm*Ωm_1st |> collect), space_model)
+        plot!(-0.5:0.0001:0.5  , (z -> func(Gridap.VectorValue(z))), label=key)
+end
+plot!(-0.5:0.0001:0.5, x -> 4*pi*flux(x; kwargs_analytic...), label="analytical")
+
+filter_1st_keys = ["N1,σ_f0.1,α1.0","N3,σ_f0.1,α1.0","N7,σ_f0.1,α1.0","N21,σ_f0.1,α1.0","N27,σ_f0.1,α1.0"]
+filter_1st = plot()
+for key in filter_1st_keys
+        solp, solm = sol[key]
+        Ωp_1st, Ωm_1st = Ω1st[key]
+        func = EPMAfem.SpaceModels.interpolable((p=solp*Ωp_1st|> collect, m=solm*Ωm_1st |> collect), space_model)
+        plot!(-0.5:0.0001:0.5  , (z -> func(Gridap.VectorValue(z))), label=key)
+end
+plot!(-0.5:0.0001:0.5, x -> 4*pi*flux(x; kwargs_analytic...), label="analytical")
+
+filter2_1st_keys = ["N1,σ_f0.1,α15.0","N3,σ_f0.1,α15.0","N7,σ_f0.1,α15.0","N21,σ_f0.1,α15.0","N27,σ_f0.1,α15.0"]
+filter2_1st = plot()
+for key in filter2_1st_keys
+        solp, solm = sol[key]
+        Ωp_1st, Ωm_1st = Ω1st[key]
+        func = EPMAfem.SpaceModels.interpolable((p=solp*Ωp_1st|> collect, m=solm*Ωm_1st |> collect), space_model)
+        plot!(-0.5:0.0001:0.5  , (z -> func(Gridap.VectorValue(z))), label=key)
+end
+plot!(-0.5:0.0001:0.5, x -> 4*pi*flux(x; kwargs_analytic...), label="analytical")
+
+plot(no_filter_1st, filter2_1st)
