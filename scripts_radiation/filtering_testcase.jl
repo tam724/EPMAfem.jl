@@ -103,8 +103,8 @@ space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5,
 sol = Dict()
 Ω0th = Dict()
 Ω1st = Dict()
-for N in [1,3,7,15,21,27]
-    for σ_f in [0.0,0.01,0.1,1.0]
+for N in [1,3,7,27]
+    for σ_f in [0.0,0.01,0.1,1.0,10.0]
         for α in [1.0,5.0,15.0]
             println(string(N)*","*string(σ_f)*","*string(α))
             direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1, σ_f, α)
@@ -168,17 +168,30 @@ plot!(-0.5:0.0001:0.5, x -> 4*pi*intensity(x; kwargs_analytic...), label="analyt
 
 plot(no_filter, filter)
 
-# Plot Heatmaps aswell
-no_filter_heatmap = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.0, 1.0), clims=(-0.1,0.3))
-filter_heatmap = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.1, 1.0), clims=(-0.1,0.3))
-filter2_heatmap = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.1, 15.0), clims=(-0.1,0.3))
+custom_cmap = cgrad([:green, :white, :red], [-1.0, 0.0, 1.0])
 
-plot(no_filter_heatmap, filter2_heatmap, size=(700, 300))
+# Plot Heatmaps aswell
+heatmap_sigma0_alpha1 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.0, 1.0), clims=(-0.1,0.3), title="σ_f=0, α=1")
+heatmap_sigma0_alpha5 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.0, 5.0), clims=(-0.1,0.3), title="σ_f=0, α=5")
+heatmap_sigma0_alpha15 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.0, 15.0), clims=(-0.1,0.3), title="σ_f=0, α=15")
+heatmap_sigma01_alpha1 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.1, 1.0), clims=(-0.1,0.3), title="σ_f=0.1, α=1")
+heatmap_sigma01_alpha5 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.1, 5.0), clims=(-0.1,0.3), title="σ_f=0.1, α=5")
+heatmap_sigma01_alpha15 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 0.1, 15.0), clims=(-0.1,0.3), title="σ_f=0.1, α=15")
+heatmap_sigma1_alpha1 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 1.0, 1.0), clims=(-0.1,0.3), title="σ_f=1, α=1")
+heatmap_sigma1_alpha5 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 1.0, 5.0), clims=(-0.1,0.3), title="σ_f=1, α=5")
+heatmap_sigma1_alpha15 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 1.0, 15.0), clims=(-0.1,0.3), title="σ_f=1, α=15", color=custom_cmap)
+heatmap_sigma10_alpha1 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 10.0, 1.0), clims=(-0.1,0.3), title="σ_f=10, α=1")
+heatmap_sigma10_alpha5 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 10.0, 5.0), clims=(-0.1,0.3), title="σ_f=10, α=5")
+heatmap_sigma10_alpha15 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 27, 10.0, 15.0), clims=(-0.1,0.3), title="σ_f=10, α=15")
+
+plot(heatmap_sigma0_alpha1,heatmap_sigma01_alpha1,heatmap_sigma1_alpha1,heatmap_sigma10_alpha1,
+heatmap_sigma0_alpha5,heatmap_sigma01_alpha5,heatmap_sigma1_alpha5,heatmap_sigma10_alpha5,
+heatmap_sigma0_alpha15,heatmap_sigma01_alpha15,heatmap_sigma1_alpha15,heatmap_sigma10_alpha15, layout=(3,4), size=(1500, 900))
 
 
 
 # Plot 1st Moment 
-no_filter_1st_eys = ["N1,σ_f0.0,α1.0","N3,σ_f0.0,α1.0","N7,σ_f0.0,α1.0","N21,σ_f0.0,α1.0","N27,σ_f0.0,α1.0"]
+no_filter_1st_keys = ["N1,σ_f0.0,α1.0","N3,σ_f0.0,α1.0","N7,σ_f0.0,α1.0","N21,σ_f0.0,α1.0","N27,σ_f0.0,α1.0"]
 no_filter_1st = plot()
 for key in no_filter_1st_keys
         solp, solm = sol[key]
