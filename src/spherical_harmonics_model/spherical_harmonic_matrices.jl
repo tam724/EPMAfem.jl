@@ -57,7 +57,11 @@ function expand_legendre(f, N, quad=hcubature_quadrature)
     return LegendreBasisExp(c)
 end
 
-@concrete struct ∫S²_kuv{F}
+struct ∫∫S²_kuv{F}
+    k::F
+end
+
+struct ∫S²_kuv{F}
     k::F
 end
 
@@ -118,7 +122,7 @@ end
 
 function (quad::SphericalQuadrature)(f::Function)
     # evaluate once to compute cache size
-    Ω = VectorValue(randn(), randn(), randn())
+    Ω = VectorValue(randn(), randn(), randn()) |> normalize
     y = f(Ω)
     isscalar = !(y isa AbstractArray)
     cache = zeros(size(y))
@@ -222,4 +226,18 @@ function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_ab
         end
     end
     return A
+end
+
+function assemble_bilinear(integral::∫∫S²_kuv, model, U, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
+    cache1 = zeros(length(V), length(U))
+    cache2 = zeros(length(V), length(U))
+    function fᵤ!(cache1, Ωᵤ)
+        Y_U = _eval_basis_functions!(model, Ωᵤ, U)
+        function fᵥ!(cache2, Ωᵥ)
+            Y_V = _eval_basis_functions!(model, Ωᵥ, V)
+            mul!(cache2, Y_V, transpose(Y_U), integral.k(Ωᵤ, Ωᵥ), false)
+        end
+        cache1 .= quad(fᵥ!, cache2)
+    end
+    return quad(fᵤ!, cache1)
 end
