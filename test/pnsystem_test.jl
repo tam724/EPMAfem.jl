@@ -310,8 +310,59 @@ end
     @test x*A2_*B2_*C2_ ≈ x*P2u
 end
 
+@testset "cache + resizematrix" begin
+    Lazy = EPMAfem.PNLazyMatrices
+    R_mem = rand(25)
+    R_mem2 = rand(25)
+
+    B_ = rand(2, 2)
+
+    R = Lazy.LazyResizeMatrix(Ref(R_mem), (2, 5), (Ref(2), Ref(3)))
+    B = lazy(B_)
+
+    C = Lazy.cache(B * R)
+    Ru, Ku = unlazy((R, C))
+    x = rand(size(Ku, 2))
+
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+    Lazy.set_memory!(Ru, R_mem)
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == true # cache is still valid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+    Lazy.set_memory!(Ru, R_mem2)
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == false # cache should be invalid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == true # cache should be valid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+
+    # size change
+    Lazy.resize!(Ru, (2, 4))
+    x = rand(size(Ku, 2))
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == false # cache should be invalid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == true # cache should be valid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+
+    # only set values
+    A_new = rand(2, 4)
+    Lazy.copyto!(Ru, A_new)
+    x = rand(size(Ku, 2))
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == false # cache should be invalid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == true # cache should be valid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+
+    # set values and resize
+    A_new = rand(2, 5)
+    Lazy.resize_copyto!(Ru, A_new)
+    x = rand(size(Ku, 2))
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == false # cache should be invalid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+    @test Ku.ws.cache.cache[Lazy.lazy_objectid(C)][1][] == true # cache should be valid
+    @test Ku * x ≈ B_ * Lazy.A(R) * x
+end
+
 @testset "autocache resizematrix + prodmatrix" begin
-    A = PNLazyMatrices.LazyResizeMatrix(rand(4, 10), (Base.RefValue(4), Base.RefValue(4)))
+    A = PNLazyMatrices.LazyResizeMatrix(rand(4, 10), (4, 4))
     a = EPMAfem.LazyScalar(1.0)
     B = lazy(rand_mat(4, 4))
 
@@ -629,8 +680,8 @@ end
     C = rand(10, 10)
     D = rand(11, 11)
 
-    AL = PNLazyMatrices.LazyResizeMatrix(rand(10, 15), (Ref(10), Ref(5)))
-    BL = PNLazyMatrices.LazyResizeMatrix(rand(11, 15), (Ref(11), Ref(5)))
+    AL = PNLazyMatrices.LazyResizeMatrix(rand(10, 15), (10, 5))
+    BL = PNLazyMatrices.LazyResizeMatrix(rand(11, 15), (11, 5))
     CL = C |> lazy
     DL = D |> lazy
     XL = EPMAfem.materialize(transpose(AL) * CL * AL)

@@ -8,7 +8,7 @@ const MMaterializedMatrix{T} = LazyOpMatrix{T, typeof(mat_with_materialize), <:T
 const XMaterializedMatrix{T} = LazyOpMatrix{T, typeof(mul_materialize), <:Tuple{<:AbstractMatrix{T}}}
 const MaterializedMatrix{T} = Union{BMaterializedMatrix{T}, MMaterializedMatrix{T}, XMaterializedMatrix{T}}
 
-const CachedMatrix{T} = LazyOpMatrix{T, typeof(cache), <:Tuple{<:MaterializedMatrix{T}}}
+const CachedMatrix{T} = LazyOpMatrix{T, typeof(cache), <:Tuple{<:AbstractMatrix{T}}} # but should be wrapped into a materialize.. (also allows resizematrix)
 const MaterializedOrCachedMatrix{T} = Union{MaterializedMatrix{T}, CachedMatrix{T}}
 
 @inline A(M::MaterializedMatrix) = only(M.args)
@@ -17,7 +17,8 @@ const MaterializedOrCachedMatrix{T} = Union{MaterializedMatrix{T}, CachedMatrix{
 
 Base.size(M::MaterializedOrCachedMatrix) = size(A(M))
 max_size(M::MaterializedOrCachedMatrix) = max_size(A(M))
-lazy_getindex(M::MaterializedOrCachedMatrix{T}, idx::Vararg{<:Integer}) where T = lazy_getindex(A(M), idx...)
+lazy_getindex(M::MaterializedMatrix{T}, idx::Vararg{<:Integer}) where T = lazy_getindex(A(M), idx...)
+lazy_getindex(C::CachedMatrix{T}, idx::Vararg{<:Integer}) where T = lazy_getindex(M(C), idx...)
 @inline isdiagonal(M::MaterializedOrCachedMatrix) = isdiagonal(A(M))
 lazy_objectid(M::MaterializedOrCachedMatrix) = lazy_objectid(A(M))
 

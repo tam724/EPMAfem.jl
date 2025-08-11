@@ -162,7 +162,8 @@ function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::NotSoLazy, 
 end
 
 # interface for NotSolLazy{ResizeMatrix}
-Base.copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_::AbstractMatrix) where T = copyto!(R.ws, R.A, A_)
-Base.copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_) where T = copyto!(R.ws, R.A, A_)
-resize_copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_::AbstractMatrix) where T = resize_copyto!(R.ws, R.A, A_)
+Base.copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_::AbstractMatrix) where T = lazy_copyto!(R.ws, R.A, A_)
+resize_copyto!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, A_::AbstractMatrix) where T = lazy_resize_copyto!(R.ws, R.A, A_)
+Base.resize!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, new_size) where T = lazy_resize!(R.ws, R.A, new_size)
+set_memory!(R::NotSoLazy{T, <:LazyResizeMatrix{T}}, v_::AbstractVector) where T = lazy_set_memory!(R.ws, R.A, v_)
 
