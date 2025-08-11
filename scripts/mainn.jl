@@ -3,28 +3,27 @@ using EPMAfem.PNLazyMatrices
 using EPMAfem.Krylov
 using BenchmarkTools
 using LinearAlgebra
-
+using EPMAfem
 using SparseArrays
 
-A = lazy(sprand(70*70, 70*70, 0.01))
-B = lazy(sprand(200, 200, 0.01))
-C = lazy(sprand(200, 200, 0.01))
+SH = EPMAfem.SphericalHarmonicsModels
 
-D = lazy(Diagonal(rand(70*70 * 200)))
+basis = SH.EOSphericalHarmonicsModel(5, 3)
 
-# C = A + 3.0 * B
+k = SH.∫∫S²_kuv((Ω₁, Ω₂) -> exp(Ω₁[1] * (Ω₁[2] + Ω₁[3])) + cos(Ω₂[3] + Ω₂[1] * Ω₂[2])) # some weird scattering kernel
+A = SH.assemble_bilinear(k, basis, basis.moments, basis.moments)
+round.(A; digits=8) |> sparse
 
-D = unlazy(D + kron(A, 3.0 * B) + kron(0.5 * A, 2.0 * C))
-D_notlazy = kron(A.A, 3.0*B.A) + kron(0.5*A.A, 2.0*C.A)
+k = SH.∫∫S²_kuv((Ω₁, Ω₂) -> exp(dot(Ω₁, Ω₂)))
+A = SH.assemble_bilinear(k, basis, basis.moments, basis.moments)
+round.(A; digits=8) |> sparse
 
-x = rand(size(D, 2))
-y1 = rand(size(D, 1))
-y2 = rand(size(D, 1))
+# test against other impl
+k_iso = SH.∫S²_kuv(μ -> exp(μ))
+A_iso = SH.assemble_bilinear(k_iso, basis, basis.moments, basis.moments, SH.hcubature_quadrature(1e-5, 1e-5))
+round.(A_iso; digits=8) |> sparse
 
-@profview mul!(y1, D, x, true, false)
+k = SH.∫∫S²_kuv((Ω₁, Ω₂) -> 1.0) 
+A = SH.assemble_bilinear(k, basis, basis.moments, basis.moments)
+round.(A; digits=8) |> sparse
 
-
-@btime mul!($y1, $D, $x, $true, $false);
-@btime mul!($y2, $D_notlazy, $x, $true, $false);
-
-y1 ≈ y2

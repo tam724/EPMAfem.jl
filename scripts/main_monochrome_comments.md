@@ -36,3 +36,27 @@ $$\int_{S^2} \psi(x, \Omega) d \Omega \approx \sum_{i} \Psi^+ \mathcal{X}^+_i(x)
 
 the result can be evaluated at a point $x$ (uses Gridap.jl machinery to find the corresponding gridcell end evaluate the basis functions) (this is implemented by EPMAfem.SpaceModels.interpolable(...))
 
+
+
+# isotropic/nonisotropic scattering - terminology? 
+### scattering integral:
+$$\int_{S^2} k(\Omega, \Omega') \psi(\Omega') d\Omega'$$
+
+approximiert ($\psi = \psi_i Y_i$) und getestet ($Y_j$) mit spherical harmonics 
+$$\psi_i \int_{S^2} \int_{S^2} k(\Omega, \Omega') Y_i(\Omega') d\Omega' Y_j(\Omega) d \Omega$$
+-> dense matrix
+
+### scattering integral (isotropic scattering kernel)
+$$\int_{S^2} k(\Omega \cdot{} \Omega') \psi(\Omega') d\Omega'$$
+
+approximiert ($\psi = \psi_i Y_i$) und getestet ($Y_j$) mit spherical harmonics 
+$$\psi_i \int_{S^2} \int_{S^2} k(\Omega\cdot \Omega') Y_i(\Omega') d\Omega' Y_j(\Omega) d \Omega$$
+$$\psi_i \int_{S^2} \lambda_i Y_i(\Omega) Y_j(\Omega) d \Omega$$
+-> diagonal matrix ($\lambda_i$ on the diagonal)
+
+### scattering integral (isotropic scattering)
+(im $S^2$ integral sind alle momente außer dem 0-ten null!)
+$$\int_{S^2} k \psi(\Omega') d\Omega'$$
+approximiert ($\psi = \psi_i Y_i$) und getestet ($Y_j$) mit spherical harmonics 
+$$\psi_i k \int_{S^2} \int_{S^2} Y_i(\Omega') d\Omega' Y_j(\Omega) d \Omega$$
+-> matrix mit einen $(i=0, j=0)$ nicht-null eintrag: $k (\int_{S^2} Y_0(\Omega) d\Omega)^2$
