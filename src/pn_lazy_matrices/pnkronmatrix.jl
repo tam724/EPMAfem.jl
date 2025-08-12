@@ -325,32 +325,29 @@ function required_workspace(::typeof(mul_with!), K::KronMatrix, n::Integer, cach
 end
 
 function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix)
-    @assert length(As(K)) == 2
-    A_ = materialize(As(K)[1])
-    B_ = materialize(As(K)[2])
+    A, Bs... = As(K)
 
-    A_mat, rem_ = materialize_with(ws, A_)
-    B_mat, _ = materialize_with(rem_, B_)
+    A_mat, rem_ = materialize_with(ws, materialize(A))
+    B_mat, _ = materialize_with(rem_, materialize(kron(Bs...)))
     
     kron!(skeleton, A_mat, B_mat)
     return skeleton, ws
 end
 
 function materialize_with(ws::Workspace, K::KronMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
-    @assert length(As(K)) == 2
-    A_ = materialize(As(K)[1])
-    B_ = materialize(As(K)[2])
-    
-    A_mat, rem_ = materialize_with(ws, A_)
-    B_mat, _ = materialize_with(rem_, B_)
+    A, Bs... = As(K)
+
+    A_mat, rem_ = materialize_with(ws, materialize(A))
+    B_mat, _ = materialize_with(rem_, materialize(kron(Bs...)))
     
     kron!(skeleton, A_mat, B_mat, α, β)
     return skeleton, ws
 end
 
 function required_workspace(::typeof(materialize_with), K::KronMatrix, cache_notifier)
-    @assert length(As(K)) == 2
-    A_ = materialize(As(K)[1])
-    B_ = materialize(As(K)[2])
+    A, Bs... = As(K)
+    # recursive materialization
+    A_ = materialize(A)
+    B_ = materialize(kron(Bs...))
     return required_workspace(materialize_with, A_, cache_notifier) + required_workspace(materialize_with, B_, cache_notifier)
 end

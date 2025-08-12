@@ -9,6 +9,11 @@ lazy(::typeof(*), A::ProdMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(*, A.a
 lazy(::typeof(*), A::AbstractLazyMatrixOrTranspose, B::ProdMatrix) = lazy(*, A, B.args...)
 lazy(::typeof(*), A::ProdMatrix, B::ProdMatrix) = lazy(*, A.args..., B.args...)
 
+lazy(::typeof(kron), A::KronMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(kron, A.args..., B)
+lazy(::typeof(kron), A::AbstractLazyMatrixOrTranspose, B::KronMatrix) = lazy(kron, A, B.args...)
+lazy(::typeof(kron), A::KronMatrix, B::KronMatrix) = lazy(kron, A.args, B.args)
+
+
 lazy(a::Number) = LazyScalar(a)
 lazy(A::AbstractMatrix{T}) where T = LazyMatrix{T, typeof(A)}(A)
 lazy(L::AbstractLazyMatrixOrTranspose) = L
@@ -26,9 +31,11 @@ Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = 
 Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy(+, L1, lazy(-, L2))
 Base.:-(L::AbstractLazyMatrixOrTranspose) = lazy(-, L)
 
-# damn I implemented a weird version of kron...
+LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose) = A
 LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron, A, B)
-kron_AXB(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron_AXB, A, B)
+LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, Bs::Vararg{<:AbstractLazyMatrixOrTranspose}) = lazy(kron, A, Bs...)
+# damn I implemented a weird version of kron...
+kron_AXB(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron, transpose(B), A)
 
 # materialize and cache logic
 broadcast_materialize(A::AbstractLazyMatrixOrTranspose) = lazy(broadcast_materialize, A)

@@ -22,6 +22,9 @@ add_node!(g, A, A_to_v_dict, v_to_A_dict; flat) = add_leaf!(g, A, A_to_v_dict, v
 function add_node!(g, A::Lazy.LazyResizeMatrix, A_to_v_dict, v_to_A_dict; flat)
     add_leaf!(g, A, A_to_v_dict, v_to_A_dict; flat)
 end
+function add_node!(g, A::Lazy.LazyMatrix, A_to_v_dict, v_to_A_dict; flat)
+    add_leaf!(g, A, A_to_v_dict, v_to_A_dict; flat)
+end
 
 function add_node!(g, At::Transpose{<:Number, <:AbstractMatrix}, A_to_v_dict, v_to_A_dict; flat)
     if !haskey(A_to_v_dict, objectid(At))
@@ -51,9 +54,10 @@ end
 
 label(A::Lazy.LazyOpMatrix) = A.op |> string
 label(A::Lazy.KronMatrix) = "⊗"
-label(A::Diagonal) = "D"
-label(A::AbstractSparseArray) = "S"
-label(A::AbstractMatrix) = "A"
+label(A::Diagonal) = "Diagonal\n[$(size(A))]"
+label(A::AbstractSparseArray) = "SparseMatrix\n[$(size(A))]"
+label(A::AbstractMatrix) = "Matrix\n[$(size(A))]"
+label(A::Lazy.LazyMatrix) = label(A.A)
 label(A::Lazy.LazyResizeMatrix) = "resize()"
 label(A::Lazy.LazyScalar) = "α"
 label(A::Transpose) = "transpose()"
@@ -94,10 +98,7 @@ function node_hover_highlight_deps(p::GraphPlot, LMG::LazyMatrixGraph)
         end
         p.node_color[][idx] = state ? colorant"white" : node_base_color(LMG, idx)
         p.node_color[] = p.node_color[]
-        if state
-            @show size(LMG.v_to_A_dict[idx])
-        end
-        end
+    end
     return GraphMakie.NodeHoverHandler(action)
 end
 

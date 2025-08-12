@@ -216,13 +216,13 @@ function LinearAlgebra.transposeblock!(f, B::AbstractMatrix, A::AbstractMatrix, 
 end
 
 # https://github.com/JuliaGPU/GPUArrays.jl/blob/49a339c63a50f1a00ac84844675bcb3a11070cb0/src/host/linalg.jl#L34C1-L44C4
-LinearAlgebra.transpose!(B::GPUArrays.AbstractGPUArray, A::GPUArrays.AnyGPUMatrix, α::Number, β::Number) = GPUArrays.transpose_f!(transpose, B, A, α, β)
-function GPUArrays.transpose_f!(f, B::GPUArrays.AbstractGPUArray{T}, A::GPUArrays.AnyGPUMatrix{T}, α::Number, β::Number) where T
-    axes(B,1) == axes(A,2) && axes(B,2) == axes(A,1) || throw(DimensionMismatch(string(f)))
-    @kernel function transpose_kernel_αβ!(B, @Const(A), α, β)
-        i, j = @index(Global, Cartesian)
-        @inbounds B[j, i] = α * f(A[i, j]) + β * B[j, i]
-    end
-    transpose_kernel_αβ!(get_backend(B))(B, A, α, β; ndrange = size(A))
-    B
+@kernel function transpose_kernel_alphabeta!(B, @Const(A), alpha, beta)
+    i, j = @index(Global, NTuple)
+    @inbounds B[j, i] = alpha * A[i, j] + beta * B[j, i]
+end
+
+function LinearAlgebra.transpose!(B::GPUArrays.AbstractGPUArray, A::GPUArrays.AnyGPUMatrix, α::Number, β::Number)
+    axes(B,1) == axes(A,2) && axes(B,2) == axes(A,1) || throw(DimensionMismatch("transpose"))
+    transpose_kernel_alphabeta!(get_backend(B))(B, A, α, β; ndrange = size(A))
+    return B
 end

@@ -24,6 +24,9 @@ using EPMAfem.BlockedMatrices
 
 include("special_matrices/twodiagonalmatrix.jl")
 
+include("pn_lazy_matrices/pnlazymatrices.jl")
+using EPMAfem.PNLazyMatrices
+
 include("space_dimensions.jl")
 using EPMAfem.Dimensions
 
@@ -33,8 +36,6 @@ using EPMAfem.SphericalHarmonicsModels
 include("space_model/space.jl")
 using EPMAfem.SpaceModels
 
-include("pn_lazy_matrices/pnlazymatrices.jl")
-using EPMAfem.PNLazyMatrices
 
 PNLazyMatrices.has_batched_mul!(A::TwoDiagonalMatrix) = true
 PNLazyMatrices.has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true

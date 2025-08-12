@@ -36,11 +36,40 @@ nz(n, dims) = ndot(Z(), n, dims)
 ∫∂R_absn_uv(::_2D) = (∫∂R_absnz_uv, ∫∂R_absnx_uv)
 ∫∂R_absn_uv(::_3D) = (∫∂R_absnz_uv, ∫∂R_absnx_uv, ∫∂R_absny_uv)
 
-function assemble_bilinear(a, model, U, V)
+function _assemble_bilinear(a, args, U, V)
     u = get_trial_fe_basis(TrialFESpace(U))
     v = get_fe_basis(V)
-    args = get_args(model)
     matcontribs = a(u, v, args)
     data = Gridap.FESpaces.collect_cell_matrix(U, V, matcontribs)
     return assemble_matrix(SparseMatrixAssembler(U, V), data)
+end
+
+function assemble_bilinear(a, model, U, V)
+    return _assemble_bilinear(a, get_args(model), U, V)
+end
+
+rank_decomp(::typeof(∫R_u_∂zv), ::_1D) = (∫R_u_∂zv)
+rank_decomp(::typeof(∫R_u_∂zv), ::_2D) = (∫R_u_∂zv, ∫R_uv)
+rank_decomp(::typeof(∫R_u_∂zv), ::_3D) = (∫R_u_∂zv, ∫R_uv, ∫R_uv)
+
+rank_decomp(::typeof(∫R_u_∂xv), ::_2D) = (∫R_uv, ∫R_u_∂zv)
+rank_decomp(::typeof(∫R_u_∂xv), ::_3D) = (∫R_uv, ∫R_u_∂zv, ∫R_uv)
+
+rank_decomp(::typeof(∫R_u_∂yv), ::_3D) = (∫R_uv, ∫R_uv, ∫R_u_∂zv)
+
+function assemble_bilinear(a::Union{typeof(∫R_u_∂zv), typeof(∫R_u_∂xv), typeof(∫R_u_∂yv)}, model::CartesianSpaceModel{N}, U, V) where N
+    if U == even(model)
+        Us = model.even_fe_spaces
+    else
+        @assert U == odd(model)
+        Us = model.odd_fe_spaces
+    end
+    if V == even(model)
+        Vs = model.even_fe_spaces
+    else
+        @assert V == odd(model)
+        Vs = model.odd_fe_spaces
+    end
+    return kron(reverse(lazy.(Matrix.(_assemble_bilinear.(rank_decomp(a, dimensionality(model)), model._args, Us, Vs))))...)
+    # return assemble_bilinear(a, model, U, V)
 end
