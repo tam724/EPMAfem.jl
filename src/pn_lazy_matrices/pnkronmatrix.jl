@@ -252,6 +252,39 @@ isdiagonal(K::KronMatrix) = all(isdiagonal, As(K))
 
 _r_view(A::AbstractArray, n...) = reshape(@view(A[1:prod(n)]), n...)
 
+function mul_with!(ws::Workspace, y::AbstractMatrix, x::AbstractMatrix, K::Union{KronMatrix, Transpose{T, <:KronMatrix}}, α::Number, β::Number) where T
+    mx = map(A -> size(A, 1), As(K))
+    nx = map(A -> size(A, 2), As(K))
+    max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
+
+    buffer1, rem = take_ws(ws, max_x*size(x, 1))
+    buffer2, rem = take_ws(rem, max_x*size(x, 1))
+
+    xi = reshape(x, :, first(nx))
+    Ai = first(As(K))
+    yi = _r_view(buffer1, size(Ai, 2), size(xi, 1))
+    mul_with!(rem, yi, transpose(Ai), transpose(xi), true, false)
+
+    for i in 2:length(As(K))
+        xi = reshape(yi, :, nx[i])
+        Ai = As(K)[i]
+        display(xi)
+        display(Ai)
+        yi = _r_view(buffer2, size(Ai, 2), size(xi, 1))
+        mul_with!(rem, yi, transpose(Ai), transpose(xi), true, false)
+
+        buffer1, buffer2 = buffer2, buffer1
+    end
+
+    xi = reshape(yi, size(x, 2), :)
+    transpose!(y, xi, α, β)
+    return y
+end
+
+function mul_with!(ws::Workspace, y::AbstractMatrix, x::Transpose{T, <:AbstractMatrix{T}}, K::Union{KronMatrix, Transpose{T, <:KronMatrix}}, α::Number, β::Number) where T
+    mul_with!(ws, transpose(y), transpose(K), transpose(x), α, β)
+end
+
 function mul_with!(ws::Workspace, y::AbstractVector, K::Union{KronMatrix, Transpose{T, <:KronMatrix{T}}}, x::AbstractVector, α::Number, β::Number) where T
     mx = map(A -> size(A, 1), As(K))
     nx = map(A -> size(A, 2), As(K))
@@ -281,6 +314,10 @@ function mul_with!(ws::Workspace, y::AbstractVector, K::Union{KronMatrix, Transp
     Aiᵀ = transpose(first(As(K)))
     yi = _r_view(y, size(xi, 2), size(Aiᵀ, 2))
     mul_with!(rem, yi, transpose(xi), Aiᵀ, α, β)
+end
+
+function mul_with!(ws::Workspace, y::AbstractMatrix, K::Union{KronMatrix, <:Transpose{T, <:KronMatrix}}, x::Transpose{T, <:AbstractMatrix{T}}, α::Number, β::Number) where T
+    return mul_with!(ws, transpose(y), transpose(x), transpose(K), α, β)
 end
 
 function mul_with!(ws::Workspace, y::AbstractMatrix, K::Union{KronMatrix, <:Transpose{T, <:KronMatrix{T}}}, x::AbstractMatrix, α::Number, β::Number) where T
