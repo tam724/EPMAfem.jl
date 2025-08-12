@@ -171,11 +171,46 @@ end
     @test M ≈ transpose(transpose(A_) + transpose(kron(B_, C_)))
 end
 
+@testset "projected kron" begin
+    for N in 2:4
+        As = [rand_mat(rand(1:5), rand(1:5)) for _ in 1:N]
+        K_ = kron(As...)
+        K = kron(lazy.(As)...)
+        
+        U_ = rand(5, size(K, 1))
+        Ut_ = rand(size(K, 1), 5)
+        V_ = rand(5, size(K, 2))
+        Vt_ = rand(size(K, 2), 5)
+
+        U, Ut, V, Vt = lazy.((U_, Ut_, V_, Vt_))
+
+        M = U * K * Vt
+        M_ = U_ * K_ * Vt_
+        @test do_materialize(M) ≈ M_
+
+        x = rand(5)
+        Mu = unlazy(M)
+        @test Mu * x ≈ M_ * x
+        @test transpose(x) * Mu ≈ transpose(x) * M_
+        
+        @test transpose(Mu) * x ≈ transpose(M_) * x
+        @test transpose(x) * transpose(Mu) ≈ transpose(x) * transpose(M_)
+
+        X = rand(5)
+        @test Mu * X ≈ M_ * X
+        @test transpose(X) * Mu ≈ transpose(X) * M_
+        
+        @test transpose(Mu) * X ≈ transpose(M_) * X
+        @test transpose(X) * transpose(Mu) ≈ transpose(X) * transpose(M_)
+    end
+end
+
 @testset "default kron" begin
     for N in (2, rand(3:5))
         As = [rand_mat(rand(1:5), rand(1:5)) for _ in 1:N]
         K_ = kron(As...)
         K = PNLazyMatrices.lazy(kron, lazy.(As)...)
+        @test do_materialize(K) ≈ K_
 
         Ku = unlazy(K)
 
@@ -202,6 +237,7 @@ end
         # transpose
         Kut = transpose(Ku)
         Kt_ = transpose(K_)
+        @test do_materialize(transpose(K)) ≈ Kt_
 
         x = rand(size(Kut, 2))
         y = rand(size(Kut, 1))
@@ -227,17 +263,23 @@ end
         N = rand(3:10)
         Ku = unlazy(K, n=N)
 
+        # KX
         X = rand_mat(size(Ku, 2), N)
+        Xt = transpose(rand_mat(N, size(Ku, 2)))
         Y = rand_mat(size(Ku, 1), N)
         Y_ = rand_mat(size(Ku, 1), N)
 
         @test Ku * X ≈ K_ * X
+        @test Ku * Xt ≈ K_ * Xt
 
         mul!(Y_, K_, X)
         mul!(Y, Ku, X)
         @test Y ≈ Y_
+        mul!(Y_, K_, Xt)
+        mul!(Y, Ku, Xt)
+        @test Y ≈ Y_
 
-        Y .= rand(size(Ku, 1))
+        Y .= rand(size(Ku, 1), N)
         Y_ .= Y
 
         α = rand_scal()
@@ -247,21 +289,58 @@ end
         mul!(Y, Ku, X, α, β)
         @test Y ≈ Y_
 
+        mul!(Y_, K_, Xt, α, β)
+        mul!(Y, Ku, Xt, α, β)
+        @test Y ≈ Y_
+
+        # XK
+        X = rand_mat(N, size(Ku, 1))
+        Xt = transpose(rand_mat(size(Ku, 1), N))
+        Y = rand_mat(N, size(Ku, 2))
+        Y_ = rand_mat(N, size(Ku, 2))
+
+        @test X * Ku ≈ X * K_
+        @test Xt * Ku ≈ Xt * K_
+
+        mul!(Y_, X, K_)
+        mul!(Y, X, Ku)
+        @test Y ≈ Y_
+        mul!(Y_, Xt, K_)
+        mul!(Y, Xt, Ku)
+        @test Y ≈ Y_
+
+
+        Y .= rand(N, size(Ku, 2))
+        Y_ .= Y
+        
+        mul!(Y_, X, K_, α, β)
+        mul!(Y, X, Ku, α, β)
+        @test Y ≈ Y_
+        mul!(Y_, Xt, K_, α, β)
+        mul!(Y, Xt, Ku, α, β)
+        @test Y ≈ Y_
+
         # # matrix valued transpose
         Kut = transpose(Ku)
         Kt_ = transpose(K_)
 
+        # KX
         X = rand_mat(size(Kut, 2), N)
+        Xt = transpose(rand_mat(N, size(Kut, 2)))
         Y = rand_mat(size(Kut, 1), N)
         Y_ = rand_mat(size(Kut, 1), N)
 
         @test Kut * X ≈ Kt_ * X
+        @test Kut * Xt ≈ Kt_ * Xt
 
         mul!(Y_, Kt_, X)
         mul!(Y, Kut, X)
         @test Y ≈ Y_
+        mul!(Y_, Kt_, Xt)
+        mul!(Y, Kut, Xt)
+        @test Y ≈ Y_
 
-        Y .= rand(size(Kut, 1))
+        Y .= rand(size(Kut, 1), N)
         Y_ .= Y
 
         α = rand_scal()
@@ -269,6 +348,35 @@ end
 
         mul!(Y_, Kt_, X, α, β)
         mul!(Y, Kut, X, α, β)
+        @test Y ≈ Y_
+        mul!(Y_, Kt_, Xt, α, β)
+        mul!(Y, Kut, Xt, α, β)
+        @test Y ≈ Y_
+
+        # XK
+        X = rand(N, size(Kut, 1))
+        Xt = transpose(rand(size(Kut, 1), N)) 
+        Y = rand(N, size(Kut, 2))
+        Y_ = rand(N, size(Kut, 2))
+
+        @test X * Kut ≈ X * Kt_
+        @test Xt * Kut ≈ Xt * Kt_
+
+        mul!(Y_, X, Kt_)
+        mul!(Y, X, Kut)
+        @test Y ≈ Y_
+        mul!(Y_, Xt, Kt_)
+        mul!(Y, Xt, Kut)
+        @test Y ≈ Y_
+
+        Y .= rand(N, size(Kut, 2))
+        Y_ .= Y
+
+        mul!(Y_, X, Kt_, α, β)
+        mul!(Y, X, Kut, α, β)
+        @test Y ≈ Y_
+        mul!(Y_, Xt, Kt_, α, β)
+        mul!(Y, Xt, Kut, α, β)
         @test Y ≈ Y_
     end
 end
@@ -1125,21 +1233,19 @@ end
     M5 = A * B * C * D * E
 
     for (M, M_) in [(M2, M2_), (M3, M3_), (M4, M4_), (M5, M5_)]
-        # we have no entry point for (Matrix) * (LazyMatrix) multiplication (this is not how it was designed..) however, internally we do at least try..
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, M, ())
-        ws = EPMAfem.create_workspace(ws_size, rand_vec)
-
-        # Y = X * M
         X = rand_mat(rand(3:30), size(M, 1))
+        Mu = unlazy(M, n=size(X, 1))
+        # Y = X * M
         Y = rand_mat(size(X, 1), size(M, 2))
-        EPMAfem.mul_with!(ws, Y, X, M, true, false)
+        mul!(Y, X, Mu, true, false)
         @test Y ≈ X * M_
 
         # Y = X * transpose(M)
         Mt = transpose(M)
         X = rand_mat(rand(3:30), size(Mt, 1))
+        Mtu = unlazy(Mt, n=size(X, 1))
         Y = rand_mat(size(X, 1), size(Mt, 2))
-        EPMAfem.mul_with!(ws, Y, X, Mt, true, false)
+        mul!(Y, X, Mtu, true, false)
         @test Y ≈ X * transpose(M_)
     end
 end
@@ -1168,36 +1274,36 @@ end
     @test unlazy(P2) * x ≈ P2_ * x
 
     X = rand_mat(size(P2, 2), rand(3:30))
-    @test unlazy(P2) * X ≈ P2_ * X
+    @test unlazy(P2, n=size(X, 2)) * X ≈ P2_ * X
     X = rand_mat(size(P2, 2), 1) # also test with single dimension matrix
-    @test unlazy(P2) * X ≈ P2_ * X
+    @test unlazy(P2, n=size(X, 2)) * X ≈ P2_ * X
     
     X = rand_mat(size(P3, 2), rand(3:30))
-    @test unlazy(P3) * X ≈ P3_ * X
+    @test unlazy(P3, n=size(X, 2)) * X ≈ P3_ * X
     X = rand_mat(size(P3, 2), 1)
-    @test unlazy(P3) * X ≈ P3_ * X
+    @test unlazy(P3, n=size(X, 2)) * X ≈ P3_ * X
 
     X = rand_mat(size(P4, 2), rand(3:30))
-    @test unlazy(P4) * X ≈ P4_ * X
+    @test unlazy(P4, n=size(X, 2)) * X ≈ P4_ * X
     X = rand_mat(size(P4, 2), 1)
-    @test unlazy(P4) * X ≈ P4_ * X
+    @test unlazy(P4, n=size(X, 2)) * X ≈ P4_ * X
 
     X = rand_mat(size(P5, 2), rand(3:30))
-    @test unlazy(P5) * X ≈ P5_ * X
+    @test unlazy(P5, n=size(X, 2)) * X ≈ P5_ * X
     X = rand_mat(size(P5, 2), 1)
-    @test unlazy(P5) * X ≈ P5_ * X
+    @test unlazy(P5, n=size(X, 2)) * X ≈ P5_ * X
 
     for (P, P_) in [(P2, P2_), (P3, P3_), (P4, P4_), (P5, P5_)]
         X = rand_mat(size(P, 2), rand(3:10))
         Y = rand_mat(size(P, 1), size(X, 2))
-        ws = EPMAfem.create_workspace(EPMAfem.mul_with!, P, rand_vec)
+        ws = EPMAfem.create_workspace(EPMAfem.required_workspace(EPMAfem.mul_with!, P, size(X, 2), ()), rand_vec)
         # @show ws.workspace |> length
         EPMAfem.mul_with!(ws, Y, P, X, true, false)
         @test Y ≈ P_ * X
 
         X = rand_mat(size(P, 2), 1)
         Y = rand_mat(size(P, 1), size(X, 2))
-        ws = EPMAfem.create_workspace(EPMAfem.mul_with!, P, rand_vec)
+        ws = EPMAfem.create_workspace(EPMAfem.required_workspace(EPMAfem.mul_with!, P, size(X, 2), ()), rand_vec)
         # @show ws.workspace |> length
         EPMAfem.mul_with!(ws, Y, P, X, true, false)
         @test Y ≈ P_ * X

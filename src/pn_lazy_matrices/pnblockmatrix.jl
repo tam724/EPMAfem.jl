@@ -111,17 +111,20 @@ max_size(I::InplaceInverseMatrix) = max_size(A(I))
 lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{<:Integer}) = error("Cannot getindex")
 @inline isdiagonal(I::InplaceInverseMatrix) = isdiagonal(A(I))
 
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, I::InplaceInverseMatrix, α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(I), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, It::Transpose{T, <:InplaceInverseMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(It), transpose(X), α, β)
+
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, I::InplaceInverseMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     A_mat, _ = materialize_with(ws, M(I))
     @assert !β
-    @assert α
+    @assert α isa Bool && α
     ldiv!(Y, A_mat, X)
 end
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:InplaceInverseMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
     A_mat, _ = materialize_with(ws, M(parent(It)))
     @assert !β
-    @assert α
+    @assert α isa Bool && α
     ldiv!(Y, transpose(A_mat), X)
 end
 

@@ -72,33 +72,9 @@ function mul_with!(ws::Workspace, y::AbstractVector, M::TwoProdMatrix, x::Abstra
     mul_with!(rem, y, A(M), WS, α, β)
 end
 
-function _iterate_mul_with(M::TwoProdMatrix)
-    return true
-    # return !(hasmethod(mul_with!, (Workspace, AbstractMatrix, typeof(A(M)), AbstractMatrix, Number, Number)) && 
-        # hasmethod(mul_with!, (Workspace, AbstractMatrix, typeof(B(M)), AbstractMatrix, Number, Number)))
-end
-
-function _iterated_mul_with!(ws::Workspace, Y::AbstractMatrix, M::TwoProdMatrix, X::AbstractMatrix, α::Number, β::Number)
-    WS, rem = take_ws(ws, size(B(M), 1))
-    for j in 1:size(X, 2)
-        mul_with!(rem, WS, B(M), @view(X[:, j]), true, false)
-        mul_with!(rem, @view(Y[:, j]), A(M), WS, α, β)
-    end
-end
-
-function _iterated_mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
-    M = parent(Mt)
-    WS, rem = take_ws(ws, size(B(M), 1))
-    for j in 1:size(X, 2)
-        mul_with!(rem, WS, transpose(A(M)), @view(X[:, j]), true, false)
-        mul_with!(rem, @view(Y[:, j]), transpose(B(M)), WS, α, β)
-    end
-end
-
 function mul_with!(ws::Workspace, Y::AbstractMatrix, M::TwoProdMatrix, X::AbstractMatrix, α::Number, β::Number)
-    CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin
-        if _iterate_mul_with(M) return _iterated_mul_with!(ws, Y, M, X, α, β) end
-        
+    CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin      
+
         WS, rem = take_ws(ws, (size(B(M), 1), size(X, 2)))
         mul_with!(rem, WS, B(M), X, true, false)
         mul_with!(rem, Y, A(M), WS, α, β)
@@ -115,7 +91,6 @@ end
 function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
     CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin
         M = parent(Mt)
-        if _iterate_mul_with(M) return _iterated_mul_with!(ws, Y, Mt, X, α, β) end
 
         WS, rem = take_ws(ws, (size(B(M), 1), size(X, 2)))
         mul_with!(rem, WS, transpose(A(M)), X, true, false)
@@ -124,11 +99,7 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdM
 end
 
 function required_workspace(::typeof(mul_with!), M::TwoProdMatrix, n, cache_notifier)
-    if _iterate_mul_with(M)
-        return max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), 1, cache_notifier), required_workspace(mul_with!, A(M), 1, cache_notifier))
-    else
-        return n * max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), n, cache_notifier), required_workspace(mul_with!, A(M), n, cache_notifier))
-    end
+    return n * max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), n, cache_notifier), required_workspace(mul_with!, A(M), n, cache_notifier))
 end
 
 materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix) = materialize_with(ws, M, skeleton, true, false)
@@ -301,7 +272,7 @@ function required_workspace(::typeof(materialize_with), M::ProdMatrix, cache_not
     return 2*max_m*max_n + max_internals
 end
 
-# we want to add an additional dispatch for A * X * B (this probably be treated generally in ProdMatrix)
+# we want to add an additional dispatch for A * X * B (this should probably be treated generally in ProdMatrix)
 const ThreeProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}}
 @inline A(M::ThreeProdMatrix) = M.args[1]
 @inline X(M::ThreeProdMatrix) = M.args[2]
@@ -323,19 +294,15 @@ function materialize_with(ws::Workspace, M::ThreeProdMatrix, skeleton::AbstractM
     mB, nB = size(B(M))
     strategy = mul_strategy(M)
     if strategy == :A_XB
-        tmp, rem = take_ws(ws, (nA, nB))
-        X_, rem_ = materialize_with(rem, materialize(X(M)))
-        B_, _ = materialize_with(rem_, materialize(B(M)))
-        mul_with!(nothing, tmp, X_, B_, true, false)
-        A_, _ = materialize_with(rem, materialize(A(M)))
-        mul_with!(nothing, skeleton, A_, tmp, α, β)
-    else
-        tmp, rem = take_ws(ws, (mA, mB))
+        XB, rem = take_ws(ws, (nA, nB))
+        B_, rem_ = materialize_with(rem, materialize(B(M)))
+        mul_with!(rem_, XB, X(M), B_, true, false)
+        mul_with!(rem, skeleton, A(M), XB, α, β)
+    else # strategy == :AX_B
+        AX, rem = take_ws(ws, (mA, mB))
         A_, rem_ = materialize_with(rem, materialize(A(M)))
-        X_, _ = materialize_with(rem_, materialize(X(M)))
-        mul_with!(nothing, tmp, A_, X_, true, false)
-        B_, _ = materialize_with(rem, materialize(B(M)))
-        mul_with!(nothing, skeleton, tmp, B_, α, β)
+        mul_with!(rem_, AX, A_, X(M), true, false)
+        mul_with!(rem, skeleton, AX, B(M), α, β)
     end
     return skeleton, ws
 end
@@ -348,14 +315,14 @@ function required_workspace(::typeof(materialize_with), M::ThreeProdMatrix, cach
     if strategy == :A_XB
         tmp_size = nA*nB
         return tmp_size + max(
-            required_workspace(materialize_with, materialize(X(M)), cache_notifier) + required_workspace(materialize_with, materialize(B(M)), cache_notifier),
-            required_workspace(materialize_with, materialize(A(M)), cache_notifier)
+            required_workspace(materialize_with, materialize(B(M)), cache_notifier) + required_workspace(mul_with!, X(M), nB, cache_notifier),
+            required_workspace(mul_with!, A(M), nB, cache_notifier)
         )
     else # strategy == :AX_B
         tmp_size = mA*mB
         return tmp_size + max(
-            required_workspace(materialize_with, materialize(X(M)), cache_notifier) + required_workspace(materialize_with, materialize(A(M)), cache_notifier),
-            required_workspace(materialize_with, materialize(B(M)), cache_notifier)
+            required_workspace(materialize_with, materialize(A(M)), cache_notifier) + required_workspace(mul_with!, X(M), mA, cache_notifier),
+            required_workspace(mul_with!, B(M), mA, cache_notifier)
         )
     end
 end

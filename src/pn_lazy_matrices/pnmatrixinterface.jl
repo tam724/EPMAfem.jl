@@ -73,7 +73,9 @@ end
 
 # simplify materialize and cache for LazyMatrix
 materialize(L::LazyMatrix) = L
+materialize(L::Transpose{T, <:LazyMatrix{T}}) where T = L
 cache(L::LazyMatrix) = L
+cache(L::Transpose{T, <:LazyMatrix{T}}) where T = L
 
 function materialize(A::AbstractMatrix)
     if A isa AbstractLazyMatrixOrTranspose
