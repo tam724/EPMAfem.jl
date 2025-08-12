@@ -5,6 +5,7 @@ using LinearAlgebra: inv!
 using CUDA
 using ConcreteStructs
 using Krylov
+using Adapt
 
 include("pnmatrices.jl")
 include("pnlazymatrix.jl")
@@ -20,6 +21,7 @@ include("pninversematrix.jl")
 
 include("pnworkspace.jl")
 include("pnmatrixinterface.jl")
+include("adapt.jl")
 
 export AbstractLazyMatrix, AbstractLazyMatrixOrTranspose, LazyScalar
 export lazy, blockmatrix, kron_AXB, materialize, cache, create_workspace, required_workspace, mul_with!, materialize_with, unlazy

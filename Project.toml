@@ -4,6 +4,7 @@ authors = ["Tamme Claus <claus@acom.rwth-aachen.de>"]
 version = "0.2.0"
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
@@ -35,6 +36,7 @@ NeXLCore = "93a0284f-3680-435e-8d39-dd6e52a1dbc8"
 NeXLCoreExt = "NeXLCore"
 
 [compat]
+Adapt = "4.3.0"
 CUDA = "5.5"
 ChainRulesCore = "1.25.1"
 ComponentArrays = "0.15"

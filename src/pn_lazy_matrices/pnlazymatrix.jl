@@ -1,5 +1,5 @@
-# a wrapper around "concrete" matrices
-struct LazyMatrix{T, AT} <: AbstractLazyMatrix{T}
+# a wrapper around "concrete" matrices (TODO: combine with LazyResizeMatrix)
+struct LazyMatrix{T, AT<:AbstractMatrix{T}} <: AbstractLazyMatrix{T}
     A::AT
 end
 
@@ -8,8 +8,6 @@ A(L::LazyMatrix) = L.A
 Base.size(L::LazyMatrix) = size(A(L))
 max_size(L::LazyMatrix) = size(L)
 lazy_getindex(L::LazyMatrix, i::Int, j::Int) = getindex(A(L), i, j)
-
-isdiagonal(L::LazyMatrix) = isdiagonal(L.A)
 
 isdiagonal(::LazyMatrix{<:Number, <:Diagonal}) = true
 isdiagonal(::LazyMatrix{<:Number, <:AbstractArray}) = false
