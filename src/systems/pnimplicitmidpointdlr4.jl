@@ -21,14 +21,14 @@ function implicit_midpoint_dlr4(pbl::DiscretePNProblem; max_ranks=(p=20, m=20))
     nb = EPMAfem.n_basis(pbl)
     Δϵ = step(energy_model(pbl.model))
 
-    Vtp = PNLazyMatrices.LazyResizeMatrix(allocate_mat(arch, max_ranks.p, nb.nΩ.p), (Ref(max_ranks.p), Ref(nb.nΩ.p)))
+    Vtp = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (max_ranks.p, nb.nΩ.p), (Ref(max_ranks.p), Ref(nb.nΩ.p)))
     Vp = transpose(Vtp)
-    Up = PNLazyMatrices.LazyResizeMatrix(allocate_mat(arch, nb.nx.p, max_ranks.p), (Ref(nb.nx.p), Ref(max_ranks.p)))
+    Up = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (nb.nx.p, max_ranks.p), (Ref(nb.nx.p), Ref(max_ranks.p)))
     Utp = transpose(Up)
 
-    Vtm = PNLazyMatrices.LazyResizeMatrix(allocate_mat(arch, max_ranks.m, nb.nΩ.m), (Ref(max_ranks.m), Ref(nb.nΩ.m)))
+    Vtm = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (max_ranks.m, nb.nΩ.m), (Ref(max_ranks.m), Ref(nb.nΩ.m)))
     Vm = transpose(Vtm)
-    Um = PNLazyMatrices.LazyResizeMatrix(allocate_mat(arch, nb.nx.m, max_ranks.m), (Ref(nb.nx.m), Ref(max_ranks.m)))
+    Um = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (nb.nx.m, max_ranks.m), (Ref(nb.nx.m), Ref(max_ranks.m)))
     Utm = transpose(Um)
 
     cfs = (
@@ -140,10 +140,10 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem4, rhs_ass::PNVectorAsse
     CUDA.NVTX.@range "copy basis" begin
         # TODO: maybe we can skip this (this is written to the system mats before the s step..)
         # K-step (prep)
-        PNLazyMatrices.resize_copyto!(system.mats.Vtp, Vtp₀)
-        PNLazyMatrices.resize_copyto!(system.mats.Up, Up₀)
-        PNLazyMatrices.resize_copyto!(system.mats.Vtm, Vtm₀)
-        PNLazyMatrices.resize_copyto!(system.mats.Um, Um₀)
+        PNLazyMatrices.set_memory!(system.mats.Vtp, x._xp.Vt)
+        PNLazyMatrices.set_memory!(system.mats.Up, x._xp.U)
+        PNLazyMatrices.set_memory!(system.mats.Vtm, x._xm.Vt)
+        PNLazyMatrices.set_memory!(system.mats.Um, x._xm.U)
     end
 
     CUDA.NVTX.@range "K-step prep" begin
@@ -245,8 +245,8 @@ function allocate_solution_vector(system::DiscreteDLRPNSystem4)
     arch = architecture(system.problem)
     max_ranks = system.max_rank
     return LowwRankSolution(
-        allocate_vec(arch, nxp*max_ranks.p + max_ranks.p*max_ranks.p + max_ranks.p*nΩp),
-        allocate_vec(arch, nxm*max_ranks.m + max_ranks.m*max_ranks.m + max_ranks.m*nΩm),
+        (U = allocate_vec(arch, nxp*max_ranks.p), S = allocate_vec(arch, max_ranks.p*max_ranks.p), Vt = allocate_vec(arch, max_ranks.p*nΩp)),
+        (U = allocate_vec(arch, nxm*max_ranks.m), S = allocate_vec(arch, max_ranks.m*max_ranks.m), Vt = allocate_vec(arch, max_ranks.m*nΩm)),
         max_ranks, 
         (p=Ref(max_ranks.p), m=Ref(max_ranks.m)),
         n_basis(system.problem)
@@ -262,10 +262,10 @@ end
     nb
 end
 
-function _USVt(x::AbstractVector, rank, nL, nR)
-    U = reshape(@view(x[1:nL*rank]), nL, rank)
-    S = reshape(@view(x[nL*rank+1:nL*rank+rank*rank]), rank, rank)
-    Vt = reshape(@view(x[nL*rank+rank*rank+1:nL*rank+rank*rank + rank*nR]), rank, nR)
+function _USVt(x::@NamedTuple{U::V, S::V, Vt::V}, rank, nL, nR) where V <: AbstractVector
+    U = reshape(@view(x.U[1:nL*rank]), nL, rank)
+    S = reshape(@view(x.S[1:rank*rank]), rank, rank)
+    Vt = reshape(@view(x.Vt[1:rank*nR]), rank, nR)
     return U, S, Vt
 end
 

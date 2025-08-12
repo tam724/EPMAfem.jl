@@ -29,7 +29,7 @@ system8 = EPMAfem.implicit_midpoint_dlr3(problem; max_rank=10);
 system9 = EPMAfem.implicit_midpoint_dlr4(problem; max_ranks=(p=20, m=20));
 
 include("../src/pn_lazy_matrices/pnlazymatrixanalysis.jl")
-p, _, _ = plot(build_graph2(system8.mats...; flat=false), layout=Stress(dim=2))
+p, _, _ = plot(build_graph2(system5.BM ; flat=false), layout=Stress(dim=2))
 p
 
 # Lazy = PNLazyMatrices
@@ -77,8 +77,12 @@ sol9 = system9 * discrete_rhs;
 
 probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω = Ω -> 1.0, ϵ = ϵ -> 1.0)
 
+func = EPMAfem.interpolable(probe, sol5)
+CUDA.@profile func2 = EPMAfem.interpolable(probe, sol9)
 
-func = EPMAfem.interpolable(probe, sol9)
+plot(-1:0.01:0, x -> func(Gridap.Point(x)))
+heatmap(-1:0.01:0, -1:0.01:1, (x, y) -> func(Gridap.Point(x, y)))
+heatmap(-1:0.01:0, -1:0.01:1, (x, y) -> func2(Gridap.Point(x, y)))
 
 Ω = Gridap.Triangulation(space_model.discrete_model)
 Gridap.writevtk(Ω, "3D_res", cellfields = ["u" => func.interp])
