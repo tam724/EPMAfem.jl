@@ -6,6 +6,7 @@ using LinearAlgebra
 using CUDA
 using ConcreteStructs
 using KernelAbstractions
+using Adapt
 
 include("../utils.jl")
 
@@ -184,6 +185,7 @@ end
 
 Base.size(A::Sparse3TensorSSM) = A.size
 Base.size(A::Sparse3TensorSSM, i) = A.size[i]
+Adapt.adapt_structure(to, A::Sparse3TensorSSM) = Sparse3TensorSSM(Adapt.adapt_structure(to, A.skeleton), Adapt.adapt_structure(to, A.projector), A.size)
 
 function find_nzval_index(::Diagonal, i, j)::Int64
     if i == j

@@ -13,6 +13,7 @@ using Krylov
 using UnsafeArrays
 using Zygote
 using ChainRulesCore
+using Adapt
 
 include("hacky_overwrites.jl")
 
