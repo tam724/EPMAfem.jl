@@ -62,11 +62,20 @@ function mul_with!(ws::Workspace, y::AbstractVector, BM::BlockMatrix, x::Abstrac
     y1 = @view(y[1:n1])
     y2 = @view(y[n1+1:n1+n2])
 
-    mul_with!(ws, y1, A(BM), x1, α, β)
-    mul_with!(ws, y1, B(BM), x2, α, true)
-
-    mul_with!(ws, y2, C(BM), x1, α, β)
-    mul_with!(ws, y2, D(BM), x2, α, true)
+    CUDA.NVTX.@range "blockmatrix mul!" begin
+        CUDA.NVTX.@range "A-block" begin
+            mul_with!(ws, y1, A(BM), x1, α, β)        
+        end
+        CUDA.NVTX.@range "B-block" begin
+            mul_with!(ws, y1, B(BM), x2, α, true)
+        end
+        CUDA.NVTX.@range "Bt-block" begin
+            mul_with!(ws, y2, C(BM), x1, α, β)
+        end
+        CUDA.NVTX.@range "D-block" begin
+            mul_with!(ws, y2, D(BM), x2, α, true)
+        end
+    end
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, BMt::Transpose{T, <:BlockMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
@@ -78,11 +87,20 @@ function mul_with!(ws::Workspace, y::AbstractVector, BMt::Transpose{T, <:BlockMa
     y1 = @view(y[1:n1])
     y2 = @view(y[n1+1:n1+n2])
 
-    mul_with!(ws, y1, transpose(A(parent(BMt))), x1, α, β)
-    mul_with!(ws, y1, transpose(C(parent(BMt))), x2, α, true)
-
-    mul_with!(ws, y2, transpose(B(parent(BMt))), x1, α, β)
-    mul_with!(ws, y2, transpose(D(parent(BMt))), x2, α, true)
+    CUDA.NVTX.@range "blockmatrix mul!" begin
+        CUDA.NVTX.@range "A-block" begin
+            mul_with!(ws, y1, transpose(A(parent(BMt))), x1, α, β)
+        end
+        CUDA.NVTX.@range "B-block" begin
+            mul_with!(ws, y1, transpose(C(parent(BMt))), x2, α, true)
+        end
+        CUDA.NVTX.@range "Bt-block" begin
+            mul_with!(ws, y2, transpose(B(parent(BMt))), x1, α, β)
+        end
+        CUDA.NVTX.@range "D-block" begin
+            mul_with!(ws, y2, transpose(D(parent(BMt))), x2, α, true)
+        end
+    end
 end
 
 function required_workspace(::typeof(mul_with!), BM::BlockMatrix, n, cache_notifier)
