@@ -48,7 +48,16 @@ function assemble_bilinear(a, model, U, V)
     return _assemble_bilinear(a, get_args(model), U, V)
 end
 
-rank_decomp(::typeof(∫R_u_∂zv), ::_1D) = (∫R_u_∂zv)
+rank_decomp(::typeof(∫∂R_absnz_uv), ::_1D) = (∫∂R_absnz_uv, )
+rank_decomp(::typeof(∫∂R_absnz_uv), ::_2D) = (∫∂R_absnz_uv, ∫R_uv)
+rank_decomp(::typeof(∫∂R_absnz_uv), ::_3D) = (∫∂R_absnz_uv, ∫R_uv, ∫R_uv)
+
+rank_decomp(::typeof(∫∂R_absnx_uv), ::_2D) = (∫R_uv, ∫∂R_absnz_uv)
+rank_decomp(::typeof(∫∂R_absnx_uv), ::_3D) = (∫R_uv, ∫∂R_absnz_uv, ∫R_uv)
+
+rank_decomp(::typeof(∫∂R_absny_uv), ::_3D) = (∫R_uv, ∫R_uv, ∫∂R_absnz_uv)
+
+rank_decomp(::typeof(∫R_u_∂zv), ::_1D) = (∫R_u_∂zv, )
 rank_decomp(::typeof(∫R_u_∂zv), ::_2D) = (∫R_u_∂zv, ∫R_uv)
 rank_decomp(::typeof(∫R_u_∂zv), ::_3D) = (∫R_u_∂zv, ∫R_uv, ∫R_uv)
 
@@ -57,7 +66,7 @@ rank_decomp(::typeof(∫R_u_∂xv), ::_3D) = (∫R_uv, ∫R_u_∂zv, ∫R_uv)
 
 rank_decomp(::typeof(∫R_u_∂yv), ::_3D) = (∫R_uv, ∫R_uv, ∫R_u_∂zv)
 
-function assemble_bilinear(a::Union{typeof(∫R_u_∂zv), typeof(∫R_u_∂xv), typeof(∫R_u_∂yv)}, model::CartesianSpaceModel{N}, U, V) where N
+function assemble_bilinear(a::Union{typeof(∫R_u_∂zv), typeof(∫R_u_∂xv), typeof(∫R_u_∂yv), typeof(∫∂R_absnz_uv), typeof(∫∂R_absnx_uv), typeof(∫∂R_absny_uv)}, model::CartesianSpaceModel{N}, U, V) where N
     if U == even(model)
         Us = model.even_fe_spaces
     else

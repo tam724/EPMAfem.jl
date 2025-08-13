@@ -51,7 +51,7 @@ function discretize_space(pn_eq::Union{AbstractPNEquations, AbstractMonochromPNE
     ρp = [diag_if_diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.even(space_mdl), SM.even(space_mdl))) |> arch for e in 1:n_elem]
     ρm = [diag_if_diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl,  SM.odd(space_mdl),  SM.odd(space_mdl))) |> arch for e in 1:n_elem]
 
-    ∂p = [dropzeros!(SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl))) |> arch for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))] 
+    ∂p = [SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl)) |> arch for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))] 
     ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) |> arch for ∫ ∈ SM.∫R_u_∂v(dimensionality(space_mdl))] 
 
     return SpaceDiscretization(space_mdl, arch, ρp, ρm, ∂p, ∇pm)
