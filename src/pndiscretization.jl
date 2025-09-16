@@ -69,8 +69,8 @@ function discretize_space_updatable(pn_eq::Union{AbstractPNEquations, AbstractMo
     ρm = [similar(ρm_tens.skeleton) |> arch for _ in 1:n_elem]
 
 
-    ∂p = [dropzeros!(SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl))) for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))] |> arch
-    ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) for ∫ ∈ SM.∫R_u_∂v(dimensionality(space_mdl))] |> arch
+    ∂p = [SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl)) |> arch for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))]
+    ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) |> arch for ∫ ∈ SM.∫R_u_∂v(dimensionality(space_mdl))]
 
     return SpaceDiscretization(space_mdl, arch, ρp, ρm, ∂p, ∇pm), ρp_tens, ρm_tens
 end

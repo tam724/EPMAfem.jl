@@ -18,27 +18,35 @@ function add_leaf!(g, A, A_to_v_dict, v_to_A_dict; flat)
     return A_to_v_dict[objectid(A)]
 end
 
-add_node!(g, A, A_to_v_dict, v_to_A_dict; flat) = add_leaf!(g, A, A_to_v_dict, v_to_A_dict; flat)
-function add_node!(g, A::Lazy.LazyResizeMatrix, A_to_v_dict, v_to_A_dict; flat)
+add_node!(g, A, A_to_v_dict, v_to_A_dict; flat, skip_cache_materialize) = add_leaf!(g, A, A_to_v_dict, v_to_A_dict; flat)
+function add_node!(g, A::Lazy.LazyResizeMatrix, A_to_v_dict, v_to_A_dict; flat, skip_cache_materialize)
     add_leaf!(g, A, A_to_v_dict, v_to_A_dict; flat)
 end
-function add_node!(g, A::Lazy.LazyMatrix, A_to_v_dict, v_to_A_dict; flat)
+function add_node!(g, A::Lazy.LazyMatrix, A_to_v_dict, v_to_A_dict; flat, skip_cache_materialize)
     add_leaf!(g, A, A_to_v_dict, v_to_A_dict; flat)
 end
 
-function add_node!(g, At::Transpose{<:Number, <:AbstractMatrix}, A_to_v_dict, v_to_A_dict; flat)
+function add_node!(g, At::Transpose{<:Number, <:AbstractMatrix}, A_to_v_dict, v_to_A_dict; flat, skip_cache_materialize)
     if !haskey(A_to_v_dict, objectid(At))
         @assert add_vertex!(g)
         v = nv(g)
         A_to_v_dict[objectid(At)] = v
         v_to_A_dict[v] = At
     end
-    v2 = add_node!(g, parent(At), A_to_v_dict, v_to_A_dict; flat=flat)
+    v2 = add_node!(g, parent(At), A_to_v_dict, v_to_A_dict; flat=flat, skip_cache_materialize=skip_cache_materialize)
     add_edge!(g, A_to_v_dict[objectid(At)], v2)
     return A_to_v_dict[objectid(At)]
 end
 
-function add_node!(g, A::AbstractLazyMatrix, A_to_v_dict, v_to_A_dict; flat)
+function add_node!(g, A::AbstractLazyMatrix, A_to_v_dict, v_to_A_dict; flat, skip_cache_materialize)
+    if skip_cache_materialize
+        if A isa Lazy.MaterializedOrCachedMatrix
+            B = A.args[1]
+            v2 = add_node!(g, B, A_to_v_dict, v_to_A_dict; flat=flat, skip_cache_materialize=skip_cache_materialize)
+            add_edge!(g, A_to_v_dict[objectid(B)], v2)
+            return A_to_v_dict[objectid(B)]
+        end
+    end
     if !haskey(A_to_v_dict, objectid(A))
         @assert add_vertex!(g)
         v = nv(g)
@@ -46,7 +54,7 @@ function add_node!(g, A::AbstractLazyMatrix, A_to_v_dict, v_to_A_dict; flat)
         v_to_A_dict[v] = A
     end
     for B in A.args
-        v2 = add_node!(g, B, A_to_v_dict, v_to_A_dict; flat=flat)
+        v2 = add_node!(g, B, A_to_v_dict, v_to_A_dict; flat=flat, skip_cache_materialize=skip_cache_materialize)
         add_edge!(g, A_to_v_dict[objectid(A)], v2)
     end
     return A_to_v_dict[objectid(A)]
@@ -69,7 +77,7 @@ label(A::Transpose) = "transpose()"
     A_to_v_dict
 end
 
-function build_graph2(As...; flat=true)
+function build_graph2(As...; flat=true, skip_cache_materialize=false)
     g = DiGraph()
     v_to_A_dict = Dict{Int, Any}()
     A_to_v_dict = Dict{UInt64, Int}()
@@ -77,10 +85,10 @@ function build_graph2(As...; flat=true)
 
     for A in As
         if A isa Lazy.AbstractLazyMatrixOrTranspose
-            r = add_node!(g, A, A_to_v_dict, v_to_A_dict; flat=flat)
+            r = add_node!(g, A, A_to_v_dict, v_to_A_dict; flat=flat, skip_cache_materialize=skip_cache_materialize)
             push!(roots, r)
         elseif A isa Lazy.NotSoLazy
-            r = add_node!(g, A.A, A_to_v_dict, v_to_A_dict; flat=flat)
+            r = add_node!(g, A.A, A_to_v_dict, v_to_A_dict; flat=flat, skip_cache_materialize=skip_cache_materialize)
             push!(roots, r)
         end
     end

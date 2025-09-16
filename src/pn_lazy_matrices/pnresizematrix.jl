@@ -73,6 +73,13 @@ function lazy_set_memory!(ws::Workspace, R::LazyResizeMatrix, R_mem_new)
     notify_cache(ws, R)
 end
 
+function lazy_set!(ws::Workspace, R::LazyResizeMatrix, R_mem_new, (m, n)::Tuple{<:Integer, <:Integer})
+    if size(R, 1) == m && size(R, 2) == n && R.R_mem[] === R_mem_new return end # return without notifying the cache
+    quiet_set_memory!(R, R_mem_new)
+    quiet_resize!(R, (m, n))
+    notify_cache(ws, R)
+end
+
 mul_with!(::Workspace, Y::AbstractVecOrMat, S::LazyResizeMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(nothing, Y, A(S), X, α, β)
 mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::LazyResizeMatrix, α::Number, β::Number) = mul_with!(nothing, Y, X, A(S), α, β)
 mul_with!(::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:LazyResizeMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul_with!(nothing, Y, transpose(A(parent(St))), X, α, β)

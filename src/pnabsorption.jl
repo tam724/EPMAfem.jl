@@ -34,7 +34,8 @@ end
 
 function estimate_basis_mean_and_radius(::Dimensions._2D, V, dx)
     # estimate the radii of the basis functions V
-    rs = 2.0.*sqrt.(assemble_vector(v -> ∫(v)*dx, V)./π)
+    vol = assemble_vector(v -> ∫(v)*dx, V)
+    rs = 2.0.*sqrt.(vol./π)
 
     # compute the means of the basis functions V
     gramian_matrix = assemble_matrix((u, v) -> ∫(u*v)*dx, V, TrialFESpace(V))
