@@ -157,7 +157,7 @@ function element_index(eq, k_ratio)
     return only(findall(e -> element(k_ratio) == e, eq.elements))
 end
 
-function discretize_detectors(eq::EPMAEquations, mdl::EPMAfem.DiscretePNModel, arch::EPMAfem.PNArchitecture; updatable=true)
+function discretize_detectors(eq::EPMAEquations, mdl::EPMAfem.DiscretePNModel, arch::EPMAfem.PNArchitecture; absorption=true, updatable=true)
     T = EPMAfem.base_type(arch)
 
     ## instantiate Gridap
@@ -169,7 +169,7 @@ function discretize_detectors(eq::EPMAEquations, mdl::EPMAfem.DiscretePNModel, a
 
     μϵs = [Vector{T}([EPMAfem.extraction_energy_distribution(eq, i, ϵ) for ϵ ∈ EPMAfem.energy_model(mdl)]) for i in 1:EPMAfem.number_of_extractions(eq)]
     # isotropic in direction
-    μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> 1.0), direction_mdl, SH.even(direction_mdl)) for i in 1:EPMAfem.number_of_extractions(eq)] |> arch
+    μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> 1.0), direction_mdl, SH.even(direction_mdl)) |> arch for i in 1:EPMAfem.number_of_extractions(eq)]
 
     ρs = EPMAfem.discretize_mass_concentrations(eq, mdl)
     ρ_proj = SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.even(space_mdl))
@@ -178,8 +178,12 @@ function discretize_detectors(eq::EPMAEquations, mdl::EPMAfem.DiscretePNModel, a
     # only compute the line_contribs for unique takeoff directions
     unique_takeoff_directions = unique([det.takeoff_direction for det in eq.detectors])
     @show length(unique_takeoff_directions)
-    line_integral_contribs = [EPMAfem.compute_line_integral_contribs(space_mdl, takeoff_direction) for takeoff_direction in unique_takeoff_directions]
-    absorptions = [EPMAfem.PNAbsorption(mdl, arch, ρ_proj, line_integral_contribs[findfirst(tak_dir -> tak_dir == eq.detectors[i].takeoff_direction, unique_takeoff_directions)], mass_absorption_coefficient(eq, eq.detectors[i].k_ratio), element_index(eq, eq.detectors[i].k_ratio)) for i in 1:EPMAfem.number_of_extractions(eq)]
+    if absorption
+        line_integral_contribs = [EPMAfem.compute_line_integral_contribs(space_mdl, takeoff_direction) for takeoff_direction in unique_takeoff_directions]
+        absorptions = [EPMAfem.PNAbsorption(mdl, arch, ρ_proj, line_integral_contribs[findfirst(tak_dir -> tak_dir == eq.detectors[i].takeoff_direction, unique_takeoff_directions)], mass_absorption_coefficient(eq, eq.detectors[i].k_ratio), element_index(eq, eq.detectors[i].k_ratio)) for i in 1:EPMAfem.number_of_extractions(eq)]
+    else
+        absorptions = [EPMAfem.PNNoAbsorption(mdl, arch, ρ_proj, element_index(eq, eq.detectors[i].k_ratio)) for i in 1:EPMAfem.number_of_extractions(eq)]
+    end
 
     vecs = [EPMAfem.UpdatableRank1DiscretePNVector(EPMAfem.Rank1DiscretePNVector(true, mdl, arch, μϵs[i], EPMAfem.allocate_vec(arch, EPMAfem.n_basis(mdl).nx.p), μΩps[i]), absorptions[i], n_parameters) for i in 1:EPMAfem.number_of_extractions(eq)]
     for vec in vecs
