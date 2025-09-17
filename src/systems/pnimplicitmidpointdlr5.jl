@@ -10,6 +10,10 @@ Base.@kwdef @concrete struct DiscreteDLRPNSystem5 <: AbstractDiscretePNSystem
     max_rank
 end
 
+function Base.adjoint(A::DiscreteDLRPNSystem5)
+    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_rank=A.max_rank)
+end
+
 function implicit_midpoint_dlr5(pbl::DiscretePNProblem; max_ranks=(p=20, m=20))
     if max_ranks isa Integer
         max_ranks = (p=max_ranks, m=max_ranks)
@@ -123,14 +127,25 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAsse
     @show idx
     if system.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
-    
     implicit_midpoint_coeffs_nonadjoint_rhs!(system.coeffs.rhs, system.problem, idx, Δϵ)
     implicit_midpoint_coeffs_nonadjoint_mat!(system.coeffs.mat, system.problem, idx, Δϵ)
+    _step!(x, system, rhs_ass, minus½(idx), Δϵ)
+end
 
+function step_adjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx, Δϵ)
+    @show idx
+    if !system.adjoint @warn "Trying to step_adjoint with system marked as nonadjoint" end
+    if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
+    implicit_midpoint_coeffs_adjoint_rhs!(system.coeffs.rhs, system.problem, idx, Δϵ)
+    implicit_midpoint_coeffs_adjoint_mat!(system.coeffs.mat, system.problem, idx, Δϵ)
+    _step!(x, system, rhs_ass, plus½(idx), Δϵ)
+end
+
+function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx, Δϵ)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
 
     CUDA.NVTX.@range "rhs assembly" begin
-        assemble_at!(system.rhs.full, rhs_ass, minus½(idx), Δϵ, true)
+        assemble_at!(system.rhs.full, rhs_ass, idx, Δϵ, true)
         u = @view(system.rhs.full[1:nxp*nΩp])
         v = @view(system.rhs.full[nxp*nΩp+1:end])
     end
@@ -195,7 +210,7 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAsse
         Ltp₁ = @view(Lt₁[1:x.ranks.p[]*nΩp])
         Ltm₁ = @view(Lt₁[x.ranks.p[]*nΩp+1:end])
         mul!(Lt₁, system.mats.inv_matBMᵤ, rhs_Lt, true, false)
-
+        
         Vphat = (qr([transpose(reshape(Ltp₁, (x.ranks.p[], nΩp))) transpose(Vtp₀)]).Q |> mat_type(architecture(system.problem)))[1:nΩp, 1:2x.ranks.p[]]
         Vmhat = (qr([transpose(reshape(Ltm₁, (x.ranks.m[], nΩm))) transpose(Vtm₀)]).Q |> mat_type(architecture(system.problem)))[1:nΩm, 1:2x.ranks.m[]]
         Np = transpose(Vphat)*transpose(Vtp₀)
@@ -238,12 +253,10 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAsse
 
         mul!(Up₀, Uphat, @view(Pp[1:2x.ranks.p[], 1:x.ranks.p[]]))
         mul!(Um₀, Umhat, @view(Pm[1:2x.ranks.p[], 1:x.ranks.p[]]))
-        # copyto!(Up₀, Uphat)
-        # copyto!(Um₀, Um₁)
-        mul!(transpose(Vtp₀), Vphat, @view(Qp[1:2x.ranks.p[], 1:x.ranks.p[]]))
-        mul!(transpose(Vtm₀), Vmhat, @view(Qm[1:2x.ranks.m[], 1:x.ranks.m[]]))
-        # copyto!(Vtp₀, transpose(Vp₁))
-        # copyto!(Vtm₀, transpose(Vm₁))
+        # mul!(transpose(Vtp₀), Vphat, @view(Qp[1:2x.ranks.p[], 1:x.ranks.p[]]))
+        mul!(Vtp₀, @view(adjoint(Qp)[1:x.ranks.p[], 1:2x.ranks.p[]]), transpose(Vphat))
+        # mul!(transpose(Vtm₀), Vmhat, @view(Qm[1:2x.ranks.m[], 1:x.ranks.m[]]))
+        mul!(Vtm₀, @view(adjoint(Qm)[1:x.ranks.m[], 1:2x.ranks.m[]]), transpose(Vmhat))
         copyto!(Sp₀, Diagonal(@view(Sp[1:x.ranks.p[]])))
         copyto!(Sm₀, Diagonal(@view(Sm[1:x.ranks.m[]])))
     end
