@@ -116,6 +116,7 @@ function interpolable(p::PNProbe, ψ::AbstractDiscretePNSolution)
     if isnothing(p.ϵ) error("Not yet implemented") end
     if isnothing(p.Ω) && !isnothing(p.x) return SphericalHarmonicsModels.interpolable(integral, direction_model(p.model)) end
     if isnothing(p.x) && !isnothing(p.Ω) return SpaceModels.interpolable(integral, space_model(p.model)) end
+    return integral
 end
 
 # @concrete terse struct PNBoundaryProbe <: AbstractDiscretePNVector

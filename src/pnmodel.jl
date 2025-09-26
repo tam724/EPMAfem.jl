@@ -51,7 +51,7 @@ function energy_eval_basis(energy_model, ϵ::Real)
         basis[i-1] = (energy_model[i] - ϵ) / (energy_model[i] - energy_model[i-1])
         basis[i] = (ϵ - energy_model[i-1]) / (energy_model[i] - energy_model[i-1])
     end
-    return basis
+    return basis ./ step(energy_model) # discrete dirac
 end
 
 function energy_eval_basis(energy_model, f::Function)
