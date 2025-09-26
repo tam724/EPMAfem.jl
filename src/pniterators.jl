@@ -12,11 +12,11 @@ function fillzero!(x::AbstractVector{T}) where T
     fill!(x, zero(T))
 end
 
+initialize!(current_solution::AbstractVector, _, initial_solution) = copyto!(current_solution, initial_solution)
 initialize_or_fillzero!(it::IterableDiscretePNSolution, ::Nothing) = fillzero!(it.current_solution)
 
 function initialize_or_fillzero!(it::IterableDiscretePNSolution, initial_solution)
-    @assert it.current_solution isa AbstractVector
-    copy!(it.current_solution, initial_solution)
+    initialize!(it.current_solution, it.system.problem.model, initial_solution)
 end
 
 function IterableDiscretePNSolution(system::AbstractDiscretePNSystem, b::AbstractDiscretePNVector; initial_solution=nothing)
