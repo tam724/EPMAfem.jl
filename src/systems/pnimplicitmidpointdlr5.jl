@@ -14,7 +14,7 @@ function Base.adjoint(A::DiscreteDLRPNSystem5)
     return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_rank=A.max_rank)
 end
 
-function implicit_midpoint_dlr5(pbl::DiscretePNProblem; max_ranks=(p=20, m=20))
+function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20))
     if max_ranks isa Integer
         max_ranks = (p=max_ranks, m=max_ranks)
     end
@@ -65,19 +65,19 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; max_ranks=(p=20, m=20))
     Bᵤ  = cfs.Δ*(cfs.δ*sum(kron_AXB(cache(Utp*∇pm[i]*Um),           Ωpm[i]    ) for i in 1:ns.nd))
     Bᵤᵥ = cfs.Δ*(cfs.δ*sum(kron_AXB(cache(Utp*∇pm[i]*Um), cache(Vtm*Ωpm[i]*Vp)) for i in 1:ns.nd))
 
-    inv_matBMᵥ = Krylov.minres([Aᵥ(cfs.mat) Bᵥ
+    inv_matBMᵥ = solver([Aᵥ(cfs.mat) Bᵥ
         transpose(Bᵥ) Cᵥ(cfs.mat)])
 
     rhsBMᵥ = [Aᵥ(cfs.rhs) Bᵥ
         transpose(Bᵥ) Cᵥ(cfs.rhs)]
 
-    inv_matBMᵤ = Krylov.minres([Aᵤ(cfs.mat) Bᵤ
+    inv_matBMᵤ = solver([Aᵤ(cfs.mat) Bᵤ
         transpose(Bᵤ) Cᵤ(cfs.mat)])
     
     rhsBMᵤ = [Aᵤ(cfs.rhs) Bᵤ
         transpose(Bᵤ) Cᵤ(cfs.rhs)]
 
-    inv_matBMᵤᵥ = Krylov.minres([Aᵤᵥ(cfs.mat) Bᵤᵥ
+    inv_matBMᵤᵥ = solver([Aᵤᵥ(cfs.mat) Bᵤᵥ
         transpose(Bᵤᵥ) Cᵤᵥ(cfs.mat)])
     
     rhsBMᵤᵥ = [Aᵤᵥ(cfs.rhs) Bᵤᵥ
