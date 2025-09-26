@@ -77,13 +77,14 @@ function lebedev_quadrature_max()
 end
 
 function guess_lebedev_order_from_model(model, fac=3)
-    N = max_degree(model)*fac #TODO: this should be checked somehow..
     available_orders = getavailableorders()
-    idx = findfirst(o -> o > N, available_orders)
-    if isnothing(idx)
-        return available_orders[end]
-    end
-    return available_orders[idx]
+    return available_orders[end]
+    # N = max_degree(model)*fac #TODO: this should be checked somehow..
+    # idx = findfirst(o -> o > N, available_orders)
+    # if isnothing(idx)
+    #     return available_orders[end]
+    # end
+    # return available_orders[idx]
 end
 
 function lebedev_points(quad)
