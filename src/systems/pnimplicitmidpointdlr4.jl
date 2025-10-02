@@ -292,19 +292,21 @@ end
 
 function fillzero!(sol::LowwRankSolution)
     ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
-    Up_, _, Vtp_ = svd(rand(size(Up, 1), size(Vtp, 2)))
+    Up_, _, Vp_ = svd(rand(size(Up, 1), size(Vtp, 2)))
     # TODO: this is weird and allocates to work together with CUDA!
-    copyto!(Up, Up_[:, 1:sol.ranks.p[]])
-    copyto!(Vtp, Vtp_[1:sol.ranks.p[], :])
+    copy!(Up, Up_[:, 1:sol.ranks.p[]])
+    copy!(Vtp, transpose(Vp_)[1:sol.ranks.p[], :])
     fill!(Sp, zero(eltype(Sp)))
 
-    Um_, _, Vtm_ = svd(rand(size(Um, 1), size(Vtm, 2)))
+    Um_, _, Vm_ = svd(rand(size(Um, 1), size(Vtm, 2)))
     # TODO: this is weird and allocates to work together with CUDA!
-    copyto!(Um, Um_[:, 1:sol.ranks.m[]])
-    copyto!(Vtm, Vtm_[1:sol.ranks.m[], :])
+    copy!(Um, Um_[:, 1:sol.ranks.m[]])
+    copy!(Vtm, transpose(Vm_)[1:sol.ranks.m[], :])
     fill!(Sm, zero(eltype(Sm)))
 end
 
+
+# TODO: fix U, S, V = svd(A) -> A = U*Diagonal(S)*transpose(V)
 function initialize!(current_solution::LowwRankSolution, model, initial_solution)
     ψ0p, ψ0m = pmview(initial_solution, model)
     @show size(ψ0p), size(ψ0m)
