@@ -1,4 +1,5 @@
 using Revise
+using EPMAfem
 using EPMAfem.PNLazyMatrices
 using EPMAfem.Krylov
 using BenchmarkTools

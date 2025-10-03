@@ -1,50 +1,44 @@
-const ScaleMatrixL{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{Base.RefValue{T}, M}}
-const ScaleMatrixR{T, M <: AbstractMatrix{T}} = LazyOpMatrix{T, typeof(*), <:Tuple{M, Base.RefValue{T}}}
-const ScaleMatrix{T, M <: AbstractMatrix{T}} = Union{ScaleMatrixL{T, M}, ScaleMatrixR{T, M}}
-# ScaleMatricex where M is a "normal" Matrix type should support the 5-arg mul! -> when mul_with!(::ScaleMatrix) we simply fuse the coefficient into a mul!( with α = a(S)*α_)
-const NotFusedScaleMatrix{T} = ScaleMatrix{T, <:AbstractLazyMatrixOrTranspose{T}}
-# we cannot do this for ScaleMatrices where the M is a LazyMatrix -> NonFusedScaleMatrix
-# somewhat that copies what we do with ShouldBroadcastMaterialize, maybe there is duplicate information here (TODO: figure this out..)
+const ScaleMatrixL{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:LazyScalar{T}, <:AbstractMatrix{T}}}
+const ScaleMatrixR{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:LazyScalar{T}}}
+const UnaryMinusMatrix{T} = LazyOpMatrix{T, typeof(-), <:Tuple{<:AbstractMatrix{T}}}
+const ScaleMatrix{T} = Union{ScaleMatrixL{T}, ScaleMatrixR{T}, UnaryMinusMatrix{T}}
 
 @inline a(S::ScaleMatrixL) = S.args[1][]
+@inline _a(S::ScaleMatrixL) = S.args[1]
 @inline A(S::ScaleMatrixL) = S.args[2]
 @inline a(S::ScaleMatrixR) = S.args[2][]
+@inline _a(S::ScaleMatrixR) = S.args[2]
 @inline A(S::ScaleMatrixR) = S.args[1]
+@inline a(::UnaryMinusMatrix{T}) where T = T(-1)
+@inline A(S::UnaryMinusMatrix) = only(S.args)
 Base.size(S::ScaleMatrix) = size(A(S))
 max_size(S::ScaleMatrix) = max_size(A(S))
 lazy_getindex(S::ScaleMatrix, idx::Vararg{<:Integer}) = *(a(S), getindex(A(S), idx...))
 @inline isdiagonal(S::ScaleMatrix) = isdiagonal(A(S))
 
-mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::NotFusedScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::NotFusedScaleMatrix, α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
-mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:NotFusedScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T = mul_with!(ws, Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:NotFusedScaleMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
-required_workspace(::typeof(mul_with!), S::NotFusedScaleMatrix) = required_workspace(mul_with!, A(S))
+mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
+mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul_with!(ws, Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
+function required_workspace(::typeof(mul_with!), S::ScaleMatrix, n, cache_notifier)
+    return register_cache_notifier(_a(S), cache_notifier) + required_workspace(mul_with!, A(S), n, cache_notifier)
+end
+function required_workspace(::typeof(mul_with!), S::UnaryMinusMatrix, n, cache_notifier)
+    return required_workspace(mul_with!, A(S), n, cache_notifier)
+end
 
-# for ScaleMatrix (fused) the mul_with! simply calls back into mul!
-mul_with!(::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
-mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul!(Y, X, A(S), a(S)*α, β)
-mul_with!(::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-mul_with!(::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
-required_workspace(::typeof(mul_with!), S::ScaleMatrix) = 0
-
-# and we can additionally overload the LinearAlgebra.mul! calls by simply fusing in the a(S)
-LinearAlgebra.mul!(Y::AbstractVector, S::ScaleMatrix, X::AbstractVector, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
-LinearAlgebra.mul!(Y::AbstractMatrix, S::ScaleMatrix, X::AbstractMatrix, α::Number, β::Number) = mul!(Y, A(S), X, a(S)*α, β)
-LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul!(Y, X, A(S), a(S)*α, β)
-LinearAlgebra.mul!(Y::AbstractVector, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVector, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-LinearAlgebra.mul!(Y::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T = mul!(Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul!(Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
-
-function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix)
-    A_mat, _ = materialize_with(ws, A(S), skeleton)
-    A_mat .= a(S) .* A_mat
+materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix) = materialize_with(ws, S, skeleton, true, false)
+function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    A_mat, _ = materialize_with(ws, A(S), skeleton, α*a(S), β)
     return A_mat, ws
 end
 
-broadcast_materialize(S::ScaleMatrix) = broadcast_materialize(A(S))
-materialize_broadcasted(ws::Workspace, S::ScaleMatrix) = Base.Broadcast.broadcasted(*, a(S), materialize_broadcasted(ws, A(S)))
-required_workspace(::typeof(materialize_with), S::ScaleMatrix) = required_workspace(materialize_with, A(S))
+function required_workspace(::typeof(materialize_with), S::ScaleMatrix, cache_notifier)
+    return register_cache_notifier(_a(S), cache_notifier) + required_workspace(materialize_with, A(S), cache_notifier)
+end
+function required_workspace(::typeof(materialize_with), S::UnaryMinusMatrix, cache_notifier)
+    return required_workspace(materialize_with, A(S), cache_notifier)
+end
 
 # it seems as if now the fun starts :D this can be heavily optimized (matrix product chain, etc..) well only go for some simple heuristics here
 # let's start implementing this with only A*B (the general case follows later..)
@@ -79,73 +73,46 @@ function mul_with!(ws::Workspace, y::AbstractVector, M::TwoProdMatrix, x::Abstra
 end
 
 function mul_with!(ws::Workspace, Y::AbstractMatrix, M::TwoProdMatrix, X::AbstractMatrix, α::Number, β::Number)
-    WS, rem = take_ws(ws, size(B(M), 1))
-    # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-    # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
+    CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin      
 
-    # temp, rem = take_ws(rem, max(size(X, 1), size(Y, 1)))
-    for j in 1:size(X, 2)
-        # if Base.iscontiguous(@view(X[:, j]))
-            mul_with!(rem, WS, B(M), @view(X[:, j]), true, false)
-        # else
-        #     @view(temp[1:size(X, 1)]) .= @view(X[:, j])
-        #     mul_with!(rem, WS, B(M), @view(temp[1:size(X, 1)]), true, false)
-        # end
-        # if Base.iscontiguous(@view(Y[:, j]))
-            mul_with!(rem, @view(Y[:, j]), A(M), WS, α, β)
-        # else
-        #     mul_with!(rem, @view(temp[1:size(Y, 1)]), A(M), WS, α, β)
-        #     @view(Y[:, j]) .= @view(temp[1:size(Y, 1)])
-        # end
+        WS, rem = take_ws(ws, (size(B(M), 1), size(X, 2)))
+        mul_with!(rem, WS, B(M), X, true, false)
+        mul_with!(rem, Y, A(M), WS, α, β)
     end
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, Mt::Transpose{T, <:TwoProdMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
     M = parent(Mt)
-    WS, rem = take_ws(ws, size(B(M), 1)) # == size(A(M), 2)
+    WS, rem = take_ws(ws, size(B(M), 1))
     mul_with!(rem, WS, transpose(A(M)), x, true, false)
     mul_with!(rem, y, transpose(B(M)), WS, α, β)
 end
 
 function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
-    M = parent(Mt)
-    WS, rem = take_ws(ws, size(B(M), 1)) # == size(A(M), 2)
-    # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-    # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
-    # temp, rem = take_ws(rem, max(size(X, 1), size(Y, 1)))
-    for j in 1:size(X, 2)
-        # if Base.iscontiguous(@view(X[:, j]))
-            mul_with!(rem, WS, transpose(A(M)), @view(X[:, j]), true, false)
-        # else
-        #     copyto!(@view(temp[1:size(X, 1)]), @view(X[:, j]))
-        #     mul_with!(rem, WS, transpose(A(M)), @view(temp[1:size(X, 1)]), true, false)
-        # end
-        # if Base.iscontiguous(@view(Y[:, j]))
-            mul_with!(rem, @view(Y[:, j]), transpose(B(M)), WS, α, β)
-        # else
-        #     mul_with!(rem, @view(temp[1:size(Y, 1)]), transpose(B(M)), WS, α, β)
-        #     copyto!(@view(Y[:, j]), @view(temp[1:size(Y, 1)]))
-        # end
+    CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin
+        M = parent(Mt)
+
+        WS, rem = take_ws(ws, (size(B(M), 1), size(X, 2)))
+        mul_with!(rem, WS, transpose(A(M)), X, true, false)
+        mul_with!(rem, Y, transpose(B(M)), WS, α, β)
     end
 end
 
-# assuming a vector input (matrix input is simply looped, TODO: maybe introduce threaded ? )
-function required_workspace(::typeof(mul_with!), M::TwoProdMatrix)
-    return size(B(M), 1) +  max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
-
-    # this feels unneccesary, we allocate more space to potentially copy the array inputs, to have contiguous memory in the loops
-    # return size(B(M), 1) + max(size(A(M), 1), size(B(M), 2)) + max(required_workspace(mul_with!, B(M)), required_workspace(mul_with!, A(M)))
+function required_workspace(::typeof(mul_with!), M::TwoProdMatrix, n, cache_notifier)
+    return n * max_size(B(M), 1) +  max(required_workspace(mul_with!, B(M), n, cache_notifier), required_workspace(mul_with!, A(M), n, cache_notifier))
 end
 
-function materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix)
-    A_mat, rem = materialize_with(ws, materialize(A(M)), nothing)
-    B_mat, _ = materialize_with(rem, materialize(B(M)), nothing)
-    mul!(skeleton, A_mat, B_mat)
+materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix) = materialize_with(ws, M, skeleton, true, false)
+
+function materialize_with(ws::Workspace, M::TwoProdMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    A_mat, rem = materialize_with(ws, materialize(A(M)))
+    B_mat, _ = materialize_with(rem, materialize(B(M)))
+    mul!(skeleton, A_mat, B_mat, α, β)
     return skeleton, ws
 end
 
-function required_workspace(::typeof(materialize_with), M::TwoProdMatrix)
-    return required_workspace(materialize_with, materialize(A(M))) + required_workspace(materialize_with, materialize(B(M)))
+function required_workspace(::typeof(materialize_with), M::TwoProdMatrix, cache_notifier)
+    return required_workspace(materialize_with, materialize(A(M)), cache_notifier) + required_workspace(materialize_with, materialize(B(M)), cache_notifier)
 end
 
 # ProdMatrix
@@ -190,106 +157,172 @@ mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, 
 
 # no strategy here, simply multiply right to left for now.. (its vector anyways)
 function mul_with!(ws::Workspace, y::AbstractVector, M::ProdMatrix, x::AbstractVector, α::Number, β::Number)
-    my_ws = maximum(A -> size(A, 2), As(M))
-    r_, rem = take_ws(ws, my_ws)
-    l_, rem = take_ws(rem, my_ws)
-    mul_with!(rem, @view(r_[1:size(last(As(M)), 1)]), last(As(M)), x, true, false)
-    for (i, A) in enumerate(reverse(As(M)))
-        if i == 1 || i == length(As(M)) continue end # skip the first and last iteration
-        mul_with!(rem, @view(l_[1:size(A, 1)]), A, @view(r_[1:size(A, 2)]), true, false)
-        r_, l_ = l_, r_
-    end
-    mul_with!(rem, y, first(As(M)), @view(r_[1:size(first(As(M)), 2)]), α, β)
-end
-
-# simply loop over the multiple X's (consider materializing first...)
-function mul_with!(ws::Workspace, Y::AbstractMatrix, M::ProdMatrix, X::AbstractMatrix, α::Number, β::Number)
-    my_ws_size = maximum(A -> size(A, 2), As(M))
-    r_, rem = take_ws(ws, my_ws_size)
-    l_, rem = take_ws(rem, my_ws_size)
-    # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-    # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
-    for j in 1:size(X, 2)
-        mul_with!(rem, @view(r_[1:size(last(As(M)), 1)]), last(As(M)), @view(X[:, j]), true, false)
+    CUDA.NVTX.@range "mul_with! ProdMatrix" begin
+        my_ws = maximum(A -> size(A, 2), As(M))
+        r_, rem = take_ws(ws, my_ws)
+        l_, rem = take_ws(rem, my_ws)
+        mul_with!(rem, @view(r_[1:size(last(As(M)), 1)]), last(As(M)), x, true, false)
         for (i, A) in enumerate(reverse(As(M)))
             if i == 1 || i == length(As(M)) continue end # skip the first and last iteration
             mul_with!(rem, @view(l_[1:size(A, 1)]), A, @view(r_[1:size(A, 2)]), true, false)
             r_, l_ = l_, r_
         end
-        mul_with!(rem, @view(Y[:, j]), first(As(M)), @view(r_[1:size(first(As(M)), 2)]), α, β)
+        mul_with!(rem, y, first(As(M)), @view(r_[1:size(first(As(M)), 2)]), α, β)
+    end
+end
+
+# simply loop over the multiple X's (consider materializing first...)
+function mul_with!(ws::Workspace, Y::AbstractMatrix, M::ProdMatrix, X::AbstractMatrix, α::Number, β::Number)
+    CUDA.NVTX.@range "mul_with! ProdMatrix" begin
+        my_ws_size = maximum(A -> size(A, 2), As(M))
+        r_, rem = take_ws(ws, my_ws_size)
+        l_, rem = take_ws(rem, my_ws_size)
+        # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
+        # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
+        for j in 1:size(X, 2)
+            mul_with!(rem, @view(r_[1:size(last(As(M)), 1)]), last(As(M)), @view(X[:, j]), true, false)
+            for (i, A) in enumerate(reverse(As(M)))
+                if i == 1 || i == length(As(M)) continue end # skip the first and last iteration
+                mul_with!(rem, @view(l_[1:size(A, 1)]), A, @view(r_[1:size(A, 2)]), true, false)
+                r_, l_ = l_, r_
+            end
+            mul_with!(rem, @view(Y[:, j]), first(As(M)), @view(r_[1:size(first(As(M)), 2)]), α, β)
+        end
     end
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, Mt::Transpose{T, <:ProdMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-    M = parent(Mt)
-    n = length(As(M))
-    my_ws = maximum(A -> size(A, 1), As(M))
-    r_, rem = take_ws(ws, my_ws)
-    l_, rem = take_ws(rem, my_ws)
-    # Start with the first (transposed) matrix (which is last in the original product)
-    mul_with!(rem, @view(r_[1:size(first(As(M)), 2)]), transpose(first(As(M))), x, true, false)
-    for (i, A) in enumerate(As(M))
-        if i == 1 || i == n continue end # skip the first and last iteration
-        mul_with!(rem, @view(l_[1:size(A, 2)]), transpose(A), @view(r_[1:size(A, 1)]), true, false)
-        r_, l_ = l_, r_
-    end
-    mul_with!(rem, y, transpose(last(As(M))), @view(r_[1:size(last(As(M)), 1)]), α, β)
-end
-
-# simply loop over the multiple X's (consider materializing first...)
-function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:ProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
-    M = parent(Mt)
-    n = length(As(M))
-    my_ws = maximum(A -> size(A, 1), As(M))
-    r_, rem = take_ws(ws, my_ws)
-    l_, rem = take_ws(rem, my_ws)
-    # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
-    # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
-    for j in 1:size(X, 2)
+    CUDA.NVTX.@range "mul_with! ProdMatrix" begin
+        M = parent(Mt)
+        n = length(As(M))
+        my_ws = maximum(A -> size(A, 1), As(M))
+        r_, rem = take_ws(ws, my_ws)
+        l_, rem = take_ws(rem, my_ws)
         # Start with the first (transposed) matrix (which is last in the original product)
-        mul_with!(rem, @view(r_[1:size(first(As(M)), 2)]), transpose(first(As(M))), @view(X[:, j]), true, false)
+        mul_with!(rem, @view(r_[1:size(first(As(M)), 2)]), transpose(first(As(M))), x, true, false)
         for (i, A) in enumerate(As(M))
             if i == 1 || i == n continue end # skip the first and last iteration
             mul_with!(rem, @view(l_[1:size(A, 2)]), transpose(A), @view(r_[1:size(A, 1)]), true, false)
             r_, l_ = l_, r_
         end
-        mul_with!(rem, @view(Y[:, j]), transpose(last(As(M))), @view(r_[1:size(last(As(M)), 1)]), α, β)
+        mul_with!(rem, y, transpose(last(As(M))), @view(r_[1:size(last(As(M)), 1)]), α, β)
     end
 end
 
-function required_workspace(::typeof(mul_with!), M::ProdMatrix)
-    my_ws = maximum(A -> size(A, 2), As(M)) # we could skip the last here
-    int_ws = maximum(A -> required_workspace(mul_with!, A), As(M))
+# simply loop over the multiple X's (consider materializing first...)
+function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:ProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
+    CUDA.NVTX.@range "mul_with! ProdMatrix" begin
+        M = parent(Mt)
+        n = length(As(M))
+        my_ws = maximum(A -> size(A, 1), As(M))
+        r_, rem = take_ws(ws, my_ws)
+        l_, rem = take_ws(rem, my_ws)
+        # if !Base.iscontiguous(@view(X[:, 1])) @warn "@view(X[:, j]) is not contiguous!" end
+        # if !Base.iscontiguous(@view(Y[:, 1])) @warn "@view(Y[:, j]) is not contiguous!" end
+        for j in 1:size(X, 2)
+            # Start with the first (transposed) matrix (which is last in the original product)
+            mul_with!(rem, @view(r_[1:size(first(As(M)), 2)]), transpose(first(As(M))), @view(X[:, j]), true, false)
+            for (i, A) in enumerate(As(M))
+                if i == 1 || i == n continue end # skip the first and last iteration
+                mul_with!(rem, @view(l_[1:size(A, 2)]), transpose(A), @view(r_[1:size(A, 1)]), true, false)
+                r_, l_ = l_, r_
+            end
+            mul_with!(rem, @view(Y[:, j]), transpose(last(As(M))), @view(r_[1:size(last(As(M)), 1)]), α, β)
+        end
+    end
+end
+
+function required_workspace(::typeof(mul_with!), M::ProdMatrix, n, cache_notifier)
+    #TODO this is currently an endpoint for batched mul, since we iterate in prodmatrix
+    my_ws = maximum(A -> max_size(A, 2), As(M)) # we could skip the last here
+    int_ws = maximum(A -> required_workspace(mul_with!, A, 1, cache_notifier), As(M))
     return 2*my_ws + int_ws
 end
 
-function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix) # TODO: (GJCBP)
+materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix) = materialize_with(ws, M, skeleton, true, false)
+
+function materialize_with(ws::Workspace, M::ProdMatrix, skeleton::AbstractMatrix, α::Number, β::Number) # TODO: (GJCBP)
     max_m = maximum(A -> size(A, 1), As(M))
     max_n = maximum(A -> size(A, 2), As(M))
     max_intermediate = max_m*max_n
     T1, rem = take_ws(ws, max_intermediate)
 
-    Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))), nothing)
-    Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]), nothing)
-    mul!(mat_view(T1, size(Aₙ₋₁, 1), size(Aₙ, 2)), Aₙ₋₁, Aₙ)
+    # todo: this looks buggy (probably there is not enough ws: required only allocates the maximum, here we take ws for the first two..)
+    Aₙ, rem_ = materialize_with(rem, materialize(last(As(M))))
+    Aₙ₋₁, _ = materialize_with(rem_, materialize(As(M)[end-1]))
+    mul_with!(nothing, mat_view(T1, size(Aₙ₋₁, 1), size(Aₙ, 2)), Aₙ₋₁, Aₙ, true, false)
     T2, rem_ = take_ws(rem, max_intermediate)
     for i in length(As(M))-2:-1:2
-        Aᵢ, _ = materialize_with(rem_, materialize(As(M)[i]), nothing)
-        mul!(mat_view(T2, size(Aᵢ, 1), size(Aₙ, 2)), Aᵢ, mat_view(T1, size(Aᵢ, 2), size(Aₙ, 2)))
+        Aᵢ, _ = materialize_with(rem_, materialize(As(M)[i]))
+        mul_with!(nothing, mat_view(T2, size(Aᵢ, 1), size(Aₙ, 2)), Aᵢ, mat_view(T1, size(Aᵢ, 2), size(Aₙ, 2)), true, false)
         T1, T2 = T2, T1
     end
-    A₁, _ = materialize_with(rem_, materialize(As(M)[1]), nothing)
+    A₁, _ = materialize_with(rem_, materialize(As(M)[1]))
 
     # the final result is always T1
-    mul!(skeleton, A₁, mat_view(T1, size(A₁, 2), size(Aₙ, 2)))
+    mul_with!(nothing, skeleton, lazy(A₁), mat_view(T1, size(A₁, 2), size(Aₙ, 2)), α, β)
     return skeleton, ws
 end
 
-
-function required_workspace(::typeof(materialize_with), M::ProdMatrix)
+function required_workspace(::typeof(materialize_with), M::ProdMatrix, cache_notifier)
     # simply exaggerate here.. # TODO bring the workspace size down !
-    max_m = maximum(A -> size(A, 1), As(M))
-    max_n = maximum(A -> size(A, 2), As(M))
-    max_internals = maximum(A -> required_workspace(materialize_with, materialize(A)), As(M))
+    max_m = maximum(A -> max_size(A, 1), As(M))
+    max_n = maximum(A -> max_size(A, 2), As(M))
+    max_internals = maximum(A -> required_workspace(materialize_with, materialize(A), cache_notifier), As(M))
     return 2*max_m*max_n + max_internals
+end
+
+# we want to add an additional dispatch for A * X * B (this should probably be treated generally in ProdMatrix)
+const ThreeProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}}
+@inline A(M::ThreeProdMatrix) = M.args[1]
+@inline X(M::ThreeProdMatrix) = M.args[2]
+@inline B(M::ThreeProdMatrix) = M.args[3]
+
+function mul_strategy(M::ThreeProdMatrix)
+    mA, nA = max_size(A(M))
+    mB, nB = max_size(B(M))
+
+    if (nA*nB)*(mA+mB) < (mA*mB)*(nA+nB)
+        return :A_XB
+    else
+        return :AX_B
+    end
+end 
+
+function materialize_with(ws::Workspace, M::ThreeProdMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
+    mA, nA = size(A(M))
+    mB, nB = size(B(M))
+    strategy = mul_strategy(M)
+    if strategy == :A_XB
+        XB, rem = take_ws(ws, (nA, nB))
+        B_, rem_ = materialize_with(rem, materialize(B(M)))
+        mul_with!(rem_, XB, X(M), B_, true, false)
+        mul_with!(rem, skeleton, A(M), XB, α, β)
+    else # strategy == :AX_B
+        AX, rem = take_ws(ws, (mA, mB))
+        A_, rem_ = materialize_with(rem, materialize(A(M)))
+        mul_with!(rem_, AX, A_, X(M), true, false)
+        mul_with!(rem, skeleton, AX, B(M), α, β)
+    end
+    return skeleton, ws
+end
+
+function required_workspace(::typeof(materialize_with), M::ThreeProdMatrix, cache_notifier)
+    mA, nA = max_size(A(M))
+    mB, nB = max_size(B(M))
+
+    strategy = mul_strategy(M)
+    if strategy == :A_XB
+        tmp_size = nA*nB
+        return tmp_size + max(
+            required_workspace(materialize_with, materialize(B(M)), cache_notifier) + required_workspace(mul_with!, X(M), nB, cache_notifier),
+            required_workspace(mul_with!, A(M), nB, cache_notifier)
+        )
+    else # strategy == :AX_B
+        tmp_size = mA*mB
+        return tmp_size + max(
+            required_workspace(materialize_with, materialize(A(M)), cache_notifier) + required_workspace(mul_with!, X(M), mA, cache_notifier),
+            required_workspace(mul_with!, B(M), mA, cache_notifier)
+        )
+    end
 end

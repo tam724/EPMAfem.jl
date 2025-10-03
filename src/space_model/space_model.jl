@@ -1,16 +1,48 @@
-@concrete struct GridapSpaceModel{ND}
+abstract type GridapSpaceModel{ND} end
+@concrete struct GeneralSpaceModel{ND} <: GridapSpaceModel{ND}
     discrete_model
     even_fe_space
     odd_fe_space
     args
 end
+@concrete struct CartesianSpaceModel{ND} <: GridapSpaceModel{ND}
+    discrete_model
+    even_fe_space
+    odd_fe_space
+    args
 
-function GridapSpaceModel(discrete_model::DiscreteModel{ND, ND}; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2)) where ND
+    discrete_models
+    even_fe_spaces
+    odd_fe_spaces
+    _args
+end
+
+function GeneralSpaceModel(discrete_model::DiscreteModel{ND, ND}; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2)) where ND
     reffe1 = ReferenceFE(lagrangian, Float64, even.order)
     even_fe_space = TestFESpace(discrete_model, reffe1, conformity=even.conformity)
     reffe0 = ReferenceFE(lagrangian, Float64, odd.order)
     odd_fe_space = TestFESpace(discrete_model, reffe0, conformity=odd.conformity)
-    return GridapSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space, get_args_(discrete_model))
+    return GeneralSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space, get_args_(discrete_model))
+end
+
+function GridapSpaceModel(discrete_model::DiscreteModel; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2))
+   return GeneralSpaceModel(discrete_model, even=even, odd=odd)
+end
+
+function GridapSpaceModel(discrete_model::CartesianDiscreteModel{ND}; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2)) where ND
+    c_descr = Gridap.Geometry.get_cartesian_descriptor(discrete_model)
+    c_descrs = Gridap.Geometry.CartesianDescriptor.(VectorValue.(c_descr.origin.data), tuple.(c_descr.sizes), c_descr.partition)
+    discrete_models = CartesianDiscreteModel.(c_descrs)
+
+    even_reffe = ReferenceFE(lagrangian, Float64, even.order)
+    even_fe_space = TestFESpace(discrete_model, even_reffe, conformity=even.conformity)
+    even_fe_spaces = TestFESpace.(discrete_models, Ref(even_reffe), conformity=even.conformity)
+    
+    odd_reffe = ReferenceFE(lagrangian, Float64, odd.order)
+    odd_fe_space = TestFESpace(discrete_model, odd_reffe, conformity=odd.conformity)
+    odd_fe_spaces = TestFESpace.(discrete_models, Ref(odd_reffe), conformity=odd.conformity)
+
+    return CartesianSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space, get_args_(discrete_model), discrete_models, even_fe_spaces, odd_fe_spaces, get_args_.(discrete_models))
 end
 
 Dimensions.dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality(ND)

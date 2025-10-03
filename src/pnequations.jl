@@ -130,7 +130,7 @@ function beam_direction_distribution(eq::PNExcitation, i, Ω)
 end
 
 function beam_energy_distribution(eq::PNExcitation, i, ϵ)
-    # return 0.5+0.5*tanh(-40*(ϵ-0.9)) # 
+    # return 0.5+0.5*tanh(-eq.beam_energy_σ*(ϵ-eq.beam_energies[i])) # 
     return expm2(ϵ, eq.beam_energies[i], eq.beam_energy_σ)
 end
 
