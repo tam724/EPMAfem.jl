@@ -1,0 +1,6 @@
+[deps]
+EPMAfem = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
+LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+NeXLCore = "93a0284f-3680-435e-8d39-dd6e52a1dbc8"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
