@@ -44,6 +44,7 @@ include("utils.jl")
 
 include("abstracttypes.jl")
 include("pnequations.jl")
+include("pnequations_filtered.jl")
 include("pnarchitecture.jl")
 include("pnmodel.jl")
 include("pnproblem.jl")

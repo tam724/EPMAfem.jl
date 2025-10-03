@@ -12,6 +12,13 @@ end
 
 _is_adjoint_vector(b::DiscreteMonochromPNVector) = b.adjoint
 
+function assemble!(rhs, B::Vector, Δ, sym, β=false)
+    for i in eachindex(B)
+        assemble!(rhs, B[i], Δ, sym, β)
+        β = true
+    end
+end
+
 function assemble!(rhs, b::DiscreteMonochromPNVector, Δ, sym, β=false)
     rhs_p, rhs_m = pmview(rhs, b.model)
     mul!(rhs_p, b.bxp, transpose(b.bΩp), Δ, β)

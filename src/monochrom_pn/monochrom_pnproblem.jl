@@ -62,8 +62,9 @@ function system(pbl::DiscreteMonochromPNProblem, solver; solver_kwargs...)
     )
 end
 
-function solve(x, system::DiscreteMonochromPNSystem, b::DiscreteMonochromPNVector)
+function solve(x, system::DiscreteMonochromPNSystem, b)
     assemble!(system.rhs, b, -1, system.A.sym[])
+    normalize!(system.rhs)
     pn_linsolve!(system.lin_solver, x, system.A, system.rhs)
 end
 
@@ -92,14 +93,14 @@ function system2(pbl::DiscreteMonochromPNProblem, solver)
     arch = architecture(pbl)
     T = base_type(arch)
 
-    coeffs = (a = [Ref(T(pbl.τ[i])) for i in 1:ns.ne], c = [Ref(T(pbl.σ[i])) for i in 1:ns.ne])
+    coeffs = (a = [PNLazyMatrices.LazyScalar(T(pbl.τ[i])) for i in 1:ns.ne], c = [PNLazyMatrices.LazyScalar(T(pbl.σ[i])) for i in 1:ns.ne])
 
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl.space_discretization)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl.direction_discretization)
 
-    A = sum(kron_AXB(ρp[i], coeffs.a[i]*Ip + coeffs.c[i]*kp[i][1]) for i in 1:ns.ne)
+    A = sum(kron_AXB(ρp[i], coeffs.a[i]*Ip - coeffs.c[i]*kp[i][1]) for i in 1:ns.ne)
     B = sum(kron_AXB(∇pm[i], Ωpm[i]) for i in 1:ns.nd)
-    C = sum(kron_AXB(ρm[i], coeffs.a[i]*Im + coeffs.c[i]*km[i][1]) for i in 1:ns.ne)
+    C = sum(kron_AXB(ρm[i], coeffs.a[i]*Im - coeffs.c[i]*km[i][1]) for i in 1:ns.ne)
     D = sum(kron_AXB(∂p[i], absΩp[i]) for i in 1:ns.nd)
 
     lazy_BM = [
