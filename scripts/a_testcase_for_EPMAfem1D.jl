@@ -123,8 +123,7 @@ plotly()
 
 gr()
 plot()
-sol = Dict()
-for N in [1, 3, 13, 19, 21, 27]
+for N in [1, 5, 13, 19, 21, 27]
     direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
     model = EPMAfem.DiscreteMonochromPNModel(space_model, direction_model)
 
@@ -162,17 +161,15 @@ savefig("plot_with_refined.png")
 
 p1 = heatmap(-0.5:0.001:0.5, -1:0.001:1, (x, Ω) -> distr_func(x, Ω; kwargs_analytic...), clims=(-0.1, 0.3))
 
-function distr_func_numeric(x, Ω, N)
-    direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
+function distr_func_numeric(x, Ω)
     xp, xm = EPMAfem.SpaceModels.eval_basis(space_model, VectorValue(x))
     θ = acos(Ω)
     Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(direction_model, VectorValue(Ω, sin(θ)))
 
-    solp, solm = sol[N]
     return dot(xp, solp * Ωp) + dot(xm, solm * Ωm)
 end
 
-p2 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω, 3), clims=(-0.1, 0.3))
+p2 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func_numeric(x, Ω), clims=(-0.1, 0.3))
 
 plot(p1, p2, size=(700, 300))
 
