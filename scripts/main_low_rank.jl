@@ -10,11 +10,35 @@ include("plot_overloads.jl")
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), (50)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 1)
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (100, 100)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(15, 2)
+
+for N in [1, 3, 5, 11, 21, 27]
+    space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (100, 100)))
+    direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 2)
+    equations = EPMAfem.PNEquations()
+    model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
+
+    problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
+
+    excitation = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [0.7], [VectorValue(-1.0, 0.0, 0.0)]);
+    discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cuda())[1];
+    probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), Ω = Ω -> 1.0, ϵ = ϵ -> 1.0)
+    
+    system_full = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
+    func_full = EPMAfem.interpolable(probe, system_full * discrete_rhs)
+    contourf(-1:0.01:1, -1:0.01:0, (y, x) -> func_full(Gridap.Point(x, y)), aspect_ratio=:equal, clims=(0, 0.13), levels=12)
+    savefig("figures_low_rank/N$(N)_rank_inf.png")
+
+    for rank in [1, 3, 4, 5, 10, 20]
+        if rank > EPMAfem.n_basis(problem).nΩ.p || rank > EPMAfem.n_basis(problem).nΩ.p continue end
+        system_lowrank = EPMAfem.implicit_midpoint_dlr4(problem; max_ranks=(p=rank, m=rank));
+        func_lowrank = EPMAfem.interpolable(probe, system_lowrank * discrete_rhs)
+        contourf(-1:0.01:1, -1:0.01:0, (y, x) -> func_lowrank(Gridap.Point(x, y)), aspect_ratio=:equal, clims=(0, 0.13), levels=12)
+        savefig("figures_low_rank/N$(N)_rank$(rank).png")
+    end
+end
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (40, 80, 80)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(27, 3)
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(11, 3)
 
 equations = EPMAfem.PNEquations()
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
@@ -32,6 +56,8 @@ include("../src/pn_lazy_matrices/pnlazymatrixanalysis.jl")
 p, _, _ = plot(build_graph2(system5.BM ; flat=false), layout=Stress(dim=2))
 p
 
+p, _, _ = plot(build_graph2(system9.mats.rhsBMᵤᵥ ; flat=false, skip_cache_materialize=true), layout=Stress(dim=2))
+p
 # Lazy = PNLazyMatrices
 # Lazy._half_schur_components(system6.mats.half_BM_U⁻¹.A)[1].args[2] |> Lazy.lazy_objectid
 # Lazy._half_schur_components(system6.mats.half_BM_V⁻¹.A)[1].args[2] |> Lazy.lazy_objectid

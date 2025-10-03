@@ -63,7 +63,7 @@ end
 # plot(-1:0.01:1, x -> distr_func(x, 0.01; R=0.1, b=1.0, μ_in=10.0, μ_out=0.0))
 # plot(-1:0.01:1, Ω -> distr_func(0.1, Ω; R=0.1, b=1.0, μ_in=10.0, μ_out=0.0))
 
-heatmap(-1:0.001:1, -1:0.001:1, (x, Ω) -> distr_func(x, Ω; R=0.1, b=1.0, μ_in=10.0, μ_out=1.0))
+heatmap(-1:0.001:1, -1:0.001:1, (x, Ω) -> distr_func(x, Ω; R=0.1, b=1.0, μ_in=10.0, μ_out=0.1))
 Plots.xlabel!("x")
 Plots.ylabel!("Ω")
 
@@ -102,14 +102,14 @@ EPMAfem.scattering_coefficient(::DummyPNEquations, e) = 0.0
 EPMAfem.scattering_kernel(::DummyPNEquations, e) = μ -> 0.0
 EPMAfem.absorption_coefficient(::DummyPNEquations, e) = 1.0
 function EPMAfem.mass_concentrations(::DummyPNEquations, e, x)
-    return (norm(x) < 0.15) ? 50.0 : 0.01
+    return (norm(x) < 0.15) ? 50.0 : 1.0
 end
 
 eq = DummyPNEquations()
 
 
 # cartesian space model
-# space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5, 0.5), (100)))
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5, 0.5), (400)))
 
 grid_gen_1D((-0.5, 0.5); res=0.01, highres=(dist=0.3, res=0.0001, points=[-0.15, 0.15]))
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(DiscreteModelFromFile("/tmp/tmp_msh.msh"))
@@ -117,6 +117,7 @@ space_model = EPMAfem.SpaceModels.GridapSpaceModel(DiscreteModelFromFile("/tmp/t
 EPMAfem.SpaceModels.n_basis(space_model)
 plot()
 vline!(getindex.(space_model.discrete_model.grid.node_coordinates, 1), color=:gray, α=0.1)
+vline!(getindex.(space_model.discrete_model.grid.node_coords, 1), color=:gray, α=0.1)
 
 plotly()
 
@@ -139,7 +140,7 @@ for N in [1, 5, 13, 19, 21, 27]
     EPMAfem.solve(solution, system, rhs)
     solp, solm = EPMAfem.pmview(solution, model)
 
-    Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(direction_model, EPMAfem.Dimensions.Ωz)
+    Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(direction_model, Ω -> 1.0)
 
     func = EPMAfem.SpaceModels.interpolable((p=solp*Ωp, m=solm*Ωm), space_model)
 
@@ -150,7 +151,7 @@ for N in [1, 5, 13, 19, 21, 27]
     display(p)
 end
 
-kwargs_analytic = (R=0.15, b=10.0, μ_in=50.0, μ_out=0.01)
+kwargs_analytic = (R=0.15, b=10.0, μ_in=50.0, μ_out=1.0)
 # I_0 = intensity(0; kwargs_analytic...)
 plot!(-0.5:0.0001:0.5, x -> 4*π*intensity(x; kwargs_analytic...), label="analytic_solution")
 plot!(-0.5:0.0001:0.5, x -> 4*π*intensity(x; kwargs_analytic...), label="analytic_solution")
@@ -158,7 +159,7 @@ plot!(-0.5:0.0001:0.5, x -> 4*π*quad_dist_func(x, Ω->Ω; kwargs_analytic...), 
 
 savefig("plot_with_refined.png")
 
-p1 = heatmap(-0.5:0.01:0.5, -1:0.01:1, (x, Ω) -> distr_func(x, Ω; kwargs_analytic...), clims=(-0.1, 0.3))
+p1 = heatmap(-0.5:0.001:0.5, -1:0.001:1, (x, Ω) -> distr_func(x, Ω; kwargs_analytic...), clims=(-0.1, 0.3))
 
 function distr_func_numeric(x, Ω)
     xp, xm = EPMAfem.SpaceModels.eval_basis(space_model, VectorValue(x))
