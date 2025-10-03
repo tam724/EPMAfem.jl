@@ -309,24 +309,16 @@ end
 # TODO: fix U, S, V = svd(A) -> A = U*Diagonal(S)*transpose(V)
 function initialize!(current_solution::LowwRankSolution, model, initial_solution)
     ψ0p, ψ0m = pmview(initial_solution, model)
-    @show size(ψ0p), size(ψ0m)
-    U0p, S0p, Vt0p = svd(ψ0p)
-    U0m, S0m, Vt0m = svd(ψ0m)
+    U0p, S0p, V0p = svd(ψ0p)
+    U0m, S0m, V0m = svd(ψ0m)
     sol = current_solution
     ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
-    @assert size(Up) == size(@view(U0p[:, 1:sol.ranks.p[]]))
-    @assert size(Sp) == size(Diagonal(@view(S0p[1:sol.ranks.p[]])))
-    @assert size(Vtp) == size(transpose(Vt0p[:, 1:sol.ranks.p[]]))
-    copyto!(Up, @view(U0p[:, 1:sol.ranks.p[]]))
-    copyto!(Sp, Diagonal(@view(S0p[1:sol.ranks.p[]])))
-    copyto!(Vtp, transpose(@view(Vt0p[:, 1:sol.ranks.p[]])))
+    
+    copy!(Up, @view(U0p[:, 1:sol.ranks.p[]]))
+    copy!(Sp, Diagonal(@view(S0p[1:sol.ranks.p[]])))
+    copy!(Vtp, transpose(V0p)[1:sol.ranks.p[], :])
 
-    # @show size(Vtp), size(Vt0p[1:sol.ranks.p[], :])
-
-    @assert size(Um) == size(@view(U0m[:, 1:sol.ranks.p[]]))
-    @assert size(Sm) == size(Diagonal(@view(S0m[1:sol.ranks.m[]])))
-    @assert size(Vtm) == size(transpose(Vt0m[:, 1:sol.ranks.m[]]))
-    copyto!(Um, @view(U0m[:, 1:sol.ranks.m[]]))
-    copyto!(Sm, Diagonal(@view(S0m[1:sol.ranks.m[]])))
-    copyto!(Vtm, transpose(@view(Vt0m[:, 1:sol.ranks.m[]])))
+    copy!(Um, @view(U0m[:, 1:sol.ranks.m[]]))
+    copy!(Sm, Diagonal(@view(S0m[1:sol.ranks.m[]])))
+    copy!(Vtm, transpose(V0m)[1:sol.ranks.m[], :])
 end
