@@ -216,14 +216,12 @@ function pn_linsolve!(S::PNKrylovMinresSolver, x, A::BlockMat2, b)
     
     solver = get_solver(cuview(x, :), S)
     Krylov.solve!(solver, A, cuview(b, :), rtol=S.rtol, atol=S.atol)
-    @show solver.stats
     if !solver.stats.solved @warn("iterative solver $(typeof(S)) not converged") end
 end
 
 function pn_linsolve!(S::PNKrylovMinresSolver, x, A, b)
     solver = get_solver(cuview(x, :), S)
     Krylov.solve!(solver, A, cuview(b, :), rtol=S.rtol, atol=S.atol)
-    @show solver.stats
     if !solver.stats.solved @warn("iterative solver $(typeof(S)) not converged") end
 end
 
