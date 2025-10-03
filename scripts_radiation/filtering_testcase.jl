@@ -1,13 +1,13 @@
 using Revise
 using EPMAfem
-using Gridap
+using EPMAfem.Gridap
 using LinearAlgebra
 using Plots
 using Distributions
 using ConcreteStructs
 using QuadGK
-include("../scripts/plot_overloads.jl")
-Makie.inline!(false)
+# include("../scripts/plot_overloads.jl")
+# Makie.inline!(false)
 
 plotly()
 ## 1D exact solution
@@ -88,7 +88,7 @@ function EPMAfem.mass_concentrations(::DummyPNEquations, e, x)
 end
 
 function distr_func_numeric(x, Ω, N, σ_f, α)
-    direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1, σ_f, α)
+    direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
     xp, xm = EPMAfem.SpaceModels.eval_basis(space_model, VectorValue(x))
     θ = acos(Ω)
     Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(direction_model, VectorValue(Ω, sin(θ)))
@@ -103,11 +103,11 @@ space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-0.5,
 sol = Dict()
 Ω0th = Dict()
 Ω1st = Dict()
-for N in [1,3,7,27]
-    for σ_f in [0.0,0.01,0.1,1.0,10.0]
-        for α in [1.0,5.0,15.0]
+for N in [1, 3, 7, 21, 27]
+    for σ_f in [0.0, 0.01, 0.1, 1.0, 10.0]
+        for α in [1.0, 5.0, 15.0]
             println(string(N)*","*string(σ_f)*","*string(α))
-            direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1, σ_f, α)
+            direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
             model = EPMAfem.DiscreteMonochromPNModel(space_model, direction_model)
 
             function q(x)
@@ -116,7 +116,8 @@ for N in [1,3,7,27]
 
             source = EPMAfem.PNXΩSource(q, Ω -> 1.0)
             rhs = EPMAfem.discretize_rhs(source, model, EPMAfem.cpu())
-            problem = EPMAfem.discretize_problem(eq, model, EPMAfem.cpu())
+            eq_filtered = EPMAfem.filter_exp(eq, σ_f, α)
+            problem = EPMAfem.discretize_problem(eq_filtered, model, EPMAfem.cpu())
             system = EPMAfem.system2(problem, EPMAfem.Krylov.minres)
 
             solution = EPMAfem.allocate_solution_vector(system)

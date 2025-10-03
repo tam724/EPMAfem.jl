@@ -15,8 +15,6 @@ const ∫S²_absΩzuv = Val{:∫S²_absΩzuv}()
 const ∫S²_absΩxuv = Val{:∫S²_absΩxuv}()
 const ∫S²_absΩyuv = Val{:∫S²_absΩyuv}()
 
-const ∫S²_fσuv = Val{:∫S²_fσuv}()
-
 ∫S²_absΩuv(::_1D) = (∫S²_absΩzuv, )
 ∫S²_absΩuv(::_2D) = (∫S²_absΩzuv, ∫S²_absΩxuv)
 ∫S²_absΩuv(::_3D) = (∫S²_absΩzuv, ∫S²_absΩxuv, ∫S²_absΩyuv)
@@ -37,10 +35,15 @@ int_func(::Val{:∫S²_Ωzuv}, Ω) = Ωz(Ω)
 int_func(::Val{:∫S²_absΩxuv}, Ω) = abs(Ωx(Ω))
 int_func(::Val{:∫S²_absΩyuv}, Ω) = abs(Ωy(Ω))
 int_func(::Val{:∫S²_absΩzuv}, Ω) = abs(Ωz(Ω))
-int_func(::Val{:∫S²_fσuv}, Ω) = error("numerische quadratur geht nicht")
 
-@concrete struct LegendreBasisExp
+abstract type AbstractLegendreBasisExp end
+@concrete struct LegendreBasisExp <: AbstractLegendreBasisExp
     coeffs
+end
+
+function legendre_coeff(basis_exp::LegendreBasisExp, _, u)
+    l = degree(u)
+    return basis_exp.coeffs[l+1]
 end
 
 function (f::LegendreBasisExp)(μ)
@@ -58,6 +61,20 @@ function expand_legendre(f, N, quad=hcubature_quadrature)
     cache = LegendrePolynomials.OffsetVector{Float64}(undef, 0:N)
     c = hquadrature(μ -> f(μ).*collectPl!(cache, μ, lmax=N), -1.0, 1.0, rtol=quad.rtol, atol=quad.atol, maxevals=quad.maxevals)[1]
     return LegendreBasisExp(c)
+end
+
+@concrete struct ExpFilter <: AbstractLegendreBasisExp
+    α
+end
+
+function legendre_coeff(basis_exp::ExpFilter, model, u)
+    l = degree(u)
+    # TODO: this should be the numerical precision of the discretization (which is not always Float64)
+    return log(eps(Float64)) * (l / (max_degree(model) + 1))^basis_exp.α
+end
+
+function (f::ExpFilter)(_)
+    error("Cannot evaluate the filter!")
 end
 
 struct ∫∫S²_kuv{F}
@@ -139,11 +156,11 @@ function (quad::SphericalQuadrature)(f::Function)
     else
         return I
     end
-end
-    
+end 
 
-function assemble_bilinear(integral::∫S²_kuv, model, U, V, quad::hcubature_quadrature)
+function assemble_bilinear(integral::∫S²_kuv{<:Function}, model, U, V, quad::hcubature_quadrature)
     N = max_degree(model)
+    # TODO: cleanup! Here we can use the LegendreBasisExp and remove the duplicate assemble_bilinear routine.
     Σl = 2*π*hquadrature(μ -> integral.k(μ).*collectPl.(μ, lmax=N), -1.0, 1.0, rtol=quad.rtol, atol=quad.atol, maxevals=quad.maxevals)[1]
     A = zeros(length(V), length(U))
     for (i, v) in enumerate(V)
@@ -157,26 +174,18 @@ function assemble_bilinear(integral::∫S²_kuv, model, U, V, quad::hcubature_qu
         end
     end
     return A
-    # return Diagonal([Σl[l+1] for (l, k) in get_even_moments(N, nd)]), Diagonal([Σl[l+1] for (l, k) in get_odd_moments(N, nd)])
 end
 
-function assemble_bilinear(integral::∫S²_kuv{<:LegendreBasisExp}, model, U, V, quad::hcubature_quadrature)
-    N = max_degree(model)
+function assemble_bilinear(integral::∫S²_kuv{<:AbstractLegendreBasisExp}, model, U, V, _)
     A = zeros(length(V), length(U))
-    all_harmonics = SphericalHarmonics.ML(0:N) |> collect
-
     for (i, v) in enumerate(V)
         for (j, u) in enumerate(U)
             if u == v # isotropic scattering is diagonal (in spherical harmonic basis)
-                l = degree(u) #  == degree(v)
-                # if l in axes(integral.k.coeffs, 1)
-                    A[i, j] = integral.k.coeffs[l+1]
-                # end
+                A[i, j] = legendre_coeff(integral.k, model, u)
             end
         end
     end
     return A
-    # return Diagonal([Σl[l+1] for (l, k) in get_even_moments(N, nd)]), Diagonal([Σl[l+1] for (l, k) in get_odd_moments(N, nd)])
 end
 
 function assemble_bilinear(integral::IntFuncIntegral, model, U, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
