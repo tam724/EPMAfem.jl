@@ -1,5 +1,49 @@
 using GridapGmsh: gmsh
 
+# TODO: check if the tags here correspond to the default Gridap CartesianDiscreteModel tags!
+function grid_gen_1D((zl, zr); res=0.01, highres=(dist=0.0, res=0.0, points=[]), filepath="/tmp/tmp_msh.msh")
+    gmsh.initialize()
+    gmsh.clear()
+                                # x, y, z, res, tag
+    p1 = gmsh.model.geo.addPoint(zl, 0.0, 0.0, 0.0, 1)
+    p2 = gmsh.model.geo.addPoint(zr, 0.0, 0.0, 0.0, 2)
+
+    gmsh.model.geo.addPhysicalGroup(0, [1], 1, "tag_1")
+    gmsh.model.geo.addPhysicalGroup(0, [2], 2, "tag_2")
+
+    l1 = gmsh.model.geo.addLine(p1, p2, 1)
+    gmsh.model.geo.addPhysicalGroup(1, [3], 3, "tag_3")
+
+    gmsh.model.geo.synchronize()
+
+    gmsh.model.geo.addPhysicalGroup(1, [l1], 4, "interior")
+    gmsh.model.geo.addPhysicalGroup(0, [p1, p2], 5, "boundary")
+
+    rps = Int64[]
+    for res_point in highres.points
+        rp = gmsh.model.geo.addPoint(res_point, 0.0, 0.0, 0.0)
+        push!(rps, rp)
+    end
+    field_id = gmsh.model.mesh.field.add("Distance")
+    gmsh.model.mesh.field.setNumbers(field_id, "NodesList", rps)
+
+    threshold_id = gmsh.model.mesh.field.add("Threshold")
+    gmsh.model.mesh.field.setNumber(threshold_id, "InField", field_id)
+    gmsh.model.mesh.field.setNumber(threshold_id, "SizeMin", highres.res)
+    gmsh.model.mesh.field.setNumber(threshold_id, "SizeMax", res)
+    gmsh.model.mesh.field.setNumber(threshold_id, "DistMin", 0.0)
+    gmsh.model.mesh.field.setNumber(threshold_id, "DistMax", highres.dist)
+
+    gmsh.model.mesh.field.setAsBackgroundMesh(threshold_id)
+
+    gmsh.model.geo.synchronize()
+
+    gmsh.model.mesh.generate(1)
+
+    gmsh.write(filepath)
+    gmsh.clear()
+end
+
 function grid_gen_2D((zl, zr, xl, xr); min_res=0.1, max_res=0.01, filepath="/tmp/tmp_msh.msh")
     gmsh.initialize()
     gmsh.clear()
@@ -55,9 +99,9 @@ function grid_gen_2D((zl, zr, xl, xr); min_res=0.1, max_res=0.01, filepath="/tmp
     gmsh.clear()
 end
 
-grid_gen_2D((-0.5, 0.5, -0.5, 0.5); filepath="/tmp/tmp_msh.msh")
+# grid_gen_2D((-0.5, 0.5, -0.5, 0.5); filepath="/tmp/tmp_msh.msh")
 
-using Gridap
+# using Gridap
 
-model = DiscreteModelFromFile("/tmp/tmp_msh.msh")
-get_face_labeling(model)
+# model = DiscreteModelFromFile("/tmp/tmp_msh.msh")
+# get_face_labeling(model)

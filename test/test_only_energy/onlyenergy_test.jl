@@ -4,7 +4,7 @@ module OnlyEnergyTests
 using EPMAfem
 
 using EPMAfem: PNArchitecture, energy_model, mass_concentrations, stopping_power, absorption_coefficient, scattering_coefficient, number_of_scatterings, number_of_elements, base_type
-using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, implicit_midpoint
+using EPMAfem: DiscretePNProblem, Rank1DiscretePNVector, discretize_rhs, discretize_problem, implicit_midpoint, implicit_midpoint2, implicit_midpoint_dlr
 
 using SpecialFunctions
 using Plots
@@ -21,12 +21,18 @@ include("onlyenergy_model.jl")
 function compute(N, eq, solver, use_adjoint, arch)
     model = OnlyEnergyModel(range(0.0, 1.0, length=N))
     discrete_problem = discretize_problem(eq, model, arch)
-    if solver == "schur"
+    if solver == "schur_old"
         discrete_system = implicit_midpoint(discrete_problem, EPMAfem.PNSchurSolver)
-    elseif solver == "full"
+    elseif solver == "full_old"
         discrete_system = implicit_midpoint(discrete_problem, EPMAfem.PNKrylovMinresSolver)
+    elseif solver == "schur"
+        discrete_system = implicit_midpoint2(discrete_problem, (EPMAfem.PNLazyMatrices.schur_complement, EPMAfem.Krylov.minres))
+    elseif solver == "full"
+        discrete_system = implicit_midpoint2(discrete_problem, EPMAfem.Krylov.minres)
+    elseif solver == "dlr"
+        discrete_system = implicit_midpoint_dlr(discrete_problem; max_rank=1)
     else
-        throw(ArgumentError("solver must be 'schur' or 'full'"))
+        throw(ArgumentError("solver must be 'schur' or 'full' or schur_old or full_old"))
     end
     if !use_adjoint
         discrete_ext = discretize_rhs(eq, model, arch)
@@ -44,9 +50,10 @@ function compute(N, eq, solver, use_adjoint, arch)
     ϵs = zeros(length(energy_model(model)))
 
     for (idx, ψ) in A
-        full_sol = ψ |> collect
-        sol[idx.i] = full_sol[1]
-        @assert isapprox(full_sol[2], 0.0; atol=1e-4)
+        ψp, ψm = EPMAfem.pmview(ψ, model)
+        full_sol = ψp |> collect
+        sol[idx.i] = only(ψp |> collect)
+        @assert isapprox(only(ψm |> collect), 0.0; atol=1e-4)
         ϵs[idx.i] = EPMAfem.ϵ(idx)
     end
     return ϵs, sol
@@ -89,7 +96,8 @@ function test_against_analytic_solution(produce_plots::Bool, plotpath=nothing)
     n_sols = 10
     equations = [rand_eq_with_analytic_solution() for _ in 1:n_sols]
     for use_adjoint in [true, false]
-        for solver in ["full", "schur"]
+        for solver in ["full", "schur", "dlr", "full_old", "schur_old"]
+            if solver == "dlr" && use_adjoint == true continue end # skip for now
             for arch in [EPMAfem.cpu(Float64), EPMAfem.cpu(Float32), EPMAfem.cuda(Float64), EPMAfem.cuda(Float32)]
                 if produce_plots plot() end
                 for i_sols in 1:n_sols
@@ -122,7 +130,8 @@ function test_against_diffeq(produce_plots, plotpath=nothing)
     n_sols = 10
     equations = [rand_eq(5, 5) for _ in 1:n_sols]
     for use_adjoint in [true, false]
-        for solver in ["full", "schur"]
+        for solver in ["full", "schur", "dlr", "full_old", "schur_old"]
+            if solver == "dlr" && use_adjoint == true continue end # skip for now
             for arch in [EPMAfem.cpu(Float64), EPMAfem.cpu(Float32), EPMAfem.cuda(Float64), EPMAfem.cuda(Float32)]
                 if produce_plots plot() end
                 for i_sols in 1:n_sols

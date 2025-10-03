@@ -8,14 +8,16 @@ Base.@kwdef @concrete struct DiscretePNSystem2 <: AbstractDiscretePNSystem
     rhs
 end
 
+function Base.adjoint(A::DiscretePNSystem2)
+    return DiscretePNSystem2(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, BM=A.BM, BM⁻¹=A.BM⁻¹, rhs=A.rhs)
+end
+
 function build_coeffs_and_mat_blocks(pbl::DiscretePNProblem)
     T = base_type(architecture(pbl))
-
     ns = EPMAfem.n_sums(pbl)
-
     Δϵ = step(energy_model(pbl.model))
-
-    coeffs = (a = [Ref(zero(T)) for _ in 1:ns.ne], c = [[Ref(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=Ref(Δϵ), γ=Ref(0.5), δ=Ref(-0.5), δt=Ref(0.5))
+    
+    coeffs = (a = [LazyScalar(zero(T)) for _ in 1:ns.ne], c = [[LazyScalar(zero(T)) for _ in 1:ns.nσ] for _ in 1:ns.ne], Δ=LazyScalar(T(Δϵ)), γ=LazyScalar(T(0.5)), δ=LazyScalar(T(-0.5)), δt=LazyScalar(T(0.5)))
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(pbl)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(pbl)
 
@@ -26,30 +28,29 @@ function build_coeffs_and_mat_blocks(pbl::DiscretePNProblem)
 
     UL = coeffs.Δ*(A + coeffs.γ*D)
     UR = coeffs.Δ*(coeffs.δ*B)
-    LL = T(-1)*(coeffs.Δ*(coeffs.δt*transpose(B)))
-    LR = T(-1)*(coeffs.Δ*C) 
+    LL = -(coeffs.Δ*(coeffs.δt*transpose(B)))
+    LR = -(coeffs.Δ*C)
 
-    return coeffs, UL, UR, LL, LR
+    BM = [
+        UL UR
+        LL LR
+    ]
+
+    return coeffs, BM
 end
 
 function implicit_midpoint2(pbl::DiscretePNProblem, solver)
     arch = architecture(pbl)
 
-    coeffs, UL, UR, LL, LR = build_coeffs_and_mat_blocks(pbl)
+    coeffs, lazy_BM = build_coeffs_and_mat_blocks(pbl)
+    lazy_BM⁻¹ = solver(lazy_BM)
 
-    lazy_BM = [
-        UL UR
-        LL LR
-        ]
-
-    lazy_BM⁻¹ = lazy(solver, lazy_BM)
-
-    BM, BM⁻¹ = unlazy((lazy_BM, lazy_BM⁻¹), vec_size -> allocate_vec(arch, vec_size))
+    BM, BM⁻¹, coeffs_ = unlazy((lazy_BM, lazy_BM⁻¹, coeffs), vec_size -> allocate_vec(arch, vec_size))
     rhs = allocate_vec(arch, size(BM, 1))
 
     return DiscretePNSystem2(
         problem = pbl,
-        coeffs = coeffs,
+        coeffs = coeffs_,
         BM = BM,
         BM⁻¹ = BM⁻¹,
         rhs = rhs,
@@ -115,17 +116,16 @@ function implicit_midpoint_coeffs_adjoint_mat!(coeffs, problem, idx, Δϵ)
 end
 
 function step_nonadjoint!(x, system::DiscretePNSystem2, rhs_ass::PNVectorAssembler, idx, Δϵ)
+    @show idx
     if system.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
     # update the rhs (we multiply the whole linear system with Δϵ -> "normalization")
     implicit_midpoint_coeffs_nonadjoint_rhs!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.BM)
     # minus because we have to bring b to the right side of the equation
     assemble_at!(system.rhs, rhs_ass, minus½(idx), -Δϵ, true)
     mul!(system.rhs, system.BM, x, -1.0, true)
 
     implicit_midpoint_coeffs_nonadjoint_mat!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.BM⁻¹)
     mul!(x, system.BM⁻¹, system.rhs)
 end
 
@@ -134,13 +134,11 @@ function step_adjoint!(x, system::DiscretePNSystem2, rhs_ass::PNVectorAssembler,
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(pnsystem.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
     # update the rhs
     implicit_midpoint_coeffs_adjoint_rhs!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.BM)
     # minus because we have to bring b to the right side of the equation
     assemble_at!(system.rhs, rhs_ass, plus½(idx), -Δϵ, true)
     mul!(system.rhs, transpose(system.BM), x, -1.0, true)
 
     implicit_midpoint_coeffs_adjoint_mat!(system.coeffs, system.problem, idx, Δϵ)
-    invalidate_cache!(system.BM⁻¹)
     mul!(x, transpose(system.BM⁻¹), system.rhs)
 end
 

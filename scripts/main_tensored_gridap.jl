@@ -5,10 +5,38 @@ using LinearAlgebra
 using BenchmarkTools
 using CUDA
 using KernelAbstractions
-
+using GPUArrays
 using Symbolics, SparseArrays, BenchmarkTools, CUDA
 
 using Test
+
+
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (2, 3, 4)))
+space_model2 = EPMAfem.SpaceModels.GeneralSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1, -1, 1), (2, 3, 4)))
+
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), (2, )))
+space_model2 = EPMAfem.SpaceModels.GeneralSpaceModel(CartesianDiscreteModel((-1, 0), (2, )))
+
+
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (2, 3)))
+space_model2 = EPMAfem.SpaceModels.GeneralSpaceModel(CartesianDiscreteModel((-1, 0, -1, 1), (2, 3)))
+
+# direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(5, 3)
+
+# equations = EPMAfem.PNEquations()
+# model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
+
+# problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
+ 
+
+SM = EPMAfem.SpaceModels
+
+A_test = SM.assemble_bilinear(SM.∫∂R_absnz_uv, space_model, SM.even(space_model), SM.even(space_model))
+A_test2 = SM.assemble_bilinear(SM.∫∂R_absnz_uv, space_model2, SM.even(space_model2), SM.even(space_model2))
+
+maximum(abs.((sparse(A_test) .- A_test2).nzval))
+
+
 
 
 nx, ny, nz = 5, 5, 5

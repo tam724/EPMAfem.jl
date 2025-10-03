@@ -1,8 +1,32 @@
-const TransposeMatrix{T} = LazyOpMatrix{T, typeof(transpose), <:Tuple{<:AbstractMatrix{T}}}
-A(At::TransposeMatrix) = only(At.args)
-Base.size(At::TransposeMatrix) = reverse(size(A(At)))
-max_size(At::TransposeMatrix) = reverse(max_size(A(At)))
-Base.getindex(At::TransposeMatrix, idx::Vararg{<:Integer}) = getindex(A(At), reverse(idx)...)
+const TransposeMatrix{T} = Transpose{T, <:AbstractLazyMatrix}
 
-## don't know if this makes sense, well see.. (there is Transpose{T, <:AbstractMatrix{T}} already in Base, we can simply use it..)
-## the specializations will look similar anyways (might have an impact if there is at some point an actual performance measuring and optimization, then we have our own type)
+# Transpose implements almost everything for us..
+lazy_getindex(Lt::Transpose{T, <:AbstractLazyMatrix{<:T}}, i::Int, j::Int) where T = CUDA.@allowscalar lazy_getindex(parent(Lt), j, i)
+lazy_objectid(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = lazy_objectid(parent(Lt)) # transpose gets the same as the parent
+max_size(At::Transpose{T, <:AbstractLazyMatrix}) where T = reverse(max_size(parent(At)))
+function max_size(At::Transpose{T, <:AbstractLazyMatrix}, n::Integer) where T
+    if n == 1
+        return max_size(parent(At), 2)
+    elseif n == 2
+        return max_size(parent(At), 1)
+    else
+        error("Dimension $n out of bounds")
+    end
+end
+isdiagonal(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = isdiagonal(parent(Lt))
+required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}, n, cache_notifier) where T = required_workspace(mul_with!, parent(Lt), n, cache_notifier)
+
+
+function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T
+    L, rem = materialize_with(ws, parent(Lt))
+    return transpose(L), rem
+end
+function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, skeleton::AbstractMatrix) where T
+    L, rem = materialize_with(ws, parent(Lt), transpose(skeleton))
+    return transpose(L), rem
+end
+function materialize_with(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}, skeleton::AbstractMatrix, α::Number, β::Number) where T
+    L, rem = materialize_with(ws, parent(Lt), transpose(skeleton), α, β)
+    return transpose(L), rem
+end
+required_workspace(::typeof(materialize_with), Lt::Transpose{T, <:AbstractLazyMatrix{T}}, cache_notifier) where T = required_workspace(materialize_with, parent(Lt), cache_notifier)

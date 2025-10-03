@@ -60,7 +60,11 @@ function expand_legendre(f, N, quad=hcubature_quadrature)
     return LegendreBasisExp(c)
 end
 
-@concrete struct ∫S²_kuv{F}
+struct ∫∫S²_kuv{F}
+    k::F
+end
+
+struct ∫S²_kuv{F}
     k::F
 end
 
@@ -76,13 +80,14 @@ function lebedev_quadrature_max()
 end
 
 function guess_lebedev_order_from_model(model, fac=3)
-    N = max_degree(model)*fac #TODO: this should be checked somehow..
     available_orders = getavailableorders()
-    idx = findfirst(o -> o > N, available_orders)
-    if isnothing(idx)
-        return available_orders[end]
-    end
-    return available_orders[idx]
+    return available_orders[end]
+    # N = max_degree(model)*fac #TODO: this should be checked somehow..
+    # idx = findfirst(o -> o > N, available_orders)
+    # if isnothing(idx)
+    #     return available_orders[end]
+    # end
+    # return available_orders[idx]
 end
 
 function lebedev_points(quad)
@@ -121,7 +126,7 @@ end
 
 function (quad::SphericalQuadrature)(f::Function)
     # evaluate once to compute cache size
-    Ω = VectorValue(randn(), randn(), randn())
+    Ω = VectorValue(randn(), randn(), randn()) |> normalize
     y = f(Ω)
     isscalar = !(y isa AbstractArray)
     cache = zeros(size(y))
@@ -227,20 +232,16 @@ function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_ab
     return A
 end
 
-
-function assemble_bilinear(::Val{:∫S²_fσuv}, model, U, V, ::exact_quadrature)
-    if U == V
-        # println("DEBUG1")
-        filter_values = -model.σ_f * log(eps(Float64)) .* ([SphericalHarmonicsModels.degree(u) for u in U]/model.N).^model.α
-        A = Diagonal(ones(length(U))) .* filter_values
-        return A
-    end
-    # println("DEBUG2")
-    A = zeros(length(V), length(U))
-    for i in eachindex(V)
-        for j in eachindex(U)
-            A[i, j] = V[i] == U[j] ? -model.σ_f * log(eps(Float64)) * (EPMAfem.SphericalHarmonicsModels.degree(U[j])/model.N)^model.α : 0.0
+function assemble_bilinear(integral::∫∫S²_kuv, model, U, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
+    cache1 = zeros(length(V), length(U))
+    cache2 = zeros(length(V), length(U))
+    function fᵤ!(cache1, Ωᵤ)
+        Y_U = _eval_basis_functions!(model, Ωᵤ, U)
+        function fᵥ!(cache2, Ωᵥ)
+            Y_V = _eval_basis_functions!(model, Ωᵥ, V)
+            mul!(cache2, Y_V, transpose(Y_U), integral.k(Ωᵤ, Ωᵥ), false)
         end
+        cache1 .= quad(fᵥ!, cache2)
     end
-    return A
+    return quad(fᵤ!, cache1)
 end

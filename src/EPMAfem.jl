@@ -4,6 +4,7 @@ using ConcreteStructs
 using Gridap
 using CUDA
 using KernelAbstractions
+using GPUArrays
 using SparseArrays
 using LinearAlgebra
 using HCubature
@@ -12,6 +13,7 @@ using Krylov
 using UnsafeArrays
 using Zygote
 using ChainRulesCore
+using Adapt
 
 include("hacky_overwrites.jl")
 
@@ -22,6 +24,9 @@ using EPMAfem.BlockedMatrices
 
 include("special_matrices/twodiagonalmatrix.jl")
 
+include("pn_lazy_matrices/pnlazymatrices.jl")
+using EPMAfem.PNLazyMatrices
+
 include("space_dimensions.jl")
 using EPMAfem.Dimensions
 
@@ -31,8 +36,6 @@ using EPMAfem.SphericalHarmonicsModels
 include("space_model/space.jl")
 using EPMAfem.SpaceModels
 
-include("pn_lazy_matrices/pnlazymatrices.jl")
-using EPMAfem.PNLazyMatrices
 
 PNLazyMatrices.has_batched_mul!(A::TwoDiagonalMatrix) = true
 PNLazyMatrices.has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true

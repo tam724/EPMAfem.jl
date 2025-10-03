@@ -8,14 +8,15 @@
     initial_solution
 end
 
-function initialize_or_fillzero!(it::IterableDiscretePNSolution, ::Nothing)
-    arch = architecture(it.system.problem)
-    T = base_type(arch)
-    fill!(it.current_solution, zero(T))
+function fillzero!(x::AbstractVector{T}) where T
+    fill!(x, zero(T))
 end
 
+initialize!(current_solution::AbstractVector, _, initial_solution) = copyto!(current_solution, initial_solution)
+initialize_or_fillzero!(it::IterableDiscretePNSolution, ::Nothing) = fillzero!(it.current_solution)
+
 function initialize_or_fillzero!(it::IterableDiscretePNSolution, initial_solution)
-    copy!(it.current_solution, initial_solution)
+    initialize!(it.current_solution, it.system.problem.model, initial_solution)
 end
 
 function IterableDiscretePNSolution(system::AbstractDiscretePNSystem, b::AbstractDiscretePNVector; initial_solution=nothing)

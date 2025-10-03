@@ -2,6 +2,7 @@ module BlockedMatrices
 
 using LinearAlgebra
 using ConcreteStructs
+using Adapt
 
 @concrete struct BlockedMatrix{T} <: AbstractMatrix{T}
     blocks
@@ -43,6 +44,7 @@ LinearAlgebra.matprod_dest(A::Union{BlockedMatrix, Transpose{T, <:BlockedMatrix}
 
 Base.show(io::IO, A::BlockedMatrix) = print(io, "$(size(A, 1))x$(size(A, 2)) BlockedMatrix{$(eltype(A))} with blocks: $(["$(length(A.indices[i][1]))x$(length(A.indices[i][2]))" * ((i!=num_blocks(A)) ? ", " : "") for i in 1:num_blocks(A)]...)")
 Base.show(io::IO, ::MIME"text/plain", A::BlockedMatrix) = show(io, A)
+Adapt.adapt_structure(to, x::BlockedMatrix) = BlockedMatrix(Adapt.adapt_structure(to, x.blocks), x.indices, x.axes)
 
 function Base.getindex(A::BlockedMatrix{T}, i::Integer, j::Integer, warn=true) where T
     !warn || @warn "Accessing elements of BlockedMatrix is slow"
