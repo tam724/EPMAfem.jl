@@ -15,6 +15,7 @@ EPMAfem.absorption_coefficient(eq::LineSourceEquations, e, ϵ) = 1.0
 EPMAfem.scattering_coefficient(eq::LineSourceEquations, e, i, ϵ) = 1.0
 EPMAfem.mass_concentrations(::LineSourceEquations, e, x) = 1.0
 EPMAfem.scattering_kernel(::LineSourceEquations, e, i) = μ -> 1/(4π)
+equations = EPMAfem.filter_exp(LineSourceEquations(), 0.2, 4)
 equations = LineSourceEquations()
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (200, 200)))
@@ -70,22 +71,22 @@ sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initia
 func = EPMAfem.interpolable(probe, sol)
 serialize(joinpath(figpath, "solutions/full.jls"), func)
 
-system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=10, m=10));
-sol_lr10 = EPMAfem.IterableDiscretePNSolution(system_lr10, source, initial_solution=initial_condition);
-func_lr10 = EPMAfem.interpolable(probe, sol_lr10)
-serialize(joinpath(figpath, "solutions/lr10.jls"), func_lr10)
+# system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=10, m=10));
+# sol_lr10 = EPMAfem.IterableDiscretePNSolution(system_lr10, source, initial_solution=initial_condition);
+# func_lr10 = EPMAfem.interpolable(probe, sol_lr10)
+# serialize(joinpath(figpath, "solutions/lr10.jls"), func_lr10)
 
-system_lr20 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=20, m=20));
-sol_lr20 = EPMAfem.IterableDiscretePNSolution(system_lr20, source, initial_solution=initial_condition);
-func_lr20 = EPMAfem.interpolable(probe, sol_lr20)
-serialize(joinpath(figpath, "solutions/lr20.jls"), func_lr20)
+# system_lr20 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=20, m=20));
+# sol_lr20 = EPMAfem.IterableDiscretePNSolution(system_lr20, source, initial_solution=initial_condition);
+# func_lr20 = EPMAfem.interpolable(probe, sol_lr20)
+# serialize(joinpath(figpath, "solutions/lr20.jls"), func_lr20)
 
-system_lr50 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=50, m=50));
-sol_lr50 = EPMAfem.IterableDiscretePNSolution(system_lr50, source, initial_solution=initial_condition);
-func_lr50 = EPMAfem.interpolable(probe, sol_lr50)
-serialize(joinpath(figpath, "solutions/lr50.jls"), func_lr50)
+# system_lr50 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=50, m=50));
+# sol_lr50 = EPMAfem.IterableDiscretePNSolution(system_lr50, source, initial_solution=initial_condition);
+# func_lr50 = EPMAfem.interpolable(probe, sol_lr50)
+# serialize(joinpath(figpath, "solutions/lr50.jls"), func_lr50)
 
-system_lr100 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=100, m=100));
+system_lr100 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=100, m=100), tolerance=1.0);
 sol_lr100 = EPMAfem.IterableDiscretePNSolution(system_lr100, source, initial_solution=initial_condition);
 func_lr100 = EPMAfem.interpolable(probe, sol_lr100)
 serialize(joinpath(figpath, "solutions/lr100.jls"), func_lr100)
@@ -96,12 +97,15 @@ func_lr20 = deserialize(joinpath(figpath, "solutions/lr20.jls"))
 func_lr50 = deserialize(joinpath(figpath, "solutions/lr50.jls"))
 func_lr100 = deserialize(joinpath(figpath, "solutions/lr100.jls"))
 
+heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1)
+heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr100(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1)
+
 clims=(-1, 2)
 plot(
 heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1, clims=clims),
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr10(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1, clims=clims),
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr20(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1, clims=clims),
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr50(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1, clims=clims),
+heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr10(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1),
+heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr20(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1),
+heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr50(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1),
 heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr100(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1, clims=clims)
 )
 
