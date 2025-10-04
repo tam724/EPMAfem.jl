@@ -276,11 +276,13 @@ function USVt(sol::LowwRankSolution)
 end
 
 function pview(sol::LowwRankSolution, model::DiscretePNModel)
+    # TODO: lazy!
     U, S, Vt = USVt(sol).p
     return U*S*Vt
 end
 
 function mview(sol::LowwRankSolution, model::DiscretePNModel)
+    # TODO: lazy!
     U, S, Vt = USVt(sol).m
     return U*S*Vt
 end
@@ -292,26 +294,26 @@ end
 
 function fillzero!(sol::LowwRankSolution)
     ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
-    Up_, _, Vp_ = svd(rand(size(Up, 1), size(Vtp, 2)))
+
     # TODO: this is weird and allocates to work together with CUDA!
-    copy!(Up, Up_[:, 1:sol.ranks.p[]])
-    copy!(Vtp, transpose(Vp_)[1:sol.ranks.p[], :])
+    copy!(Up, @view(qr(rand(size(Up)...)).Q[:, 1:sol.ranks.p[]]))
+    copy!(Vtp, transpose(qr(rand(reverse(size(Vtp))...)).Q[:, 1:sol.ranks.p[]])) # better ?
     fill!(Sp, zero(eltype(Sp)))
 
-    Um_, _, Vm_ = svd(rand(size(Um, 1), size(Vtm, 2)))
-    # TODO: this is weird and allocates to work together with CUDA!
-    copy!(Um, Um_[:, 1:sol.ranks.m[]])
-    copy!(Vtm, transpose(Vm_)[1:sol.ranks.m[], :])
+    copy!(Um, @view(qr(rand(size(Um)...)).Q[:, 1:sol.ranks.m[]]))
+    copy!(Vtm, transpose(qr(rand(reverse(size(Vtm))...)).Q[:, 1:sol.ranks.m[]]))
     fill!(Sm, zero(eltype(Sm)))
 end
 
-
-# TODO: fix U, S, V = svd(A) -> A = U*Diagonal(S)*transpose(V)
-function initialize!(current_solution::LowwRankSolution, model, initial_solution)
-    ψ0p, ψ0m = pmview(initial_solution, model)
+function initialize!(current_solution::LowwRankSolution, system, initial_solution)
+    ψ0p, ψ0m = pmview(initial_solution, system.problem.model)
     U0p, S0p, V0p = svd(ψ0p)
     U0m, S0m, V0m = svd(ψ0m)
+
+    # truncate, if the dlr is adaptive
+    ranks = _compute_new_ranks(system, S0p, S0m)
     sol = current_solution
+    sol.ranks.p[], sol.ranks.m[] = ranks.p, ranks.m
     ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
     
     copy!(Up, @view(U0p[:, 1:sol.ranks.p[]]))

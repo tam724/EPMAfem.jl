@@ -15,6 +15,9 @@ function Base.adjoint(A::DiscreteDLRPNSystem5{ADAPTIVE}) where ADAPTIVE
     return DiscreteDLRPNSystem5{ADAPTIVE}(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks)
 end
 
+adaptive(::DiscreteDLRPNSystem5{Nothing}) = false
+adaptive(::DiscreteDLRPNSystem5{<:Real}) = true
+
 function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing)
     if max_ranks isa Integer
         max_ranks = (p=max_ranks, m=max_ranks)
@@ -294,11 +297,12 @@ function allocate_solution_vector(system::DiscreteDLRPNSystem5)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
     arch = architecture(system.problem)
     max_ranks = system.max_ranks
+    ranks = adaptive(system) ? (p=Ref(2), m=Ref(2)) : (p=Ref(max_ranks.p), m=Ref(max_ranks.m))# TODO: the 2 here is arbitrary (choose from boundary condition rank?)
     return LowwRankSolution(
         (U = allocate_vec(arch, nxp*max_ranks.p), S = allocate_vec(arch, max_ranks.p*max_ranks.p), Vt = allocate_vec(arch, max_ranks.p*nΩp)),
         (U = allocate_vec(arch, nxm*max_ranks.m), S = allocate_vec(arch, max_ranks.m*max_ranks.m), Vt = allocate_vec(arch, max_ranks.m*nΩm)),
         max_ranks, 
-        (p=Ref(max_ranks.p), m=Ref(max_ranks.m)),
+        ranks,
         n_basis(system.problem)
     )
 end
