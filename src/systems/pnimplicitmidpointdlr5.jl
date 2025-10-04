@@ -1,4 +1,4 @@
-Base.@kwdef @concrete struct DiscreteDLRPNSystem5 <: AbstractDiscretePNSystem
+Base.@kwdef @concrete struct DiscreteDLRPNSystem5{ADAPTIVE} <: AbstractDiscretePNSystem
     adjoint::Bool=false
     problem
 
@@ -7,14 +7,15 @@ Base.@kwdef @concrete struct DiscreteDLRPNSystem5 <: AbstractDiscretePNSystem
     rhs
     tmp
 
-    max_rank
+    max_ranks
+    tolerance::ADAPTIVE
 end
 
-function Base.adjoint(A::DiscreteDLRPNSystem5)
-    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_rank=A.max_rank)
+function Base.adjoint(A::DiscreteDLRPNSystem5{ADAPTIVE}) where ADAPTIVE
+    return DiscreteDLRPNSystem5{ADAPTIVE}(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks)
 end
 
-function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20))
+function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing)
     if max_ranks isa Integer
         max_ranks = (p=max_ranks, m=max_ranks)
     end
@@ -119,7 +120,8 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
         mats = umats,
         rhs = rhs,
         tmp = tmp,
-        max_rank=max_ranks
+        max_ranks=max_ranks,
+        tolerance=tolerance
     )
 end
 
@@ -140,6 +142,27 @@ function step_adjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembl
     implicit_midpoint_coeffs_adjoint_mat!(system.coeffs.mat, system.problem, idx, Δϵ)
     _step!(x, system, rhs_ass, plus½(idx), Δϵ)
 end
+
+function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, Sp, Sm)
+    Sp, Sm = collect(Sp), collect(Sm)
+    #p 
+    Σσ²p = 0.0
+    rp = length(Sp)
+    while sqrt(Σσ²p + Sp[rp]^2) < system.tolerance && rp > 1
+        Σσ²p += Sp[rp]^2
+        rp = rp - 1
+    end
+    #m 
+    Σσ²m = 0.0
+    rm = length(Sm)
+    while sqrt(Σσ²m + Sm[rm]^2) < system.tolerance && rm > 1
+        Σσ²m += Sm[rm]^2
+        rm = rm - 1
+    end
+    return (p=min(system.max_ranks.p, rp), m=min(system.max_ranks.m, rm))
+end
+
+_compute_new_ranks(system::DiscreteDLRPNSystem5{<:Nothing}, _, _) = system.max_ranks
 
 function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx, Δϵ)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
@@ -242,30 +265,35 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
     end    
     CUDA.NVTX.@range "S-step" begin
         S₁ = @view(system.tmp.tmp1[1:2x.ranks.p[]*2x.ranks.p[] + 2x.ranks.m[]*2x.ranks.m[]])
-        Sp₁ = @view(S₁[1:2x.ranks.p[]*2x.ranks.p[]])
-        Sm₁ = @view(S₁[2x.ranks.p[]*2x.ranks.p[]+1:end])
 
         mul!(S₁, system.mats.inv_matBMᵤᵥ, rhs_S, true, false)
     end
-    CUDA.NVTX.@range "finalize schur" begin
-        Pp, Sp, Qp = svd(reshape(Sp₁, (2x.ranks.p[], 2x.ranks.p[])))
-        Pm, Sm, Qm = svd(reshape(Sm₁, (2x.ranks.m[], 2x.ranks.m[])))
+    CUDA.NVTX.@range "truncate" begin
+        Sp₁ = reshape(@view(S₁[1:2x.ranks.p[]*2x.ranks.p[]]), (2x.ranks.p[], 2x.ranks.p[]))
+        Sm₁ = reshape(@view(S₁[2x.ranks.p[]*2x.ranks.p[]+1:end]), (2x.ranks.m[], 2x.ranks.m[]))
+        Pp, Sp, Qp = svd(Sp₁)
+        Pm, Sm, Qm = svd(Sm₁)
 
-        mul!(Up₀, Uphat, @view(Pp[1:2x.ranks.p[], 1:x.ranks.p[]]))
-        mul!(Um₀, Umhat, @view(Pm[1:2x.ranks.p[], 1:x.ranks.p[]]))
-        # mul!(transpose(Vtp₀), Vphat, @view(Qp[1:2x.ranks.p[], 1:x.ranks.p[]]))
-        mul!(Vtp₀, @view(adjoint(Qp)[1:x.ranks.p[], 1:2x.ranks.p[]]), transpose(Vphat))
-        # mul!(transpose(Vtm₀), Vmhat, @view(Qm[1:2x.ranks.m[], 1:x.ranks.m[]]))
-        mul!(Vtm₀, @view(adjoint(Qm)[1:x.ranks.m[], 1:2x.ranks.m[]]), transpose(Vmhat))
-        copyto!(Sp₀, Diagonal(@view(Sp[1:x.ranks.p[]])))
-        copyto!(Sm₀, Diagonal(@view(Sm[1:x.ranks.m[]])))
+        ranks = _compute_new_ranks(system, Sp, Sm)
+        old_ranksp, old_ranksm = x.ranks.p[], x.ranks.m[]
+        x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
+        ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+
+        @show ranks
+
+        mul!(Up₁, Uphat, @view(Pp[1:2old_ranksp, 1:ranks.p]))
+        mul!(Um₁, Umhat, @view(Pm[1:2old_ranksm, 1:ranks.m]))
+        mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:2old_ranksp]), transpose(Vphat))
+        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:2old_ranksm]), transpose(Vmhat))
+        copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
+        copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
     end
 end
 
 function allocate_solution_vector(system::DiscreteDLRPNSystem5)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
     arch = architecture(system.problem)
-    max_ranks = system.max_rank
+    max_ranks = system.max_ranks
     return LowwRankSolution(
         (U = allocate_vec(arch, nxp*max_ranks.p), S = allocate_vec(arch, max_ranks.p*max_ranks.p), Vt = allocate_vec(arch, max_ranks.p*nΩp)),
         (U = allocate_vec(arch, nxm*max_ranks.m), S = allocate_vec(arch, max_ranks.m*max_ranks.m), Vt = allocate_vec(arch, max_ranks.m*nΩm)),
