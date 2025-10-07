@@ -40,8 +40,8 @@ include("space_model/space.jl")
 using EPMAfem.SpaceModels
 
 
-PNLazyMatrices.has_batched_mul!(A::TwoDiagonalMatrix) = true
-PNLazyMatrices.has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true
+# PNLazyMatrices.has_batched_mul!(A::TwoDiagonalMatrix) = true
+# PNLazyMatrices.has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true
 
 include("utils.jl")
 

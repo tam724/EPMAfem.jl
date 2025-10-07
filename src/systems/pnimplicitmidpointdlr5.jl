@@ -182,6 +182,8 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
     end
 
     ((Up₀, Sp₀, Vtp₀), (Um₀, Sm₀, Vtm₀)) = USVt(x)
+    ranks = (p=x.ranks.p[], m=x.ranks.m[])
+    aug_ranks = (p=2x.ranks.p[], m=2x.ranks.m[])
 
     CUDA.NVTX.@range "copy basis" begin
         # TODO: maybe we can skip this (this is written to the system mats before the s step..)
@@ -193,57 +195,57 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
     end
 
     CUDA.NVTX.@range "K-step prep" begin
-        rhs_K = @view(system.rhs.proj[1:nxp*x.ranks.p[]+nxm*x.ranks.m[]])
-        rhs_Kp = @view(rhs_K[1:nxp*x.ranks.p[]])
-        rhs_Km = @view(rhs_K[nxp*x.ranks.p[]+1:end])
+        rhs_K = @view(system.rhs.proj[1:nxp*ranks.p+nxm*ranks.m])
+        rhs_Kp = @view(rhs_K[1:nxp*ranks.p])
+        rhs_Km = @view(rhs_K[nxp*ranks.p+1:end])
         #compute û
-        mul!(reshape(rhs_Kp, nxp, x.ranks.p[]), reshape(u, nxp, nΩp), transpose(Vtp₀), -1, false)
-        mul!(reshape(rhs_Km, nxm, x.ranks.m[]), reshape(v, nxm, nΩm), transpose(Vtm₀), -1, false)
+        mul!(reshape(rhs_Kp, nxp, ranks.p), reshape(u, nxp, nΩp), transpose(Vtp₀), -1, false)
+        mul!(reshape(rhs_Km, nxm, ranks.m), reshape(v, nxm, nΩm), transpose(Vtm₀), -1, false)
         # compute A₀K₀
-        K₀ = @view(system.tmp.tmp1[1:nxp*x.ranks.p[] + nxm*x.ranks.m[]])
-        Kp₀ = @view(K₀[1:nxp*x.ranks.p[]])
-        mul!(reshape(Kp₀, nxp, x.ranks.p[]), Up₀, Sp₀)
-        Km₀ = @view(K₀[nxp*x.ranks.p[]+1:end])
-        mul!(reshape(Km₀, nxm, x.ranks.m[]), Um₀, Sm₀)
+        K₀ = @view(system.tmp.tmp1[1:nxp*ranks.p + nxm*ranks.m])
+        Kp₀ = @view(K₀[1:nxp*ranks.p])
+        mul!(reshape(Kp₀, nxp, ranks.p), Up₀, Sp₀)
+        Km₀ = @view(K₀[nxp*ranks.p+1:end])
+        mul!(reshape(Km₀, nxm, ranks.m), Um₀, Sm₀)
 
         mul!(rhs_K, system.mats.rhsBMᵥ, K₀, -1, true)
     end
     CUDA.NVTX.@range "K-step" begin
-        K₁ = @view(system.tmp.tmp1[1:nxp*x.ranks.p[] + nxm*x.ranks.m[]])
-        Kp₁ = @view(K₁[1:nxp*x.ranks.p[]])
-        Km₁ = @view(K₁[nxp*x.ranks.p[]+1:end])
+        K₁ = @view(system.tmp.tmp1[1:nxp*ranks.p + nxm*ranks.m])
+        Kp₁ = @view(K₁[1:nxp*ranks.p])
+        Km₁ = @view(K₁[nxp*ranks.p+1:end])
         mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
 
-        Uphat = (qr([reshape(Kp₁, (nxp, x.ranks.p[])) Up₀]).Q |> mat_type(architecture(system.problem)))[1:nxp, 1:2x.ranks.p[]]
-        Umhat = (qr([reshape(Km₁, (nxm, x.ranks.m[])) Um₀]).Q |> mat_type(architecture(system.problem)))[1:nxm, 1:2x.ranks.m[]]
+        Uphat = (qr([reshape(Kp₁, (nxp, ranks.p)) Up₀]).Q |> mat_type(architecture(system.problem)))[1:nxp, 1:aug_ranks.p]
+        Umhat = (qr([reshape(Km₁, (nxm, ranks.m)) Um₀]).Q |> mat_type(architecture(system.problem)))[1:nxm, 1:aug_ranks.m]
         Mp = transpose(Uphat)*Up₀
         Mm = transpose(Umhat)*Um₀
     end
 
     CUDA.NVTX.@range "L-step prep" begin
-        rhs_Lt = @view(system.rhs.proj[1:x.ranks.p[]*nΩp + x.ranks.m[]*nΩm])
-        rhs_Ltp = @view(rhs_Lt[1:x.ranks.p[]*nΩp])
-        rhs_Ltm = @view(rhs_Lt[x.ranks.p[]*nΩp+1:end])
+        rhs_Lt = @view(system.rhs.proj[1:ranks.p*nΩp + ranks.m*nΩm])
+        rhs_Ltp = @view(rhs_Lt[1:ranks.p*nΩp])
+        rhs_Ltm = @view(rhs_Lt[ranks.p*nΩp+1:end])
         #compute û
-        mul!(reshape(rhs_Ltp, x.ranks.p[], nΩp), transpose(Up₀), reshape(u, nxp, nΩp), -1, false)
-        mul!(reshape(rhs_Ltm, x.ranks.m[], nΩm), transpose(Um₀), reshape(v, nxm, nΩm), -1, false)
+        mul!(reshape(rhs_Ltp, ranks.p, nΩp), transpose(Up₀), reshape(u, nxp, nΩp), -1, false)
+        mul!(reshape(rhs_Ltm, ranks.m, nΩm), transpose(Um₀), reshape(v, nxm, nΩm), -1, false)
         # compute A₀L₀
-        L₀ = @view(system.tmp.tmp1[1:x.ranks.p[]*nΩp + x.ranks.m[]*nΩm])
-        Lp₀ = @view(L₀[1:x.ranks.p[]*nΩp])
-        mul!(reshape(Lp₀, x.ranks.p[], nΩp), Sp₀, Vtp₀)
-        Lm₀ = @view(L₀[x.ranks.p[]*nΩp+1:end])
-        mul!(reshape(Lm₀, x.ranks.m[], nΩm), Sm₀, Vtm₀)
+        L₀ = @view(system.tmp.tmp1[1:ranks.p*nΩp + ranks.m*nΩm])
+        Lp₀ = @view(L₀[1:ranks.p*nΩp])
+        mul!(reshape(Lp₀, ranks.p, nΩp), Sp₀, Vtp₀)
+        Lm₀ = @view(L₀[ranks.p*nΩp+1:end])
+        mul!(reshape(Lm₀, ranks.m, nΩm), Sm₀, Vtm₀)
 
         mul!(rhs_Lt, system.mats.rhsBMᵤ, L₀, -1, true)
     end
     CUDA.NVTX.@range "L-step" begin
-        Lt₁ = @view(system.tmp.tmp1[1:x.ranks.p[]*nΩp + x.ranks.m[]*nΩm])
-        Ltp₁ = @view(Lt₁[1:x.ranks.p[]*nΩp])
-        Ltm₁ = @view(Lt₁[x.ranks.p[]*nΩp+1:end])
+        Lt₁ = @view(system.tmp.tmp1[1:ranks.p*nΩp + ranks.m*nΩm])
+        Ltp₁ = @view(Lt₁[1:ranks.p*nΩp])
+        Ltm₁ = @view(Lt₁[ranks.p*nΩp+1:end])
         mul!(Lt₁, system.mats.inv_matBMᵤ, rhs_Lt, true, false)
         
-        Vphat = (qr([transpose(reshape(Ltp₁, (x.ranks.p[], nΩp))) transpose(Vtp₀)]).Q |> mat_type(architecture(system.problem)))[1:nΩp, 1:2x.ranks.p[]]
-        Vmhat = (qr([transpose(reshape(Ltm₁, (x.ranks.m[], nΩm))) transpose(Vtm₀)]).Q |> mat_type(architecture(system.problem)))[1:nΩm, 1:2x.ranks.m[]]
+        Vphat = (qr([transpose(reshape(Ltp₁, (ranks.p, nΩp))) transpose(Vtp₀)]).Q |> mat_type(architecture(system.problem)))[1:nΩp, 1:aug_ranks.p]
+        Vmhat = (qr([transpose(reshape(Ltm₁, (ranks.m, nΩm))) transpose(Vtm₀)]).Q |> mat_type(architecture(system.problem)))[1:nΩm, 1:aug_ranks.m]
         Np = transpose(Vphat)*transpose(Vtp₀)
         Nm = transpose(Vmhat)*transpose(Vtm₀)
     end
@@ -256,41 +258,41 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         PNLazyMatrices.set!(system.mats.Up, vec(Uphat), size(Uphat))
         PNLazyMatrices.set!(system.mats.Um, vec(Umhat), size(Umhat))
 
-        rhs_S = @view(system.rhs.proj[1:2x.ranks.p[]*2x.ranks.p[] + 2x.ranks.m[]*2x.ranks.m[]])
-        rhs_Sp = @view(rhs_S[1:2x.ranks.p[]*2x.ranks.p[]])
-        rhs_Sm = @view(rhs_S[2x.ranks.p[]*2x.ranks.p[]+1:end])
+        rhs_S = @view(system.rhs.proj[1:aug_ranks.p*aug_ranks.p + aug_ranks.m*aug_ranks.m])
+        rhs_Sp = @view(rhs_S[1:aug_ranks.p*aug_ranks.p])
+        rhs_Sm = @view(rhs_S[aug_ranks.p*aug_ranks.p+1:end])
         #compute û
-        reshape(rhs_Sp, (2x.ranks.p[], 2x.ranks.p[])) .= -transpose(Uphat)*reshape(u, nxp, nΩp)*Vphat
-        reshape(rhs_Sm, (2x.ranks.m[], 2x.ranks.m[])) .= -transpose(Umhat)*reshape(v, nxm, nΩm)*Vmhat
+        reshape(rhs_Sp, (aug_ranks.p, aug_ranks.p)) .= -transpose(Uphat)*reshape(u, nxp, nΩp)*Vphat
+        reshape(rhs_Sm, (aug_ranks.m, aug_ranks.m)) .= -transpose(Umhat)*reshape(v, nxm, nΩm)*Vmhat
         # compute A₀Ŝ₀
-        S₀_hat = @view(system.tmp.tmp1[1:2x.ranks.p[]*2x.ranks.p[] + 2x.ranks.m[]*2x.ranks.m[]])
-        Sp₀_hat = @view(S₀_hat[1:2x.ranks.p[]*2x.ranks.p[]])
-        Sm₀_hat = @view(S₀_hat[2x.ranks.p[]*2x.ranks.p[]+1:end])
-        reshape(Sp₀_hat, 2x.ranks.p[], 2x.ranks.p[]) .= Mp * Sp₀ * transpose(Np)
-        reshape(Sm₀_hat, 2x.ranks.m[], 2x.ranks.m[]) .= Mm * Sm₀ * transpose(Nm)
+        S₀_hat = @view(system.tmp.tmp1[1:aug_ranks.p*aug_ranks.p + aug_ranks.m*aug_ranks.m])
+        Sp₀_hat = @view(S₀_hat[1:aug_ranks.p*aug_ranks.p])
+        Sm₀_hat = @view(S₀_hat[aug_ranks.p*aug_ranks.p+1:end])
+        reshape(Sp₀_hat, aug_ranks.p, aug_ranks.p) .= Mp * Sp₀ * transpose(Np)
+        reshape(Sm₀_hat, aug_ranks.m, aug_ranks.m) .= Mm * Sm₀ * transpose(Nm)
 
         mul!(rhs_S, system.mats.rhsBMᵤᵥ, S₀_hat, -1, true)
     end    
     CUDA.NVTX.@range "S-step" begin
-        S₁ = @view(system.tmp.tmp1[1:2x.ranks.p[]*2x.ranks.p[] + 2x.ranks.m[]*2x.ranks.m[]])
+        S₁ = @view(system.tmp.tmp1[1:aug_ranks.p*aug_ranks.p + aug_ranks.m*aug_ranks.m])
 
         mul!(S₁, system.mats.inv_matBMᵤᵥ, rhs_S, true, false)
     end
     CUDA.NVTX.@range "truncate" begin
-        Sp₁ = reshape(@view(S₁[1:2x.ranks.p[]*2x.ranks.p[]]), (2x.ranks.p[], 2x.ranks.p[]))
-        Sm₁ = reshape(@view(S₁[2x.ranks.p[]*2x.ranks.p[]+1:end]), (2x.ranks.m[], 2x.ranks.m[]))
+        Sp₁ = reshape(@view(S₁[1:aug_ranks.p*aug_ranks.p]), (aug_ranks.p, aug_ranks.p))
+        Sm₁ = reshape(@view(S₁[aug_ranks.p*aug_ranks.p+1:end]), (aug_ranks.m, aug_ranks.m))
         Pp, Sp, Qp = svd(Sp₁)
         Pm, Sm, Qm = svd(Sm₁)
 
         ranks = _compute_new_ranks(system, Sp, Sm)
-        old_ranksp, old_ranksm = x.ranks.p[], x.ranks.m[]
         x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
         ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+        @show ranks
 
-        mul!(Up₁, Uphat, @view(Pp[1:2old_ranksp, 1:ranks.p]))
-        mul!(Um₁, Umhat, @view(Pm[1:2old_ranksm, 1:ranks.m]))
-        mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:2old_ranksp]), transpose(Vphat))
-        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:2old_ranksm]), transpose(Vmhat))
+        mul!(Up₁, Uphat, @view(Pp[1:aug_ranks.p, 1:ranks.p]))
+        mul!(Um₁, Umhat, @view(Pm[1:aug_ranks.m, 1:ranks.m]))
+        mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks.p]), transpose(Vphat))
+        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks.m]), transpose(Vmhat))
         copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
         copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
     end
