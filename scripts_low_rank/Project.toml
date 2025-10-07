@@ -1,4 +1,5 @@
 [deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 EPMAfem = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 NeXLCore = "93a0284f-3680-435e-8d39-dd6e52a1dbc8"

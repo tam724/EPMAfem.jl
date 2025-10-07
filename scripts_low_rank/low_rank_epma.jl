@@ -34,11 +34,7 @@ for N in Ns
     function mass_concentrations(e, x_)
         z = NExt.dimful(x_[1], u"nm", equations.dim_basis)
         x = NExt.dimful(x_[2], u"nm", equations.dim_basis)
-        # if x > 0u"nm"
-        #     return e == 1 ? NExt.dimless(n"Al".density, equations.dim_basis) : 0.0
-        # else
-        #     return e == 1 ? 0.0 : NExt.dimless(n"Au".density, equations.dim_basis)
-        # end
+
         if (x - 80u"nm")^2 + (z - (-200u"nm"))^2 < (80u"nm")^2
             return e == 1 ? 0.0 : NExt.dimless(n"Cr".density, equations.dim_basis)
         else

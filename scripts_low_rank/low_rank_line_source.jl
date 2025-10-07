@@ -15,11 +15,12 @@ EPMAfem.absorption_coefficient(eq::LineSourceEquations, e, ϵ) = 1.0
 EPMAfem.scattering_coefficient(eq::LineSourceEquations, e, i, ϵ) = 1.0
 EPMAfem.mass_concentrations(::LineSourceEquations, e, x) = 1.0
 EPMAfem.scattering_kernel(::LineSourceEquations, e, i) = μ -> 1/(4π)
-equations = EPMAfem.filter_exp(LineSourceEquations(), 0.2, 4)
+# equations = EPMAfem.filter_exp(LineSourceEquations(), 0.2, 4)
 equations = LineSourceEquations()
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (200, 200)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(47, 2)
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (250, 250)))
+N = 37
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 2)
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
 
@@ -31,7 +32,7 @@ source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cuda(), zeros(EPMAf
 # σ = 0.2
 using EPMAfem.HCubature
 # init_x(x) = 1/(2π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(2*σ^2)) #normal gaussian
-init_x(x) = 1/(8π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(2*σ^2)) # from (https://doi.org/10.1080/00411450.2014.910226)
+# init_x(x) = 1/(8π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(2*σ^2)) # from (https://doi.org/10.1080/00411450.2014.910226)
 init_x(x) = 1/(4π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(4*σ^2)) # from (https://doi.org/10.1051/m2an/2022090)
 init_Ω(_) = 1.0
 Mp_cpu = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)))
@@ -61,101 +62,84 @@ copy!(ψ0m, bxm .* bΩm')
 
 using Serialization
 figpath = mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/"))
-mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/solutions"))
+mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/solutions/$(N)"))
 
-probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), ϵ=0.0, Ω=Ω -> 1.0)
-
+probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), ϵ=0.0, Ω=Ω->1.0)
 
 system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
 sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
 func = EPMAfem.interpolable(probe, sol)
-serialize(joinpath(figpath, "solutions/full.jls"), func)
+serialize(joinpath(figpath, "solutions/$N/full.jls"), Dict("final" => func))
 
-# system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=10, m=10));
-# sol_lr10 = EPMAfem.IterableDiscretePNSolution(system_lr10, source, initial_solution=initial_condition);
-# func_lr10 = EPMAfem.interpolable(probe, sol_lr10)
-# serialize(joinpath(figpath, "solutions/lr10.jls"), func_lr10)
-
-# system_lr20 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=20, m=20));
-# sol_lr20 = EPMAfem.IterableDiscretePNSolution(system_lr20, source, initial_solution=initial_condition);
-# func_lr20 = EPMAfem.interpolable(probe, sol_lr20)
-# serialize(joinpath(figpath, "solutions/lr20.jls"), func_lr20)
-
-# system_lr50 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=50, m=50));
-# sol_lr50 = EPMAfem.IterableDiscretePNSolution(system_lr50, source, initial_solution=initial_condition);
-# func_lr50 = EPMAfem.interpolable(probe, sol_lr50)
-# serialize(joinpath(figpath, "solutions/lr50.jls"), func_lr50)
-
-system_lr100 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=100, m=100), tolerance=1.0);
-sol_lr100 = EPMAfem.IterableDiscretePNSolution(system_lr100, source, initial_solution=initial_condition);
-func_lr100 = EPMAfem.interpolable(probe, sol_lr100)
-serialize(joinpath(figpath, "solutions/lr100.jls"), func_lr100)
-
-func = deserialize(joinpath(figpath, "solutions/full.jls"))
-func_lr10 = deserialize(joinpath(figpath, "solutions/lr10.jls"))
-func_lr20 = deserialize(joinpath(figpath, "solutions/lr20.jls"))
-func_lr50 = deserialize(joinpath(figpath, "solutions/lr50.jls"))
-func_lr100 = deserialize(joinpath(figpath, "solutions/lr100.jls"))
-
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1)
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr100(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1)
-
-clims=(-1, 2)
-plot(
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1, clims=clims),
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr10(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1),
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr20(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1),
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr50(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1),
-heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr100(VectorValue(x, y))/π, aspect_ratio=:equal, cmap=:jet1, clims=clims)
-)
-
-plot(0:0.01:1.2, x -> func(VectorValue(x, 0.0))/π, label="full")
-plot!(0:0.01:1.2, x -> func_lr10(VectorValue(x, 0.0))/π, label="r10")
-plot!(0:0.01:1.2, x -> func_lr20(VectorValue(x, 0.0))/π, label="r20")
-plot!(0:0.01:1.2, x -> func_lr50(VectorValue(x, 0.0))/π, label="r50")
-plot!(0:0.01:1.2, x -> func_lr100(VectorValue(x, 0.0))/π, label="r100")
-
-ylims!(-0.1, 0.7)
-### energy/mass plot
-Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)), EPMAfem.SpaceModels.even(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
-Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
-
-Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.architecture(problem)
-xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> 1.0) |> EPMAfem.architecture(problem)
-
-energy, energy_lr = zeros(length(sol)), zeros(length(sol))
-mass, mass_lr = zeros(length(sol)), zeros(length(sol))
-
-dot(xp, ψ0p*Ωp)
-dot(xm, ψ0m*Ωm) 
-
-
-for (i, ((ϵ, ψ), (ϵ_lr, ψ_lr))) in enumerate(zip(sol, sol_lr))
-    ψp, ψm = EPMAfem.pmview(ψ, model)
-    ψp_lr, ψm_lr = EPMAfem.pmview(ψ_lr, model)
-    energy[i] = dot(ψp, Mp*ψp) + dot(ψm, Mm*ψm)
-    energy_lr[i] = dot(ψp_lr, Mp*ψp_lr) + dot(ψm_lr, Mm*ψm_lr)
-
-    mass[i] = dot(xp, ψp*Ωp) + dot(xm, ψm*Ωm)
-    mass_lr[i] = dot(xp, ψp_lr*Ωp) + dot(xm, ψm_lr*Ωm)
+function compute_sol_and_rank_evolution(sol)
+    data = Dict()
+    data["ranks"] = (p=zeros(length(sol)), m=zeros(length(sol)))
+    for (i, (ϵ, ψ)) in enumerate(sol)
+        data["ranks"].p[i], data["ranks"].m[i] = ψ.ranks.p[], ψ.ranks.m[]
+        if i == length(sol)
+            Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(sol.system.problem.model), Ω -> 1.0) |> EPMAfem.architecture(sol.system.problem)
+            ψp, ψm = EPMAfem.pmview(ψ, sol.system.problem.model)
+            data["final"] = EPMAfem.SpaceModels.interpolable((p=collect(ψp*Ωp), m=collect(ψm*Ωm)), EPMAfem.space_model(sol.system.problem.model))
+        end
+    end
+    return data
 end
 
-plot(energy)
-plot!(energy_lr)
+system_lr_2 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=50, m=50), tolerance=0.05);
+sol_lr_2 = EPMAfem.IterableDiscretePNSolution(system_lr_2, source, initial_solution=initial_condition);
+serialize(joinpath(figpath, "solutions/$N/lr_2.jls"), compute_sol_and_rank_evolution(sol_lr_2))
 
+system_lr_3 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=100, m=100), tolerance=0.025);
+sol_lr_3 = EPMAfem.IterableDiscretePNSolution(system_lr_3, source, initial_solution=initial_condition);
+serialize(joinpath(figpath, "solutions/$N/lr_3.jls"), compute_sol_and_rank_evolution(sol_lr_3))
 
-plot(mass)
-plot!(mass_lr)
-#### ϵ = 0 PLOT
+system_lr_4 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=200, m=200), tolerance=0.0125);
+sol_lr_4 = EPMAfem.IterableDiscretePNSolution(system_lr_4, source, initial_solution=initial_condition);
+serialize(joinpath(figpath, "solutions/$N/lr_4.jls"), compute_sol_and_rank_evolution(sol_lr_4))
 
-probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), ϵ=0.0, Ω=Ω -> 1.0)
-func = EPMAfem.interpolable(probe, sol)
-func_lr = EPMAfem.interpolable(probe, sol_lr)
+system_lr_5 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=400, m=400), tolerance=0.00625);
+sol_lr_5 = EPMAfem.IterableDiscretePNSolution(system_lr_5, source, initial_solution=initial_condition);
+serialize(joinpath(figpath, "solutions/$N/lr_5.jls"), compute_sol_and_rank_evolution(sol_lr_5))
 
-p1 = heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y)), aspect_ratio=:equal)
-p2 = plot(0.0:0.01:1.2, x -> func(VectorValue(x, 0.0)))
-plot(p1, p2)
+using CSV
+ref_sol = CSV.File(joinpath(figpath, "refPhiFull.txt"), header=0) |> CSV.Tables.matrix
+heatmap(range(-1.5, 1.5, 250), range(-1.5, 1.5, 250), ref_sol, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
+plot!(size=(300, 288), fontfamily="Computer Modern", margin=2Plots.mm, dpi=1000)
+savefig(joinpath(figpath, "ref.png"))
 
-p_lr1 = heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func_lr(VectorValue(x, y)), aspect_ratio=:equal)
-p_lr2 = plot(0.0:0.01:1.2, x -> func_lr(VectorValue(x, 0.0)))
-plot(p_lr1, p_lr2)
+using LaTeXStrings
+path(N, t) = joinpath(figpath, "solutions", "$(N)", t==-1 ? "full.jls" : "lr_$(t).jls")
+tol(t) = Dict(2=>L"5 \times 10^{-2}", 3=>L"2.5 \times 10^{-2}", 4=>L"1.25 \times 10^{-2}", 5=>L"6.25 \times 10^{-3}")[t]
+for N in [17, 27, 37, 47]
+    ts =  [-1, 2, 3, 4, 5]
+    for t in ts
+        data = deserialize(path(N, t))
+        heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> data["final"](VectorValue(x, y))/4π, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
+        plot!(size=(300, 288), fontfamily="Computer Modern", margin=2Plots.mm, dpi=1000)
+        xlabel!(L"x")
+        ylabel!(L"y")
+        savefig(joinpath(figpath, "final_$(N)_$(t).png"))
+    end
+
+    plot(range(-1.5, 1.5, 250), ref_sol[250÷2, :], color=:black, label="reference", linewidth=2, ls=:dot)
+    for (i, t) in enumerate(ts)
+        data = deserialize(path(N, t))
+        plot!(-1.5:0.01:1.5, x -> data["final"](VectorValue(x, 0.0))/4π, color=i, label=t==-1 ? L"\textrm{full}" : L"\textrm{tol}="*"$(tol(t))")
+    end
+    ylabel!(L"\langle \psi \rangle")
+    xlabel!(L"x")
+    plot!(size=(400, 300), fontfamily="Computer Modern", margin=2Plots.mm,  dpi=1000, legend=:topright)
+    savefig(joinpath(figpath, "lineout_$(N).png"))
+
+    plot()
+    for (i, t) in enumerate(ts)
+        if t == -1 continue end
+        data = deserialize(path(N, t))
+        plot!(range(0, 1, 101), data["ranks"].p, color=i, label=t==-1 ? L"\textrm{full}" : L"\textrm{tol}="*"$(tol(t))")
+        plot!(range(0, 1, 101), data["ranks"].m, ls=:dash, color=i, label=nothing)
+    end
+    ylabel!(L"\textrm{ranks}")
+    xlabel!(L"t")
+    plot!(size=(400, 300), fontfamily="Computer Modern", margin=2Plots.mm,  dpi=1000)
+    savefig(joinpath(figpath, "ranks_$(N).png"))
+end
