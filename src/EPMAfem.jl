@@ -22,7 +22,10 @@ using EPMAfem.Sparse3Tensor
 include("special_matrices/blockedmatrices.jl")
 using EPMAfem.BlockedMatrices
 
-include("special_matrices/twodiagonalmatrix.jl")
+# include("special_matrices/twodiagonalmatrix.jl")
+
+include("special_matrices/rowsparsematrices.jl")
+using EPMAfem.RowSparseMatrices
 
 include("pn_lazy_matrices/pnlazymatrices.jl")
 using EPMAfem.PNLazyMatrices
