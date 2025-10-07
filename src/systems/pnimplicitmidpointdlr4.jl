@@ -120,7 +120,6 @@ function implicit_midpoint_dlr4(pbl::DiscretePNProblem; max_ranks=(p=20, m=20))
 end
 
 function step_nonadjoint!(x, system::DiscreteDLRPNSystem4, rhs_ass::PNVectorAssembler, idx, Δϵ)
-    @show idx
     if system.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
     
@@ -297,11 +296,11 @@ function fillzero!(sol::LowwRankSolution)
 
     # TODO: this is weird and allocates to work together with CUDA!
     copy!(Up, @view(qr(rand(size(Up)...)).Q[:, 1:sol.ranks.p[]]))
-    copy!(Vtp, transpose(qr(rand(reverse(size(Vtp))...)).Q[:, 1:sol.ranks.p[]])) # better ?
+    copy!(Vtp, transpose(qr(rand(reverse(size(Vtp))...)).Q[:, 1:sol.ranks.p[]]) |> collect) # better ?
     fill!(Sp, zero(eltype(Sp)))
 
     copy!(Um, @view(qr(rand(size(Um)...)).Q[:, 1:sol.ranks.m[]]))
-    copy!(Vtm, transpose(qr(rand(reverse(size(Vtm))...)).Q[:, 1:sol.ranks.m[]]))
+    copy!(Vtm, transpose(qr(rand(reverse(size(Vtm))...)).Q[:, 1:sol.ranks.m[]]) |> collect)
     fill!(Sm, zero(eltype(Sm)))
 end
 

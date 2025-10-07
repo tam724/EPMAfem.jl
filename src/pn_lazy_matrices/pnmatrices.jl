@@ -57,7 +57,12 @@ function materialize_with() end
 
 function mul_with!(::Nothing, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     # CUDA.NVTX.@range "mul!(.., :$(typeof(A)), $(typeof(X)))" begin
-        mul!(Y, A, X, α, β)    
+    try
+        mul!(Y, A, X, α, β)
+    catch e
+        @show "mul! error with $(typeof(Y)), $(typeof(A)), $(typeof(X))"
+        throw(e)
+    end
     # end 
 end
 

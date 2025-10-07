@@ -299,10 +299,18 @@ function materialize_with(ws::Workspace, M::ThreeProdMatrix, skeleton::AbstractM
         mul_with!(rem_, XB, X(M), B_, true, false)
         mul_with!(rem, skeleton, A(M), XB, α, β)
     else # strategy == :AX_B
-        AX, rem = take_ws(ws, (mA, mB))
-        A_, rem_ = materialize_with(rem, materialize(A(M)))
-        mul_with!(rem_, AX, A_, X(M), true, false)
-        mul_with!(rem, skeleton, AX, B(M), α, β)
+        # avoid CUDA scalar indexing TODO: fix elsewhere 
+        if A(M) isa Transpose
+            AXt, rem = take_ws(ws, (mB, mA))
+            A_, rem_ = materialize_with(rem, materialize(A(M)))
+            mul_with!(rem_, AXt, transpose(X(M)), transpose(A_), true, false)
+            mul_with!(rem, skeleton, transpose(AXt), B(M), α, β)
+        else
+            AX, rem = take_ws(ws, (mA, mB))
+            A_, rem_ = materialize_with(rem, materialize(A(M)))
+            mul_with!(rem_, AX, A_, X(M), true, false)
+            mul_with!(rem, skeleton, AX, B(M), α, β)
+        end
     end
     return skeleton, ws
 end

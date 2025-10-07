@@ -79,7 +79,6 @@ function implicit_midpoint_dlr2(pbl::DiscretePNProblem; max_rank=20)
 end
 
 function step_nonadjoint!(x, system::DiscreteDLRPNSystem2, rhs_ass::PNVectorAssembler, idx, Δϵ)
-    @show idx
     CUDA.NVTX.@range "prep" begin
         if system.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
         if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end

@@ -43,6 +43,7 @@ function Base.iterate(it::IterableDiscretePNSolution)
         @info "iterating in reverse"
         idx = last_index(ϵs, _is_adjoint_solution(it))
     end
+    @show idx
     return idx => it.current_solution, idx
 end
 
@@ -77,6 +78,7 @@ function Base.iterate(it::IterableDiscretePNSolution, idx::ϵidx)
         # update the system from idx.i -> idx.i - 1
         step_nonadjoint!(it.current_solution, it.system, it.b_assembler, idx, Δϵ)
     end
+    @show idx_next
     return idx_next => it.current_solution, idx_next
 end
 

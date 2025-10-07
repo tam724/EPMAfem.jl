@@ -12,22 +12,27 @@ Base.@kwdef @concrete struct DiscreteDLRPNSystem5{ADAPTIVE} <: AbstractDiscreteP
 end
 
 function Base.adjoint(A::DiscreteDLRPNSystem5{ADAPTIVE}) where ADAPTIVE
-    return DiscreteDLRPNSystem5{ADAPTIVE}(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks)
+    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks, tolerance=A.tolerance)
 end
 
 adaptive(::DiscreteDLRPNSystem5{Nothing}) = false
 adaptive(::DiscreteDLRPNSystem5{<:Real}) = true
 
 function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing)
-    if max_ranks isa Integer
-        max_ranks = (p=max_ranks, m=max_ranks)
-    end
     arch = architecture(pbl)
 
     T = base_type(architecture(pbl))
     ns = EPMAfem.n_sums(pbl)
     nb = EPMAfem.n_basis(pbl)
     Δϵ = step(energy_model(pbl.model))
+
+    if max_ranks isa Integer
+        max_ranks = (p=max_ranks, m=max_ranks)
+    end
+    if max_ranks.p > fld(nb.nΩ.p, 2) || max_ranks.m > fld(nb.nΩ.m, 2) # trim the number_of_ranks to nΩ / 2
+        max_ranks = (p=min(max_ranks.p, fld(nb.nΩ.p, 2)), m=min(max_ranks.m, fld(nb.nΩ.m, 2)))
+        @warn "Trimming the number of max ranks to nΩ/2: $(max_ranks)"
+    end
 
     Vtp = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (2max_ranks.p, nb.nΩ.p), (Ref(2max_ranks.p), Ref(nb.nΩ.p)))
     Vp = transpose(Vtp)
@@ -129,7 +134,6 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
 end
 
 function step_nonadjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx, Δϵ)
-    @show idx
     if system.adjoint @warn "Trying to step_nonadjoint with system marked as adjoint" end
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
     implicit_midpoint_coeffs_nonadjoint_rhs!(system.coeffs.rhs, system.problem, idx, Δϵ)
@@ -138,7 +142,6 @@ function step_nonadjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAsse
 end
 
 function step_adjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx, Δϵ)
-    @show idx
     if !system.adjoint @warn "Trying to step_adjoint with system marked as nonadjoint" end
     if system.adjoint != _is_adjoint_vector(rhs_ass) @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(rhs_ass))}" end
     implicit_midpoint_coeffs_adjoint_rhs!(system.coeffs.rhs, system.problem, idx, Δϵ)
@@ -151,14 +154,16 @@ function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, Sp, Sm)
     #p 
     Σσ²p = 0.0
     rp = length(Sp)
-    while sqrt(Σσ²p + Sp[rp]^2) < system.tolerance && rp > 1
+    norm_Sp² = sum(Sp.^2)
+    while Σσ²p + Sp[rp]^2 < system.tolerance^2*norm_Sp² && rp > 1
         Σσ²p += Sp[rp]^2
         rp = rp - 1
     end
-    #m 
+    #m  
     Σσ²m = 0.0
     rm = length(Sm)
-    while sqrt(Σσ²m + Sm[rm]^2) < system.tolerance && rm > 1
+    norm_Sm² = sum(Sm.^2)
+    while Σσ²m + Sm[rm]^2 < system.tolerance^2*norm_Sm² && rm > 1
         Σσ²m += Sm[rm]^2
         rm = rm - 1
     end
@@ -281,8 +286,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         old_ranksp, old_ranksm = x.ranks.p[], x.ranks.m[]
         x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
         ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
-
-        @show ranks
 
         mul!(Up₁, Uphat, @view(Pp[1:2old_ranksp, 1:ranks.p]))
         mul!(Um₁, Umhat, @view(Pm[1:2old_ranksm, 1:ranks.m]))
