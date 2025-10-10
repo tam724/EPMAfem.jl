@@ -339,7 +339,11 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         reshape(Sm₀_hat, aug_ranks_m_u, aug_ranks_m_v) .= Mm * Sm₀ * transpose(Nm)
 
         if !isnothing(system.conserved_quantities)
-            @show "before S", transpose(system.conserved_quantities.p.U) * Uphat * reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) * transpose(Vphat) * system.conserved_quantities.p.V
+            cons_quant = zeros(size(system.conserved_quantities.p.U, 2))
+            for i in 1:size(system.conserved_quantities.p.U, 2)
+                cons_quant[i] = transpose(system.conserved_quantities.p.U[:, i]) * Uphat * reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) * transpose(Vphat) * system.conserved_quantities.p.V[:, i]
+            end
+            @show "before S", cons_quant
         end
         mul!(rhs_S, system.mats.rhsBMᵤᵥ, S₀_hat, -1, true)
         # @show rhs_S
@@ -357,7 +361,11 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         # debugging
         # mass before truncation
         if !isnothing(system.conserved_quantities)
-            @show "before trunc", transpose(system.conserved_quantities.p.U) * Uphat * Sp₁_hat * transpose(Vphat) * system.conserved_quantities.p.V
+            cons_quant = zeros(size(system.conserved_quantities.p.U, 2))
+            for i in 1:size(system.conserved_quantities.p.U, 2)
+                cons_quant[i] = transpose(system.conserved_quantities.p.U[:, i]) * Uphat * Sp₁_hat * transpose(Vphat) * system.conserved_quantities.p.V[:, i]
+            end
+            @show "before trunc", cons_quant
         end
 
         Pp, Sp, Qp = svd(Sp₁_hat)
@@ -385,7 +393,11 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
         # mass after truncation
         if !isnothing(system.conserved_quantities)
-            @show "after trunc", transpose(system.conserved_quantities.p.U) * Up₁ * Sp₁ * Vtp₁ * system.conserved_quantities.p.V
+            cons_quant = zeros(size(system.conserved_quantities.p.U, 2))
+            for i in 1:size(system.conserved_quantities.p.U, 2)
+                cons_quant[i] = transpose(system.conserved_quantities.p.U[:, i]) * Up₁ * Sp₁ * Vtp₁ * system.conserved_quantities.p.V[:, i]
+            end
+            @show "after trunc", cons_quant
         end
     end
 end
@@ -393,13 +405,21 @@ end
 # inputs A: full matrix; U, S, Vt: truncated SVD; u, v: invariant vectors
 function _preserve_invariant!(S, A, U, Vt, u, v)
     @assert size(u, 2) == size(v, 2)
-    for i in 1:size(u, 2)
-        u_tilde = transpose(U)*u[:, i]
-        v_tilde = Vt*v[:, i]
-        δ = dot(u[:, i], A, v[:, i]) - dot(u_tilde, S, v_tilde)
-        @show δ
-        S .+= δ / (dot(u_tilde, u_tilde)*dot(v_tilde, v_tilde)) * u_tilde * transpose(v_tilde)
+    m = size(u, 2)
+    if iszero(m) return S end
+    u_tilde = transpose(U)*u
+    v_tilde = Vt*v
+    δ = zeros(m)
+    for i in 1:m
+        δ[i] = dot(@view(u[:, i]), A, @view(v[:, i])) - dot(@view(u_tilde[:, i]), S, @view(v_tilde[:, i]))
     end
+    A_mat = zeros(m, m*m)
+    for i in 1:m
+        A_mat[i, :] = kron(transpose(transpose(v_tilde)*v_tilde[:, i]), transpose(u_tilde[:, i])*u_tilde)
+    end
+    W_vec = A_mat \ δ
+    W = reshape(W_vec, m, m)
+    S .+= u_tilde * W * transpose(v_tilde)
 end
 
 function allocate_solution_vector(system::DiscreteDLRPNSystem5)

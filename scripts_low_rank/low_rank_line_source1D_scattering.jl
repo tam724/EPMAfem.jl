@@ -79,17 +79,15 @@ N = 11
         @show mass0 - 1.0
         
         nb = EPMAfem.n_basis(model)
-        basis_augmentation = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 1),
-                                 V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
+        basis_augmentation = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 2),
+                                 V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 2)),
                               m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
                                  V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
-        conserved_quantities = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 1),
-                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
-                                m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
-                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
-
+        
         copy!(@view(basis_augmentation.p.U[:, 1]), Mp \ xp)
+        copy!(@view(basis_augmentation.p.U[:, 2]), Mp \ xp_b)
         copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
+        copy!(@view(basis_augmentation.p.V[:, 2]), Ωp_b)
         basis_augmentation.m.U .= 1.0
         basis_augmentation.m.V .= 1.0
 
@@ -98,16 +96,28 @@ N = 11
         basis_augmentation.m.U .= qr(basis_augmentation.m.U).Q |> Matrix
         basis_augmentation.m.V .= qr(basis_augmentation.m.V).Q |> Matrix
 
+        conserved_quantities = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 2),
+                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 2)),
+                                m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
+                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
+
         copy!(@view(conserved_quantities.p.U[:, 1]), xp)
+        copy!(@view(conserved_quantities.p.U[:, 2]), xp_b)
         copy!(@view(conserved_quantities.p.V[:, 1]), Ωp)
+        copy!(@view(conserved_quantities.p.V[:, 2]), Ωp_b)
+
+        # conserved_quantities.p.U .= qr(conserved_quantities.p.U).Q |> Matrix
+        # conserved_quantities.p.V .= qr(conserved_quantities.p.V).Q |> Matrix
+        # conserved_quantities.m.U .= qr(conserved_quantities.m.U).Q |> Matrix
+        # conserved_quantities.m.V .= qr(conserved_quantities.m.V).Q |> Matrix
         
-        system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=1, m=1));
-        system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=1, m=1), basis_augmentation=basis_augmentation, conserved_quantities=conserved_quantities);
+        system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5));
+        system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation, conserved_quantities=conserved_quantities);
 
         # MAKE THE SYSTEMS FULLY MASS CONSERVATIVE BY A REFLECTIVE BOUNDARY CONDITION
-        system.coeffs.γ[] = 0
-        system_lr10.coeffs.γ[] = 0
-        system_lr10_aug.coeffs.γ[] = 0
+        # system.coeffs.γ[] = 0
+        # system_lr10.coeffs.γ[] = 0
+        # system_lr10_aug.coeffs.γ[] = 0
 
         # SWITCH OFF TRANSPORT
         # system.coeffs.δ[] = 0
@@ -170,20 +180,15 @@ N = 11
             end
             return ∫v
         end
-
-        begin
-            plot(masses[:, 1] .- 1.0 .+ cumtrapz(outflux[:, 1], step(energy_model)))
-            # plot!(.-cumtrapz(outflux[:, 1], step(energy_model)))            
-        end
-
+        
         begin
             plot(abs.(masses[:, 1] .- 1.0), yaxis=:log)
             plot!(abs.(masses[:, 2] .- 1.0))
             plot!(abs.(masses[:, 3] .- 1.0))
 
-            # plot!(abs.(masses[:, 1] .+ cumtrapz(outflux[:, 1], step(energy_model)) .- 1.0), yaxis=:log, color=1, ls=:dash)
-            # plot!(abs.(masses[:, 2] .+ cumtrapz(outflux[:, 2], step(energy_model)) .- 1.0), color=2, ls=:dash)
-            # plot!(abs.(masses[:, 3] .+ cumtrapz(outflux[:, 3], step(energy_model)) .- 1.0), color=3, ls=:dash)
+            plot!(abs.(masses[:, 1] .+ cumtrapz(outflux[:, 1], step(energy_model)) .- 1.0), yaxis=:log, color=1, ls=:dash)
+            plot!(abs.(masses[:, 2] .+ cumtrapz(outflux[:, 2], step(energy_model)) .- 1.0), color=2, ls=:dash)
+            plot!(abs.(masses[:, 3] .+ cumtrapz(outflux[:, 3], step(energy_model)) .- 1.0), color=3, ls=:dash)
             ylims!(1e-16, 1.0)
         end
         

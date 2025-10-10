@@ -95,14 +95,20 @@ function tsvd(A, r)
     return LinearAlgebra.SVD(svd_.U[:, 1:r], svd_.S[1:r], svd_.Vt[1:r, :])
 end
 
-function tsvd_preserve_invariant(A, r, u, v)
-    svd_ = tsvd(A, r)
-    u_tilde = transpose(svd_.U)*u
-    v_tilde = svd_.Vt*v
-    δ = invariant(A, u, v) - invariant(svd_, u, v)
-    S = Diagonal(svd_.S) + δ / (dot(u_tilde, u_tilde)*dot(v_tilde, v_tilde)) * u_tilde * transpose(v_tilde)
-    return SVD2(svd_.U, S, svd_.Vt)
-end
+
+A = rand(10, 10)*rand(10, 10)
+tsvd_A = tsvd(A, 5)
+u = rand(10, 3)
+v = rand(10, 3)
+
+A .- tsvd_A.U*Diagonal(tsvd_A.S)*tsvd_A.Vt
+S_tilde = EPMAfem._preserve_invariant!(Matrix(Diagonal(tsvd_A.S)), A, tsvd_A.U, tsvd_A.Vt, u, v)
+A .- tsvd_A.U*S_tilde*tsvd_A.Vt
+
+transpose(u)*A*v .- transpose(u)*tsvd_A.U*S_tilde*tsvd_A.Vt*v |> diag
+
+
+
 
 
 Q1 = qr(randn(50, 2)).Q[:, 1:2]
