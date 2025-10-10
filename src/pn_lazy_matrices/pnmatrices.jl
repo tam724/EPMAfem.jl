@@ -1,8 +1,9 @@
 # utils
 # generally useful for size checking
+only_unique(elm...) = only_unique(elm)
 function only_unique(iter)
     a, rest... = iter
-    if !all(x -> x == a, rest)  error("Collection has multiple elements, must containt exactly 1 element") end
+    if !all(x -> x == a, rest)  error("Collection has multiple elements, must contain exactly 1 element") end
     return a
 end
 

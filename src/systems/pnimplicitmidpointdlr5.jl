@@ -10,16 +10,19 @@ Base.@kwdef @concrete struct DiscreteDLRPNSystem5{ADAPTIVE} <: AbstractDiscreteP
     max_ranks
     tolerance::ADAPTIVE
     basis_augmentation
+    conserved_quantities
 end
 
 function Base.adjoint(A::DiscreteDLRPNSystem5{ADAPTIVE}) where ADAPTIVE
-    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks, tolerance=A.tolerance, basis_augmentation=A.basis_augmentation)
+    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks, tolerance=A.tolerance, basis_augmentation=A.basis_augmentation, conserved_quantities=A.conserved_quantities)
 end
 
 adaptive(::DiscreteDLRPNSystem5{Nothing}) = false
 adaptive(::DiscreteDLRPNSystem5{<:Real}) = true
 
-function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing, basis_augmentation=nothing)
+using EPMAfem.PNLazyMatrices: only_unique
+
+function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing, basis_augmentation=nothing, conserved_quantities=nothing)
     arch = architecture(pbl)
 
     T = base_type(architecture(pbl))
@@ -35,15 +38,10 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
         @warn "Trimming the number of max ranks to nΩ/2: $(max_ranks)"
     end
 
-    if isnothing(basis_augmentation)
-        basis_augmentation = (
-            np=0,
-            nm=0,
-            p=(U=EPMAfem.allocate_mat(arch, nb.nx.p, 0), V=EPMAfem.allocate_mat(arch, nb.nΩ.p, 0)),
-            m=(U=EPMAfem.allocate_mat(arch, nb.nx.m, 0), V=EPMAfem.allocate_mat(arch, nb.nΩ.m, 0)))
-    end
+    n_bas_aug_p = isnothing(basis_augmentation) ? 0 : only_unique(size(basis_augmentation.p.U, 2), size(basis_augmentation.p.V, 2))
+    n_bas_aug_m = isnothing(basis_augmentation) ? 0 : only_unique(size(basis_augmentation.m.U, 2), size(basis_augmentation.m.V, 2))
 
-    max_aug_ranks = (p=2max_ranks.p+basis_augmentation.np, m=2max_ranks.m+basis_augmentation.nm)
+    max_aug_ranks = (p=2max_ranks.p+n_bas_aug_p, m=2max_ranks.m+n_bas_aug_m)
 
     Vtp = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (max_aug_ranks.p, nb.nΩ.p), (Ref(max_aug_ranks.p), Ref(nb.nΩ.p)))
     Vp = transpose(Vtp)
@@ -150,7 +148,8 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
         tmp = tmp,
         max_ranks=max_ranks,
         tolerance=tolerance,
-        basis_augmentation=basis_augmentation
+        basis_augmentation=basis_augmentation,
+        conserved_quantities=conserved_quantities
     )
 end
 
@@ -255,7 +254,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Km₁ = @view(K₁[nxp*ranks.p+1:end])
         mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
 
-        if system.basis_augmentation.np > 0
+        if !isnothing(system.basis_augmentation)
             Uphat = _orthonormalize(system.basis_augmentation.p.U, reshape(Kp₁, (nxp, ranks.p)), Up₀)
         else
             Uphat = _orthonormalize(reshape(Kp₁, (nxp, ranks.p)), Up₀)
@@ -263,7 +262,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         aug_ranks_p_u = size(Uphat, 2)
         @show abs.(transpose(Uphat) * Uphat - I) |> maximum
 
-        if system.basis_augmentation.nm > 0
+        if !isnothing(system.basis_augmentation)
             Umhat = _orthonormalize(system.basis_augmentation.m.U, reshape(Km₁, (nxm, ranks.m)), Um₀)
         else
             Umhat = _orthonormalize(reshape(Km₁, (nxm, ranks.m)), Um₀)
@@ -298,7 +297,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Ltm₁ = @view(Lt₁[ranks.p*nΩp+1:end])
         mul!(Lt₁, system.mats.inv_matBMᵤ, rhs_Lt, true, false)
         
-        if system.basis_augmentation.np > 0
+        if !isnothing(system.basis_augmentation)
             Vphat = _orthonormalize(system.basis_augmentation.p.V, transpose(reshape(Ltp₁, (ranks.p, nΩp))), transpose(Vtp₀))
         else
             Vphat = _orthonormalize(transpose(reshape(Ltp₁, (ranks.p, nΩp))), transpose(Vtp₀))
@@ -306,7 +305,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         aug_ranks_p_v = size(Vphat, 2)
         @show abs.(transpose(Vphat) * Vphat - I) |> maximum
 
-        if system.basis_augmentation.np > 0
+        if !isnothing(system.basis_augmentation)
             Vmhat = _orthonormalize(system.basis_augmentation.m.V, transpose(reshape(Ltm₁, (ranks.m, nΩm))), transpose(Vtm₀))
         else
             Vmhat = _orthonormalize(transpose(reshape(Ltm₁, (ranks.m, nΩm))), transpose(Vtm₀))
@@ -339,9 +338,9 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) .= Mp * Sp₀ * transpose(Np)
         reshape(Sm₀_hat, aug_ranks_m_u, aug_ranks_m_v) .= Mm * Sm₀ * transpose(Nm)
 
-        __Mp = system.problem.space_discretization.ρp[1]
-        @show "before S", transpose(system.basis_augmentation.p.U) * __Mp * Uphat * reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) * transpose(Vphat) * system.basis_augmentation.p.V
-
+        if !isnothing(system.conserved_quantities)
+            @show "before S", transpose(system.conserved_quantities.p.U) * Uphat * reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) * transpose(Vphat) * system.conserved_quantities.p.V
+        end
         mul!(rhs_S, system.mats.rhsBMᵤᵥ, S₀_hat, -1, true)
         # @show rhs_S
 
@@ -357,7 +356,9 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
         # debugging
         # mass before truncation
-        @show "before trunc", transpose(system.basis_augmentation.p.U) * __Mp * Uphat * Sp₁_hat * transpose(Vphat) * system.basis_augmentation.p.V
+        if !isnothing(system.conserved_quantities)
+            @show "before trunc", transpose(system.conserved_quantities.p.U) * Uphat * Sp₁_hat * transpose(Vphat) * system.conserved_quantities.p.V
+        end
 
         Pp, Sp, Qp = svd(Sp₁_hat)
         Pm, Sm, Qm = svd(Sm₁_hat)
@@ -375,17 +376,17 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
 
         # fix conservation
-        if size(system.basis_augmentation.p.U, 2) > 0
-            _preserve_invariant!(Sp₁, Sp₁_hat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]), @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Uphat) * __Mp *  system.basis_augmentation.p.U, transpose(Vphat) * system.basis_augmentation.p.V)
+        if !isnothing(system.conserved_quantities)
+            _preserve_invariant!(Sp₁, Sp₁_hat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]), @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Uphat) * system.conserved_quantities.p.U, transpose(Vphat) * system.conserved_quantities.p.V)
         end
-        if size(system.basis_augmentation.m.U, 2) > 0
-            error("todo!")
-            _preserve_invariant!(Sm₁, Sm₁_hat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]), @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Umhat) * system.basis_augmentation.m.U, transpose(Vmhat) * system.basis_augmentation.m.V)
+        if  !isnothing(system.conserved_quantities)
+            _preserve_invariant!(Sm₁, Sm₁_hat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]), @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Umhat) * system.conserved_quantities.m.U, transpose(Vmhat) * system.conserved_quantities.m.V)
         end
 
         # mass after truncation
-        @show "after trunc", transpose(system.basis_augmentation.p.U) * __Mp * Up₁ * Sp₁ * Vtp₁ * system.basis_augmentation.p.V
-
+        if !isnothing(system.conserved_quantities)
+            @show "after trunc", transpose(system.conserved_quantities.p.U) * Up₁ * Sp₁ * Vtp₁ * system.conserved_quantities.p.V
+        end
     end
 end
 

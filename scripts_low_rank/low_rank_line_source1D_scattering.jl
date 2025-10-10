@@ -16,15 +16,15 @@ struct PlaneSourceEquations{S} <: EPMAfem.AbstractPNEquations end
 EPMAfem.number_of_elements(::PlaneSourceEquations) = 1
 EPMAfem.number_of_scatterings(::PlaneSourceEquations) = 1
 EPMAfem.stopping_power(::PlaneSourceEquations, e, ϵ) = 1.0
-EPMAfem.absorption_coefficient(eq::PlaneSourceEquations, e, ϵ) = 0.0
-EPMAfem.scattering_coefficient(eq::PlaneSourceEquations, e, i, ϵ) = 0.0
+EPMAfem.absorption_coefficient(eq::PlaneSourceEquations, e, ϵ) = 1.0
+EPMAfem.scattering_coefficient(eq::PlaneSourceEquations, e, i, ϵ) = 1.0
 EPMAfem.mass_concentrations(::PlaneSourceEquations, e, x) = 1.0
 
-EPMAfem.scattering_kernel(::PlaneSourceEquations{Inf}, e, i) = μ -> 0.0 # 1/(4π)
+EPMAfem.scattering_kernel(::PlaneSourceEquations{Inf}, e, i) = μ -> 1/(4π)
 @generated μ₀(::PlaneSourceEquations{T}) where T = return :( $ (2π*hquadrature(μ -> exp(-T*(μ-1)^2), -1, 1)[1]))
 EPMAfem.scattering_kernel(eq::PlaneSourceEquations{T}, e, i) where T = μ -> exp(-T*(μ-1)^2)/μ₀(eq)
 
-energy_model = 0:0.01:3.0
+energy_model = 0:0.01:1.0
 
 # plotdata = Dict()
 # Ts = [Inf] # [Inf, 1.0, 10.0, 100.0]
@@ -78,19 +78,18 @@ N = 11
         mass0 = dot(xp, ψ0p*Ωp) + dot(xm, ψ0m*Ωm)
         @show mass0 - 1.0
         
-        nba = (p=1, m=0)
         nb = EPMAfem.n_basis(model)
-        basis_augmentation = (np=1, nm=0,
-                        p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, nba.p),
-                            V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, nba.p)),
-                        m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, nba.m),
-                            V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, nba.m)))
+        basis_augmentation = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 1),
+                                 V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
+                              m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
+                                 V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
+        conserved_quantities = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 1),
+                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
+                                m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
+                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
 
         copy!(@view(basis_augmentation.p.U[:, 1]), Mp \ xp)
-        # copy!(@view(basis_augmentation.p.U[:, 2]), Mp \ xp_b)
         copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
-        # copy!(@view(basis_augmentation.p.V[:, 2]), Ωp_b)
-
         basis_augmentation.m.U .= 1.0
         basis_augmentation.m.V .= 1.0
 
@@ -98,9 +97,12 @@ N = 11
         basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> Matrix
         basis_augmentation.m.U .= qr(basis_augmentation.m.U).Q |> Matrix
         basis_augmentation.m.V .= qr(basis_augmentation.m.V).Q |> Matrix
+
+        copy!(@view(conserved_quantities.p.U[:, 1]), xp)
+        copy!(@view(conserved_quantities.p.V[:, 1]), Ωp)
         
         system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=1, m=1));
-        system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=1, m=1), basis_augmentation=basis_augmentation);
+        system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=1, m=1), basis_augmentation=basis_augmentation, conserved_quantities=conserved_quantities);
 
         # MAKE THE SYSTEMS FULLY MASS CONSERVATIVE BY A REFLECTIVE BOUNDARY CONDITION
         system.coeffs.γ[] = 0
@@ -111,67 +113,8 @@ N = 11
         # system.coeffs.δ[] = 0
         # system_lr10.coeffs.δ[] = 0
         # system_lr10_aug.coeffs.δ[] = 0
-        ### debugging
-        # BM_rhs = Matrix(system_lr10_aug.mats.rhsBMᵤᵥ)
-        # BM_mat = Matrix(system_lr10_aug.mats.inv_matBMᵤᵥ.A.args[1])
-        
-        # BM_rhs_full = Matrix(system_lr10_aug.mats.rhsBM)
-        # BM_mat_full = Matrix(system_lr10_aug.mats.inv_matBM.A.args[1])
-        
 
-        # mt = [kron(rand(3)', transpose(Mp \ xp) * system_lr10_aug.mats.Up) zeros(size(system_lr10_aug.mats.Um, 2)*size(system_lr10_aug.mats.Vtm, 1))'] 
-        # mt_full = [kron(rand(21)', transpose(Mp \ xp)) zeros(10*21)']
-        
-        
-        # mt * (BM_rhs + BM_mat) .|> abs |> sum
-        # mt_full * (BM_rhs_full + BM_mat_full) .|> abs |> sum
-        
-
-        # ψ₀ = rand(13)
-        # mt*ψ0
-
-        
-
-
-        # PNLazyMatrices.set!(system_lr10_aug.mats.Vtp, vec(transpose(basis_augmentation.p.V)), size(transpose(basis_augmentation.p.V)))
-        # PNLazyMatrices.set!(system_lr10_aug.mats.Vtm, vec(transpose(basis_augmentation.m.V)), size(transpose(basis_augmentation.m.V)))
-        # PNLazyMatrices.set!(system_lr10_aug.mats.Up, vec(basis_augmentation.p.U), size(basis_augmentation.p.U))
-        # PNLazyMatrices.set!(system_lr10_aug.mats.Um, vec(basis_augmentation.m.U), size(basis_augmentation.m.U))
-
-        # EPMAfem.implicit_midpoint_coeffs_adjoint_rhs!(system_lr10_aug.coeffs.rhs, system_lr10_aug.problem, EPMAfem.first_index(EPMAfem.energy_model(model), true), 0.01)
-        # EPMAfem.implicit_midpoint_coeffs_adjoint_mat!(system_lr10_aug.coeffs.mat, system_lr10_aug.problem, EPMAfem.first_index(EPMAfem.energy_model(model), true), 0.01)
-        
-
-        # M_full = Matrix(system_lr10.mats.inv_matBM.A.args[1] |> size)
-
-        # M11 = Matrix(system_lr10.mats.inv_matBM.A.args[1].args[1].args[1])
-        # # P = kron(basis_augmentation.p.V, basis_augmentation.p.U)
-        # # transpose(P)*M11*P
-
-        # # M11ᵤᵥ = Matrix(system_lr10.mats.inv_matBMᵤᵥ.A.args[1].args[1].args[1])
-
-        # UUU = Matrix(system_lr10_aug.mats.Up)
-        # maximum(abs.(transpose(UUU)*UUU - I))
-        # VVV = Matrix(system_lr10_aug.mats.Vtp)
-        # maximum(abs.(VVV*transpose(VVV) - I))
-
-        # plot(UUU)
-        # plot(VVV')
-
-        # M = Matrix(system_lr10_aug.mats.inv_matBMᵤᵥ.A.args[1])
-        # A = Matrix(system_lr10_aug.mats.rhsBMᵤᵥ)
-
-        # x₀ = rand(13)
-        # x₁ = M \ (- A * x₀) .- x₀
-
-        # mass₀ = dot(xp, basis_augmentation.p.U * reshape(x₀[1:4], 2, 2) * basis_augmentation.p.V', Ωp)
-        # mass₁ = dot(xp, basis_augmentation.p.U * reshape(x₁[1:4], 2, 2) * basis_augmentation.p.V', Ωp)
-
-        # δ = dot(xp_b, basis_augmentation.p.U * (reshape(x₀[1:4], 2, 2) + reshape(x₁[1:4], 2, 2))/2 * basis_augmentation.p.V', Ωp_b)*0.01
-        # mass₀ - mass₁ - δ
-
-        # x₁[1] 
-        
+    
 
         sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
         # sol_lr3 = EPMAfem.IterableDiscretePNSolution(system_lr3, source, initial_solution=initial_condition);
@@ -229,14 +172,19 @@ N = 11
         end
 
         begin
+            plot(masses[:, 1] .- 1.0 .+ cumtrapz(outflux[:, 1], step(energy_model)))
+            # plot!(.-cumtrapz(outflux[:, 1], step(energy_model)))            
+        end
+
+        begin
             plot(abs.(masses[:, 1] .- 1.0), yaxis=:log)
             plot!(abs.(masses[:, 2] .- 1.0))
             plot!(abs.(masses[:, 3] .- 1.0))
 
-            # plot(abs.(masses[:, 1] .+ cumtrapz(outflux[:, 1], step(energy_model))/4π .- 1.0), yaxis=:log, color=1)
-            # plot!(abs.(masses[:, 2] .+ cumtrapz(outflux[:, 2], step(energy_model))/4π .- 1.0), color=2)
-            # plot!(abs.(masses[:, 3] .+ cumtrapz(outflux[:, 3], step(energy_model))/4π .- 1.0), color=3)
-            ylims!(1e-16, 1e-1)
+            # plot!(abs.(masses[:, 1] .+ cumtrapz(outflux[:, 1], step(energy_model)) .- 1.0), yaxis=:log, color=1, ls=:dash)
+            # plot!(abs.(masses[:, 2] .+ cumtrapz(outflux[:, 2], step(energy_model)) .- 1.0), color=2, ls=:dash)
+            # plot!(abs.(masses[:, 3] .+ cumtrapz(outflux[:, 3], step(energy_model)) .- 1.0), color=3, ls=:dash)
+            ylims!(1e-16, 1.0)
         end
         
         plot!()
