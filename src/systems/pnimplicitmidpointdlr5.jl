@@ -9,16 +9,17 @@ Base.@kwdef @concrete struct DiscreteDLRPNSystem5{ADAPTIVE} <: AbstractDiscreteP
 
     max_ranks
     tolerance::ADAPTIVE
+    basis_augmentation
 end
 
 function Base.adjoint(A::DiscreteDLRPNSystem5{ADAPTIVE}) where ADAPTIVE
-    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks, tolerance=A.tolerance)
+    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks, tolerance=A.tolerance, basis_augmentation=A.basis_augmentation)
 end
 
 adaptive(::DiscreteDLRPNSystem5{Nothing}) = false
 adaptive(::DiscreteDLRPNSystem5{<:Real}) = true
 
-function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing)
+function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing, basis_augmentation=nothing)
     arch = architecture(pbl)
 
     T = base_type(architecture(pbl))
@@ -34,14 +35,24 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
         @warn "Trimming the number of max ranks to nΩ/2: $(max_ranks)"
     end
 
-    Vtp = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (2max_ranks.p, nb.nΩ.p), (Ref(2max_ranks.p), Ref(nb.nΩ.p)))
+    if isnothing(basis_augmentation)
+        basis_augmentation = (
+            np=0,
+            nm=0,
+            p=(U=EPMAfem.allocate_mat(arch, nb.nx.p, 0), V=EPMAfem.allocate_mat(arch, nb.nΩ.p, 0)),
+            m=(U=EPMAfem.allocate_mat(arch, nb.nx.m, 0), V=EPMAfem.allocate_mat(arch, nb.nΩ.m, 0)))
+    end
+
+    max_aug_ranks = (p=2max_ranks.p+basis_augmentation.np, m=2max_ranks.m+basis_augmentation.nm)
+
+    Vtp = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (max_aug_ranks.p, nb.nΩ.p), (Ref(max_aug_ranks.p), Ref(nb.nΩ.p)))
     Vp = transpose(Vtp)
-    Up = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (nb.nx.p, 2max_ranks.p), (Ref(nb.nx.p), Ref(2max_ranks.p)))
+    Up = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (nb.nx.p, max_aug_ranks.p), (Ref(nb.nx.p), Ref(max_aug_ranks.p)))
     Utp = transpose(Up)
 
-    Vtm = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (2max_ranks.m, nb.nΩ.m), (Ref(2max_ranks.m), Ref(nb.nΩ.m)))
+    Vtm = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (max_aug_ranks.m, nb.nΩ.m), (Ref(max_aug_ranks.m), Ref(nb.nΩ.m)))
     Vm = transpose(Vtm)
-    Um = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (nb.nx.m, 2max_ranks.m), (Ref(nb.nx.m), Ref(2max_ranks.m)))
+    Um = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (nb.nx.m, max_aug_ranks.m), (Ref(nb.nx.m), Ref(max_aug_ranks.m)))
     Utm = transpose(Um)
 
     cfs = (
@@ -58,21 +69,27 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
     Ikp(i, cf) = materialize(cf.a[i]*Ip + sum(cf.c[i][j]*kp[i][j] for j in 1:ns.nσ))
     Ikm(i, cf) = materialize(cf.a[i]*Im + sum(cf.c[i][j]*km[i][j] for j in 1:ns.nσ))
 
-   #A(cf)   = cfs.Δ*(sum(kron_AXB(          ρp[i]    ,           Ikp(i, cf)    ) for i in 1:ns.ne) + sum(kron_AXB(          ∂p[i]    ,       cfs.γ *     absΩp[i]    ) for i in 1:ns.nd))
+    A(cf)   = cfs.Δ*(sum(kron_AXB(          ρp[i]    ,           Ikp(i, cf)    ) for i in 1:ns.ne) + sum(kron_AXB(          ∂p[i]    ,       cfs.γ *     absΩp[i]    ) for i in 1:ns.nd))
     Aᵥ(cf)  = cfs.Δ*(sum(kron_AXB(          ρp[i]    , cache(Vtp*Ikp(i, cf)*Vp)) for i in 1:ns.ne) + sum(kron_AXB(          ∂p[i]    , cache(cfs.γ * Vtp*absΩp[i]*Vp)) for i in 1:ns.nd))
     Aᵤ(cf)  = cfs.Δ*(sum(kron_AXB(cache(Utp*ρp[i]*Up),           Ikp(i, cf)    ) for i in 1:ns.ne) + sum(kron_AXB(cache(Utp*∂p[i]*Up),       cfs.γ *     absΩp[i]    ) for i in 1:ns.nd))
     Aᵤᵥ(cf) = cfs.Δ*(sum(kron_AXB(cache(Utp*ρp[i]*Up), cache(Vtp*Ikp(i, cf)*Vp)) for i in 1:ns.ne) + sum(kron_AXB(cache(Utp*∂p[i]*Up), cache(cfs.γ * Vtp*absΩp[i]*Vp)) for i in 1:ns.nd))
     
     # minus to symmetrize
-   #C(cf)   = -(cfs.Δ*sum(kron_AXB(          ρm[i]    ,           Ikm(i, cf)    ) for i in 1:ns.ne))
+    C(cf)   = -(cfs.Δ*sum(kron_AXB(          ρm[i]    ,           Ikm(i, cf)    ) for i in 1:ns.ne))
     Cᵥ(cf)  = -(cfs.Δ*sum(kron_AXB(          ρm[i]    , cache(Vtm*Ikm(i, cf)*Vm)) for i in 1:ns.ne))
     Cᵤ(cf)  = -(cfs.Δ*sum(kron_AXB(cache(Utm*ρm[i]*Um),           Ikm(i, cf)    ) for i in 1:ns.ne))
     Cᵤᵥ(cf) = -(cfs.Δ*sum(kron_AXB(cache(Utm*ρm[i]*Um), cache(Vtm*Ikm(i, cf)*Vm)) for i in 1:ns.ne))
 
-    # B   = cfs.Δ*cfs.δ*sum(kron_AXB(   ∇pm[i], Ωpm[i]  ) for i in 1:ns.nd)
+    B   = cfs.Δ*(cfs.δ*sum(kron_AXB(          ∇pm[i]    ,           Ωpm[i]    ) for i in 1:ns.nd))
     Bᵥ  = cfs.Δ*(cfs.δ*sum(kron_AXB(          ∇pm[i]    , cache(Vtm*Ωpm[i]*Vp)) for i in 1:ns.nd))
     Bᵤ  = cfs.Δ*(cfs.δ*sum(kron_AXB(cache(Utp*∇pm[i]*Um),           Ωpm[i]    ) for i in 1:ns.nd))
     Bᵤᵥ = cfs.Δ*(cfs.δ*sum(kron_AXB(cache(Utp*∇pm[i]*Um), cache(Vtm*Ωpm[i]*Vp)) for i in 1:ns.nd))
+
+    inv_matBM = solver([A(cfs.mat) B
+        transpose(B) C(cfs.mat)])
+
+    rhsBM = [A(cfs.rhs) B
+        transpose(B) C(cfs.rhs)]
 
     inv_matBMᵥ = solver([Aᵥ(cfs.mat) Bᵥ
         transpose(Bᵥ) Cᵥ(cfs.mat)])
@@ -99,6 +116,9 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
         Vtm = Vtm,
         Um = Um,
 
+        inv_matBM = inv_matBM,
+        rhsBM = rhsBM,
+
         inv_matBMᵥ = inv_matBMᵥ,
         rhsBMᵥ = rhsBMᵥ,
 
@@ -113,11 +133,11 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
 
     rhs = (
         full = allocate_vec(arch, nb.nx.p*nb.nΩ.p + nb.nx.m*nb.nΩ.m),
-        proj = allocate_vec(arch, max(nb.nx.p*2max_ranks.p, 2max_ranks.p*nb.nΩ.p, 2max_ranks.p*2max_ranks.p) + max(nb.nx.m*2max_ranks.m, 2max_ranks.m*nb.nΩ.m, 2max_ranks.m*2max_ranks.m))
+        proj = allocate_vec(arch, max(nb.nx.p*max_aug_ranks.p, max_aug_ranks.p*nb.nΩ.p, max_aug_ranks.p*max_aug_ranks.p) + max(nb.nx.m*max_aug_ranks.m, max_aug_ranks.m*nb.nΩ.m, max_aug_ranks.m*max_aug_ranks.m))
     )
 
     tmp = (
-        tmp1 = allocate_vec(arch, max(nb.nx.p*2max_ranks.p, 2max_ranks.p*nb.nΩ.p, 2max_ranks.p*2max_ranks.p) + max(nb.nx.m*2max_ranks.m, 2max_ranks.m*nb.nΩ.m, 2max_ranks.m*2max_ranks.m)),
+        tmp1 = allocate_vec(arch, max(nb.nx.p*max_aug_ranks.p, max_aug_ranks.p*nb.nΩ.p, max_aug_ranks.p*max_aug_ranks.p) + max(nb.nx.m*max_aug_ranks.m, max_aug_ranks.m*nb.nΩ.m, max_aug_ranks.m*max_aug_ranks.m)),
         tmp2 = allocate_vec(arch, nb.nx.m*nb.nΩ.m),
         tmp3 = allocate_vec(arch, nb.nx.m*nb.nΩ.m),
     )
@@ -129,7 +149,8 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
         rhs = rhs,
         tmp = tmp,
         max_ranks=max_ranks,
-        tolerance=tolerance
+        tolerance=tolerance,
+        basis_augmentation=basis_augmentation
     )
 end
 
@@ -154,16 +175,16 @@ function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, Sp, Sm)
     #p 
     Σσ²p = 0.0
     rp = length(Sp)
-    norm_Sp² = sum(Sp.^2)
-    while Σσ²p + Sp[rp]^2 < system.tolerance^2*norm_Sp² && rp > 1
+    norm_Sp² = Sp[1] # sum(Sp.^2)
+    while (sqrt(Σσ²p + Sp[rp]^2) < system.tolerance^2*norm_Sp²) || (sqrt(Σσ²p + Sp[rp]^2) < 1e-12) && rp > 1
         Σσ²p += Sp[rp]^2
         rp = rp - 1
     end
     #m  
     Σσ²m = 0.0
     rm = length(Sm)
-    norm_Sm² = sum(Sm.^2)
-    while Σσ²m + Sm[rm]^2 < system.tolerance^2*norm_Sm² && rm > 1
+    norm_Sm² = Sm[1] # sum(Sm.^2)
+    while (sqrt(Σσ²m + Sm[rm]^2) < system.tolerance^2*norm_Sm²) || (sqrt(Σσ²m + Sm[rm]^2) < 1e-12) && rm > 1
         Σσ²m += Sm[rm]^2
         rm = rm - 1
     end
@@ -171,6 +192,25 @@ function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, Sp, Sm)
 end
 
 _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Nothing}, _, _) = system.max_ranks
+
+function _orthonormalize(bases...; tol=1e-15)
+    Q_combined = bases[1] # retain the first basis
+    for i in 2:length(bases)
+        Qi = bases[i]
+        
+        # remove components in span(Q_combined)
+        Qi_proj = Qi - Q_combined * (Q_combined' * Qi)
+        # prthonormalize remaining directions
+        Qi_orth, R = qr(Qi_proj)
+        # truncate
+        diagR = abs.(diag(R))
+        Qi_clean = Matrix(Qi_orth)[:, diagR .> tol]
+        
+        Q_combined = hcat(Q_combined, Qi_clean)
+    end
+
+    return Matrix(qr(Q_combined).Q)
+end
 
 function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx, Δϵ)
     (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
@@ -183,8 +223,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
     ((Up₀, Sp₀, Vtp₀), (Um₀, Sm₀, Vtm₀)) = USVt(x)
     ranks = (p=x.ranks.p[], m=x.ranks.m[])
-    aug_ranks = (p=2x.ranks.p[], m=2x.ranks.m[])
-
+    
     CUDA.NVTX.@range "copy basis" begin
         # TODO: maybe we can skip this (this is written to the system mats before the s step..)
         # K-step (prep)
@@ -216,8 +255,23 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Km₁ = @view(K₁[nxp*ranks.p+1:end])
         mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
 
-        Uphat = (qr([reshape(Kp₁, (nxp, ranks.p)) Up₀]).Q |> mat_type(architecture(system.problem)))[1:nxp, 1:aug_ranks.p]
-        Umhat = (qr([reshape(Km₁, (nxm, ranks.m)) Um₀]).Q |> mat_type(architecture(system.problem)))[1:nxm, 1:aug_ranks.m]
+        if system.basis_augmentation.np > 0
+            Uphat = _orthonormalize(system.basis_augmentation.p.U, reshape(Kp₁, (nxp, ranks.p)), Up₀)
+        else
+            Uphat = _orthonormalize(reshape(Kp₁, (nxp, ranks.p)), Up₀)
+        end
+        aug_ranks_p_u = size(Uphat, 2)
+        @show abs.(transpose(Uphat) * Uphat - I) |> maximum
+
+        if system.basis_augmentation.nm > 0
+            Umhat = _orthonormalize(system.basis_augmentation.m.U, reshape(Km₁, (nxm, ranks.m)), Um₀)
+        else
+            Umhat = _orthonormalize(reshape(Km₁, (nxm, ranks.m)), Um₀)
+        end
+        aug_ranks_m_u = size(Umhat, 2)
+        @show abs.(transpose(Umhat) * Umhat - I) |> maximum
+
+
         Mp = transpose(Uphat)*Up₀
         Mm = transpose(Umhat)*Um₀
     end
@@ -244,8 +298,22 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Ltm₁ = @view(Lt₁[ranks.p*nΩp+1:end])
         mul!(Lt₁, system.mats.inv_matBMᵤ, rhs_Lt, true, false)
         
-        Vphat = (qr([transpose(reshape(Ltp₁, (ranks.p, nΩp))) transpose(Vtp₀)]).Q |> mat_type(architecture(system.problem)))[1:nΩp, 1:aug_ranks.p]
-        Vmhat = (qr([transpose(reshape(Ltm₁, (ranks.m, nΩm))) transpose(Vtm₀)]).Q |> mat_type(architecture(system.problem)))[1:nΩm, 1:aug_ranks.m]
+        if system.basis_augmentation.np > 0
+            Vphat = _orthonormalize(system.basis_augmentation.p.V, transpose(reshape(Ltp₁, (ranks.p, nΩp))), transpose(Vtp₀))
+        else
+            Vphat = _orthonormalize(transpose(reshape(Ltp₁, (ranks.p, nΩp))), transpose(Vtp₀))
+        end
+        aug_ranks_p_v = size(Vphat, 2)
+        @show abs.(transpose(Vphat) * Vphat - I) |> maximum
+
+        if system.basis_augmentation.np > 0
+            Vmhat = _orthonormalize(system.basis_augmentation.m.V, transpose(reshape(Ltm₁, (ranks.m, nΩm))), transpose(Vtm₀))
+        else
+            Vmhat = _orthonormalize(transpose(reshape(Ltm₁, (ranks.m, nΩm))), transpose(Vtm₀))
+        end
+        aug_ranks_m_v = size(Vmhat, 2)
+        @show abs.(transpose(Vmhat) * Vmhat - I) |> maximum
+
         Np = transpose(Vphat)*transpose(Vtp₀)
         Nm = transpose(Vmhat)*transpose(Vtm₀)
     end
@@ -258,43 +326,78 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         PNLazyMatrices.set!(system.mats.Up, vec(Uphat), size(Uphat))
         PNLazyMatrices.set!(system.mats.Um, vec(Umhat), size(Umhat))
 
-        rhs_S = @view(system.rhs.proj[1:aug_ranks.p*aug_ranks.p + aug_ranks.m*aug_ranks.m])
-        rhs_Sp = @view(rhs_S[1:aug_ranks.p*aug_ranks.p])
-        rhs_Sm = @view(rhs_S[aug_ranks.p*aug_ranks.p+1:end])
+        rhs_S = @view(system.rhs.proj[1:aug_ranks_p_u*aug_ranks_p_v + aug_ranks_m_u*aug_ranks_m_v])
+        rhs_Sp = @view(rhs_S[1:aug_ranks_p_u*aug_ranks_p_v])
+        rhs_Sm = @view(rhs_S[aug_ranks_p_u*aug_ranks_p_v+1:end])
         #compute û
-        reshape(rhs_Sp, (aug_ranks.p, aug_ranks.p)) .= -transpose(Uphat)*reshape(u, nxp, nΩp)*Vphat
-        reshape(rhs_Sm, (aug_ranks.m, aug_ranks.m)) .= -transpose(Umhat)*reshape(v, nxm, nΩm)*Vmhat
+        reshape(rhs_Sp, (aug_ranks_p_u, aug_ranks_p_v)) .= -transpose(Uphat)*reshape(u, nxp, nΩp)*Vphat
+        reshape(rhs_Sm, (aug_ranks_m_u, aug_ranks_m_v)) .= -transpose(Umhat)*reshape(v, nxm, nΩm)*Vmhat
         # compute A₀Ŝ₀
-        S₀_hat = @view(system.tmp.tmp1[1:aug_ranks.p*aug_ranks.p + aug_ranks.m*aug_ranks.m])
-        Sp₀_hat = @view(S₀_hat[1:aug_ranks.p*aug_ranks.p])
-        Sm₀_hat = @view(S₀_hat[aug_ranks.p*aug_ranks.p+1:end])
-        reshape(Sp₀_hat, aug_ranks.p, aug_ranks.p) .= Mp * Sp₀ * transpose(Np)
-        reshape(Sm₀_hat, aug_ranks.m, aug_ranks.m) .= Mm * Sm₀ * transpose(Nm)
+        S₀_hat = @view(system.tmp.tmp1[1:aug_ranks_p_u*aug_ranks_p_v + aug_ranks_m_u*aug_ranks_m_v])
+        Sp₀_hat = @view(S₀_hat[1:aug_ranks_p_u*aug_ranks_p_v])
+        Sm₀_hat = @view(S₀_hat[aug_ranks_p_u*aug_ranks_p_v+1:end])
+        reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) .= Mp * Sp₀ * transpose(Np)
+        reshape(Sm₀_hat, aug_ranks_m_u, aug_ranks_m_v) .= Mm * Sm₀ * transpose(Nm)
+
+        __Mp = system.problem.space_discretization.ρp[1]
+        @show "before S", transpose(system.basis_augmentation.p.U) * __Mp * Uphat * reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) * transpose(Vphat) * system.basis_augmentation.p.V
 
         mul!(rhs_S, system.mats.rhsBMᵤᵥ, S₀_hat, -1, true)
+        # @show rhs_S
+
     end    
     CUDA.NVTX.@range "S-step" begin
-        S₁ = @view(system.tmp.tmp1[1:aug_ranks.p*aug_ranks.p + aug_ranks.m*aug_ranks.m])
+        S₁ = @view(system.tmp.tmp1[1:aug_ranks_p_u*aug_ranks_p_v + aug_ranks_m_u*aug_ranks_m_v])
 
         mul!(S₁, system.mats.inv_matBMᵤᵥ, rhs_S, true, false)
     end
     CUDA.NVTX.@range "truncate" begin
-        Sp₁ = reshape(@view(S₁[1:aug_ranks.p*aug_ranks.p]), (aug_ranks.p, aug_ranks.p))
-        Sm₁ = reshape(@view(S₁[aug_ranks.p*aug_ranks.p+1:end]), (aug_ranks.m, aug_ranks.m))
-        Pp, Sp, Qp = svd(Sp₁)
-        Pm, Sm, Qm = svd(Sm₁)
+        Sp₁_hat = reshape(@view(S₁[1:aug_ranks_p_u*aug_ranks_p_v]), (aug_ranks_p_u, aug_ranks_p_v))
+        Sm₁_hat = reshape(@view(S₁[aug_ranks_p_u*aug_ranks_p_v+1:end]), (aug_ranks_m_u, aug_ranks_m_v))
+
+        # debugging
+        # mass before truncation
+        @show "before trunc", transpose(system.basis_augmentation.p.U) * __Mp * Uphat * Sp₁_hat * transpose(Vphat) * system.basis_augmentation.p.V
+
+        Pp, Sp, Qp = svd(Sp₁_hat)
+        Pm, Sm, Qm = svd(Sm₁_hat)
 
         ranks = _compute_new_ranks(system, Sp, Sm)
         x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
         ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
         @show ranks
 
-        mul!(Up₁, Uphat, @view(Pp[1:aug_ranks.p, 1:ranks.p]))
-        mul!(Um₁, Umhat, @view(Pm[1:aug_ranks.m, 1:ranks.m]))
-        mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks.p]), transpose(Vphat))
-        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks.m]), transpose(Vmhat))
+        mul!(Up₁, Uphat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]))
+        mul!(Um₁, Umhat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]))
+        mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Vphat))
+        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
         copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
         copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
+
+        # fix conservation
+        if size(system.basis_augmentation.p.U, 2) > 0
+            _preserve_invariant!(Sp₁, Sp₁_hat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]), @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Uphat) * __Mp *  system.basis_augmentation.p.U, transpose(Vphat) * system.basis_augmentation.p.V)
+        end
+        if size(system.basis_augmentation.m.U, 2) > 0
+            error("todo!")
+            _preserve_invariant!(Sm₁, Sm₁_hat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]), @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Umhat) * system.basis_augmentation.m.U, transpose(Vmhat) * system.basis_augmentation.m.V)
+        end
+
+        # mass after truncation
+        @show "after trunc", transpose(system.basis_augmentation.p.U) * __Mp * Up₁ * Sp₁ * Vtp₁ * system.basis_augmentation.p.V
+
+    end
+end
+
+# inputs A: full matrix; U, S, Vt: truncated SVD; u, v: invariant vectors
+function _preserve_invariant!(S, A, U, Vt, u, v)
+    @assert size(u, 2) == size(v, 2)
+    for i in 1:size(u, 2)
+        u_tilde = transpose(U)*u[:, i]
+        v_tilde = Vt*v[:, i]
+        δ = dot(u[:, i], A, v[:, i]) - dot(u_tilde, S, v_tilde)
+        @show δ
+        S .+= δ / (dot(u_tilde, u_tilde)*dot(v_tilde, v_tilde)) * u_tilde * transpose(v_tilde)
     end
 end
 

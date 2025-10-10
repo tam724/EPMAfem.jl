@@ -80,3 +80,62 @@ EPMAfem.initialize!(initial_solution, model, initial_condition)
 ψ0p_tt, ψ0m_tt = EPMAfem.pmview(initial_solution, model)
 heatmap((collect(ψ0p_tt) .- ψ0p_test) .|> abs |> maximum)
 heatmap(collect(ψ0m_tt) .- ψ0m_test )
+struct SVD2
+    U
+    S
+    Vt
+end
+
+invariant(A, u, v) = dot(u, A, v)
+invariant(A::SVD, u, v) = dot(transpose(u) * A.U, Diagonal(A.S), A.Vt * v)
+invariant(A::SVD2, u, v) = dot(transpose(u) * A.U, A.S, A.Vt * v)
+
+function tsvd(A, r)
+    svd_ = svd(A)
+    return LinearAlgebra.SVD(svd_.U[:, 1:r], svd_.S[1:r], svd_.Vt[1:r, :])
+end
+
+function tsvd_preserve_invariant(A, r, u, v)
+    svd_ = tsvd(A, r)
+    u_tilde = transpose(svd_.U)*u
+    v_tilde = svd_.Vt*v
+    δ = invariant(A, u, v) - invariant(svd_, u, v)
+    S = Diagonal(svd_.S) + δ / (dot(u_tilde, u_tilde)*dot(v_tilde, v_tilde)) * u_tilde * transpose(v_tilde)
+    return SVD2(svd_.U, S, svd_.Vt)
+end
+
+
+Q1 = qr(randn(50, 2)).Q[:, 1:2]
+Q2 = qr(randn(50, 2)).Q[:, 1:2]
+Q3 = qr(randn(50, 1)).Q[:, 1:1]
+Q3 = [Q3 Q2 Q1]
+
+Q = EPMAfem._orthonormalize(Q1, Q2, Q3)
+
+transpose(Q)*Q
+
+
+A = sum(rand(40) * rand(50)' * 1/i for i in 1:30)
+u = rand(size(A, 1))
+v = rand(size(A, 2))
+
+invariant(A, u, v)
+invariant(tsvd(A, 7), u, v)
+svd2 = tsvd_preserve_invariant(A, 7, u, v)
+invariant(svd2, u, v)
+
+svd_A = svd(A)
+tsvd_A = tsvd(A, 10)
+tisvd_A = tsvd_preserve_invariant(A, 10, u, v)
+
+plot(heatmap(svd_A.U * Diagonal(svd_A.S) * svd_A.Vt),
+    heatmap(tsvd_A.U * Diagonal(tsvd_A.S) * tsvd_A.Vt),
+    heatmap(tisvd_A.U * tisvd_A.S * tisvd_A.Vt))
+
+invariant(svd_A, u, v)
+invariant(tsvd_A, u, v)
+invariant(tisvd_A, u, v)
+
+U*Diagonal(S)*transpose(V) .- A
+Uk*Diagonal(Sk)*transpose(Vk) .- A
+

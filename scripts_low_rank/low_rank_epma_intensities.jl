@@ -100,9 +100,9 @@ plot!(80u"nm" .+ 80u"nm".*cos.(0:0.01:2Ï€), -200u"nm" .+ 80u"nm".*sin.(0:0.01:2Ï
 using EPMAfem.SparseArrays
 discrete_rhs[1].bxp |> nonzeros |> collect
 
-A = zeros(length(discrete_rhs[1].bxp |> nonzeros), length(discrete_rhs))
+A = zeros(length(discrete_rhs[1].bxp), length(discrete_rhs))
 for i in 1:100
-    A[:, i] = collect(nonzeros(discrete_rhs[i].bxp))
+    A[:, i] = collect(discrete_rhs[i].bxp)
 end
 
 A = zeros(40, 50)

@@ -19,7 +19,7 @@ EPMAfem.scattering_kernel(::LineSourceEquations, e, i) = μ -> 1/(4π)
 equations = LineSourceEquations()
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (250, 250)))
-N = 37
+N = 30
 direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 2)
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
@@ -74,10 +74,14 @@ serialize(joinpath(figpath, "solutions/$N/full.jls"), Dict("final" => func))
 function compute_sol_and_rank_evolution(sol)
     data = Dict()
     data["ranks"] = (p=zeros(length(sol)), m=zeros(length(sol)))
+    data["mass"] = zeros(length(sol))
+    Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(sol.system.problem.model), Ω -> 1.0) |> EPMAfem.architecture(sol.system.problem)
+    xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(sol.system.problem.model), x -> 1.0) |> EPMAfem.architecture(sol.system.problem)
     for (i, (ϵ, ψ)) in enumerate(sol)
+        ψp, ψm = EPMAfem.pmview(ψ, sol.system.problem.model)
+        data["mass"][i] = dot(xp, ψp*Ωp) + dot(xm, ψm*Ωm)
         data["ranks"].p[i], data["ranks"].m[i] = ψ.ranks.p[], ψ.ranks.m[]
         if i == length(sol)
-            Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(sol.system.problem.model), Ω -> 1.0) |> EPMAfem.architecture(sol.system.problem)
             ψp, ψm = EPMAfem.pmview(ψ, sol.system.problem.model)
             data["final"] = EPMAfem.SpaceModels.interpolable((p=collect(ψp*Ωp), m=collect(ψm*Ωm)), EPMAfem.space_model(sol.system.problem.model))
         end
@@ -85,7 +89,7 @@ function compute_sol_and_rank_evolution(sol)
     return data
 end
 
-system_lr_2 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=50, m=50), tolerance=0.05);
+system_lr_2 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=300, m=300), tolerance=0.25);
 sol_lr_2 = EPMAfem.IterableDiscretePNSolution(system_lr_2, source, initial_solution=initial_condition);
 serialize(joinpath(figpath, "solutions/$N/lr_2.jls"), compute_sol_and_rank_evolution(sol_lr_2))
 
