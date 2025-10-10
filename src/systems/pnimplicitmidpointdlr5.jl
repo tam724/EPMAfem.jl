@@ -368,30 +368,68 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
             @show "before trunc", cons_quant
         end
 
-        Pp, Sp, Qp = svd(Sp₁_hat)
-        Pm, Sm, Qm = svd(Sm₁_hat)
-
-        ranks = _compute_new_ranks(system, Sp, Sm)
-        x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
-        ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
-        @show ranks
-
-        mul!(Up₁, Uphat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]))
-        mul!(Um₁, Umhat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]))
-        mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Vphat))
-        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
-        copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
-        copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
-
-        # fix conservation
+        # NEW STRATEGY
+        @show "before fix", dot(Sp₁_hat, Sp₁_hat)
+        svd_p = svd(Sp₁_hat)
+        svd_m = svd(Sm₁_hat)
+        
+        ranks = _compute_new_ranks(system, svd_p.S, svd_m.S)
         if !isnothing(system.conserved_quantities)
-            @show "before fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
-            _preserve_invariant!(Sp₁, Sp₁_hat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]), @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Uphat) * system.conserved_quantities.p.U, transpose(Vphat) * system.conserved_quantities.p.V)
-            @show "after fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
+            ranks = (p = min(ranks.p, system.max_ranks.p - size(system.conserved_quantities.p.U, 2)), m = min(ranks.m, system.max_ranks.m - size(system.conserved_quantities.m.U, 2)))
+            Pp = _orthonormalize(transpose(Uphat) * system.conserved_quantities.p.U, svd_p.U[:, 1:ranks.p])
+            Qp = _orthonormalize(transpose(Vphat) * system.conserved_quantities.p.V, svd_p.V[:, 1:ranks.p])
+            Pm = _orthonormalize(transpose(Umhat) * system.conserved_quantities.m.U, svd_m.U[:, 1:ranks.m])
+            Qm = _orthonormalize(transpose(Vmhat) * system.conserved_quantities.m.V, svd_m.V[:, 1:ranks.m])
+        else
+            Pp = svd_p.U[:, 1:ranks.p]
+            Qp = svd_p.V[:, 1:ranks.p]
+            Pm = svd_m.U[:, 1:ranks.m]
+            Qm = svd_m.V[:, 1:ranks.m]
         end
-        if  !isnothing(system.conserved_quantities)
-            _preserve_invariant!(Sm₁, Sm₁_hat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]), @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Umhat) * system.conserved_quantities.m.U, transpose(Vmhat) * system.conserved_quantities.m.V)
-        end
+
+        @assert size(Pp, 2) == size(Qp, 2) # can we relax even this? then the svd would be non square from the beginning.. 
+        @assert size(Pm, 2) == size(Qm, 2)
+        x.ranks.p[] = size(Pp, 2)
+        x.ranks.m[] = size(Pm, 2)
+        ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+        @show x.ranks
+
+        mul!(Up₁, Uphat, Pp)
+        mul!(Um₁, Umhat, Pm)
+        mul!(Vtp₁, transpose(Qp), transpose(Vphat))
+        mul!(Vtm₁, transpose(Qm), transpose(Vmhat))
+
+        Sp₁ .= transpose(Pp)*Sp₁_hat*Qp
+        Sm₁ .= transpose(Pm)*Sm₁_hat*Qm
+
+        @show "after fix", dot(Sp₁, Sp₁)
+
+
+        # OLD STRATEGY
+        # Pp, Sp, Qp = svd(Sp₁_hat)
+        # Pm, Sm, Qm = svd(Sm₁_hat)
+
+        # ranks = _compute_new_ranks(system, Sp, Sm)
+        # x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
+        # ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+        # @show ranks
+
+        # mul!(Up₁, Uphat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]))
+        # mul!(Um₁, Umhat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]))
+        # mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Vphat))
+        # mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
+        # copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
+        # copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
+
+        # # fix conservation
+        # if !isnothing(system.conserved_quantities)
+        #     @show "before fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
+        #     _preserve_invariant!(Sp₁, Sp₁_hat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]), @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Uphat) * system.conserved_quantities.p.U, transpose(Vphat) * system.conserved_quantities.p.V)
+        #     @show "after fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
+        # end
+        # if  !isnothing(system.conserved_quantities)
+        #     _preserve_invariant!(Sm₁, Sm₁_hat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]), @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Umhat) * system.conserved_quantities.m.U, transpose(Vmhat) * system.conserved_quantities.m.V)
+        # end
 
         # mass after truncation
         if !isnothing(system.conserved_quantities)

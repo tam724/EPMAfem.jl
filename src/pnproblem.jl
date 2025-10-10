@@ -111,3 +111,32 @@ function (problem::DiscretePNProblem)(ψ::AbstractDiscretePNSolution, ϕ::Abstra
     end
     return a
 end
+
+
+function system_matrix(problem::DiscretePNProblem, ϵ_idx)
+    ns = EPMAfem.n_sums(problem)
+    ρp, ρm, ∂p, ∇pm = lazy_space_matrices(problem)
+    Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(problem)
+
+    Ikp(i) = materialize(LazyScalar(problem.τ[i, ϵ_idx])*Ip - sum(LazyScalar(problem.σ[i, j, ϵ_idx])*kp[i][j] for j in 1:ns.nσ))
+    Ikm(i) = materialize(LazyScalar(problem.τ[i, ϵ_idx])*Im - sum(LazyScalar(problem.σ[i, j, ϵ_idx])*km[i][j] for j in 1:ns.nσ))
+
+    A = sum(kron_AXB(ρp[i], Ikp(i)) for i in 1:ns.ne) + sum(kron_AXB(∂p[i], absΩp[i]) for i in 1:ns.nd)
+    C = sum(kron_AXB(ρm[i], Ikm(i)) for i in 1:ns.ne)
+    B = sum(kron_AXB(∇pm[i], Ωpm[i]) for i in 1:ns.nd)
+    return [A B
+    -transpose(B) C]
+end
+
+function mass_matrix(problem::DiscretePNProblem, ϵ_idx)
+    ns = EPMAfem.n_sums(problem)
+    nb = EPMAfem.n_basis(problem)
+    ρp, ρm, ∂p, ∇pm = lazy_space_matrices(problem)
+    Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(problem)
+
+    A = sum(LazyScalar(problem.s[i, ϵ_idx])*kron_AXB(ρp[i], Ip) for i in 1:ns.ne)
+    C = sum(LazyScalar(problem.s[i, ϵ_idx])*kron_AXB(ρm[i], Im) for i in 1:ns.ne)
+    B = kron_AXB(lazy(zeros(nb.nx.p, nb.nx.m)), lazy(zeros(nb.nΩ.m, nb.nΩ.p))) # TODO for PNLazyMatrices (allow zero blocks)
+    return [A B
+    transpose(B) C] 
+end
