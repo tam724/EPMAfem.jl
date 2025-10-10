@@ -385,7 +385,9 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
         # fix conservation
         if !isnothing(system.conserved_quantities)
+            @show "before fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
             _preserve_invariant!(Sp₁, Sp₁_hat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]), @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Uphat) * system.conserved_quantities.p.U, transpose(Vphat) * system.conserved_quantities.p.V)
+            @show "after fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
         end
         if  !isnothing(system.conserved_quantities)
             _preserve_invariant!(Sm₁, Sm₁_hat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]), @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Umhat) * system.conserved_quantities.m.U, transpose(Vmhat) * system.conserved_quantities.m.V)
