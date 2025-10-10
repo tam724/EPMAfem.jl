@@ -89,9 +89,9 @@ N = 11
                                  V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
         
         copy!(@view(basis_augmentation.p.U[:, 1]), Mp \ xp)
-        copy!(@view(basis_augmentation.p.U[:, 2]), problem.space_discretization.∂p[1]*ones(71))
+        copy!(@view(basis_augmentation.p.U[:, 2]), Mp \ xp_b)
         copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
-        copy!(@view(basis_augmentation.p.V[:, 2]), problem.direction_discretization.absΩp[1] * ones(21))
+        copy!(@view(basis_augmentation.p.V[:, 2]), Ωp_b)
         basis_augmentation.m.U .= 1.0
         basis_augmentation.m.V .= 1.0
 
@@ -100,15 +100,15 @@ N = 11
         basis_augmentation.m.U .= qr(basis_augmentation.m.U).Q |> Matrix
         basis_augmentation.m.V .= qr(basis_augmentation.m.V).Q |> Matrix
 
-        conserved_quantities = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 1),
-                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
+        conserved_quantities = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 2),
+                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 2)),
                                 m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
                                    V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
 
         copy!(@view(conserved_quantities.p.U[:, 1]), xp)
-        copy!(@view(conserved_quantities.p.U[:, 2]), problem.space_discretization.∂p[1]*ones(71))
+        copy!(@view(conserved_quantities.p.U[:, 2]), xp_b)
         copy!(@view(conserved_quantities.p.V[:, 1]), Ωp)
-        copy!(@view(conserved_quantities.p.V[:, 2]), problem.direction_discretization.absΩp[1] * ones(21))
+        copy!(@view(conserved_quantities.p.V[:, 2]), Ωp_b)
 
         # M = EPMAfem.mass_matrix(problem, EPMAfem.first_index(energy_model, false)) |> sparse
         # A = EPMAfem.system_matrix(problem, EPMAfem.first_index(energy_model, false)) |> sparse
