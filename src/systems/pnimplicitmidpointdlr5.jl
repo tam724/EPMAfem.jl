@@ -41,7 +41,7 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
     n_bas_aug_p = isnothing(basis_augmentation) ? 0 : max(size(basis_augmentation.p.U, 2), size(basis_augmentation.p.V, 2))
     n_bas_aug_m = isnothing(basis_augmentation) ? 0 : max(size(basis_augmentation.m.U, 2), size(basis_augmentation.m.V, 2))
 
-    max_aug_ranks = (p=2max_ranks.p+n_bas_aug_p, m=2max_ranks.m+n_bas_aug_m)
+    max_aug_ranks = (p=3max_ranks.p+n_bas_aug_p, m=3max_ranks.m+n_bas_aug_m)
 
     Vtp = PNLazyMatrices.LazyResizeMatrix(Ref(allocate_vec(arch, 0)), (max_aug_ranks.p, nb.nΩ.p), (Ref(max_aug_ranks.p), Ref(nb.nΩ.p)))
     Vp = transpose(Vtp)
@@ -286,48 +286,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         PNLazyMatrices.set!(system.mats.Um, vec(Um₀), size(Um₀))
     end
 
-    CUDA.NVTX.@range "K-step prep" begin
-        rhs_K = @view(system.rhs.proj[1:nxp*ranks.p+nxm*ranks.m])
-        rhs_Kp = @view(rhs_K[1:nxp*ranks.p])
-        rhs_Km = @view(rhs_K[nxp*ranks.p+1:end])
-        #compute û
-        mul!(reshape(rhs_Kp, nxp, ranks.p), reshape(u, nxp, nΩp), transpose(Vtp₀), -1, false)
-        mul!(reshape(rhs_Km, nxm, ranks.m), reshape(v, nxm, nΩm), transpose(Vtm₀), -1, false)
-        # compute A₀K₀
-        K₀ = @view(system.tmp.tmp1[1:nxp*ranks.p + nxm*ranks.m])
-        Kp₀ = @view(K₀[1:nxp*ranks.p])
-        mul!(reshape(Kp₀, nxp, ranks.p), Up₀, Sp₀)
-        Km₀ = @view(K₀[nxp*ranks.p+1:end])
-        mul!(reshape(Km₀, nxm, ranks.m), Um₀, Sm₀)
-
-        mul!(rhs_K, system.mats.rhsBMᵥ, K₀, -1, true)
-    end
-    CUDA.NVTX.@range "K-step" begin
-        K₁ = @view(system.tmp.tmp1[1:nxp*ranks.p + nxm*ranks.m])
-        Kp₁ = @view(K₁[1:nxp*ranks.p])
-        Km₁ = @view(K₁[nxp*ranks.p+1:end])
-        mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
-
-        if !isnothing(system.basis_augmentation)
-            Up_cons = qr(reshape(Kp₀, nxp, ranks.p) * Vtp₀ * system.basis_augmentation.p.V)
-            Uphat = _orthonormalize(system.basis_augmentation.p.U, reshape(Kp₁, (nxp, ranks.p)), Up₀)
-        else
-            Uphat = _orthonormalize(reshape(Kp₁, (nxp, ranks.p)), Up₀)
-        end
-        aug_ranks_p_u = size(Uphat, 2)
-
-        if !isnothing(system.basis_augmentation)
-            Umhat = _orthonormalize(system.basis_augmentation.m.U, reshape(Km₁, (nxm, ranks.m)), Um₀)
-        else
-            Umhat = _orthonormalize(reshape(Km₁, (nxm, ranks.m)), Um₀)
-        end
-        aug_ranks_m_u = size(Umhat, 2)
-
-
-        Mp = transpose(Uphat)*Up₀
-        Mm = transpose(Umhat)*Um₀
-    end
-
     CUDA.NVTX.@range "L-step prep" begin
         rhs_Lt = @view(system.rhs.proj[1:ranks.p*nΩp + ranks.m*nΩm])
         rhs_Ltp = @view(rhs_Lt[1:ranks.p*nΩp])
@@ -366,6 +324,55 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
         Np = transpose(Vphat)*transpose(Vtp₀)
         Nm = transpose(Vmhat)*transpose(Vtm₀)
+    end
+
+    # temporary
+    Vtphat_temp = Matrix(transpose(Vphat))
+    Vtmhat_temp = Matrix(transpose(Vmhat))
+    PNLazyMatrices.set!(system.mats.Vtp, vec(Vtphat_temp), size(Vtphat_temp))
+    PNLazyMatrices.set!(system.mats.Vtm, vec(Vtmhat_temp), size(Vtmhat_temp))
+
+    CUDA.NVTX.@range "K-step prep" begin
+        rhs_K = @view(system.rhs.proj[1:nxp*aug_ranks_p_v+nxm*aug_ranks_m_v])
+        rhs_Kp = @view(rhs_K[1:nxp*aug_ranks_p_v])
+        rhs_Km = @view(rhs_K[nxp*aug_ranks_p_v+1:end])
+        #compute û
+        mul!(reshape(rhs_Kp, nxp, aug_ranks_p_v), reshape(u, nxp, nΩp), transpose(Vtphat_temp), -1, false)
+        mul!(reshape(rhs_Km, nxm, aug_ranks_m_v), reshape(v, nxm, nΩm), transpose(Vtmhat_temp), -1, false)
+        # compute A₀K₀
+        K₀ = @view(system.tmp.tmp1[1:nxp*aug_ranks_p_v + nxm*aug_ranks_m_v])
+        Kp₀ = @view(K₀[1:nxp*aug_ranks_p_v])
+        # mul!(reshape(Kp₀, nxp, aug_ranks_p_v), Up₀, Sp₀)
+        reshape(Kp₀, nxp, aug_ranks_p_v) .= Up₀ * Sp₀ * transpose(Np)
+        Km₀ = @view(K₀[nxp*aug_ranks_p_v+1:end])
+        # mul!(reshape(Km₀, nxm, aug_ranks_m_v), Um₀, Sm₀)
+        reshape(Km₀, nxm, aug_ranks_m_v) .= Um₀ * Sm₀ * transpose(Nm)
+
+        mul!(rhs_K, system.mats.rhsBMᵥ, K₀, -1, true)
+    end
+    CUDA.NVTX.@range "K-step" begin
+        K₁ = @view(system.tmp.tmp1[1:nxp*aug_ranks_p_v + nxm*aug_ranks_m_v])
+        Kp₁ = @view(K₁[1:nxp*aug_ranks_p_v])
+        Km₁ = @view(K₁[nxp*aug_ranks_p_v+1:end])
+        mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
+
+        if !isnothing(system.basis_augmentation)
+            Up_cons = qr(reshape(Kp₀, nxp, aug_ranks_p_v) * Vtphat_temp * system.basis_augmentation.p.V)
+            Uphat = _orthonormalize(system.basis_augmentation.p.U, reshape(Kp₁, (nxp, aug_ranks_p_v)), Up₀)
+        else
+            Uphat = _orthonormalize(reshape(Kp₁, (nxp, aug_ranks_p_v)), Up₀)
+        end
+        aug_ranks_p_u = size(Uphat, 2)
+
+        if !isnothing(system.basis_augmentation)
+            Umhat = _orthonormalize(system.basis_augmentation.m.U, reshape(Km₁, (nxm, aug_ranks_m_v)), Um₀)
+        else
+            Umhat = _orthonormalize(reshape(Km₁, (nxm, aug_ranks_m_v)), Um₀)
+        end
+        aug_ranks_m_u = size(Umhat, 2)
+
+        Mp = transpose(Uphat)*Up₀
+        Mm = transpose(Umhat)*Um₀
     end
 
     CUDA.NVTX.@range "S-step prep" begin
@@ -430,8 +437,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
         if !isnothing(system.basis_augmentation)
             v_hat = transpose(Vphat) * system.basis_augmentation.p.V
-            u_hat = transpose(Uphat) * Matrix(Up_cons.Q)
-            Sp₁_hat_tilde = (I - u_hat*u_hat') * Sp₁_hat * (I - v_hat*v_hat') # project out the mass carrying mode
+            Sp₁_hat_tilde = Sp₁_hat * (I - v_hat*v_hat') # project out the mass carrying mode
             Pp, Sp, Qp = svd(Sp₁_hat_tilde)
             Pm, Sm, Qm = svd(Sm₁_hat)
 
@@ -441,6 +447,8 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
             ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_u), m=ranks.m)
             x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
             ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+
+
 
             σ = Up_cons.R;
             Up₁_ = qr([Matrix(Up_cons.Q) Uphat*Pp[:, 1:ranks.p-n_aug_u]])
@@ -462,6 +470,8 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
             mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
             copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
             @show σ
+
+            @show "energy before truncation step", dot(σ, σ) + dot(Sp₁_hat_tilde, Sp₁_hat_tilde) + dot(Sm, Sm), dot(σ, σ) + dot(Sp₁_hat_tilde, Sp₁_hat_tilde), dot(Sm, Sm)
 
             @show dot(σ, σ), dot(diag(σ), diag(σ)), dot(Sp[1:ranks.p - n_aug_u], Sp[1:ranks.p - n_aug_u]), dot(Sm₁, Sm₁)
 
