@@ -231,7 +231,7 @@ function pmview(sol::LowRankSolution, model::DiscretePNModel)
     return U*S*Vt, reshape(sol._xm, (nxm, nΩm))
 end
 
-function fillzero!(sol::LowRankSolution)
+function fillzero!(sol::LowRankSolution, _)
     Up, Sp, Vtp = USVt(sol)
     U, S, Vt = svd(rand(size(Up, 1), size(Vtp, 2)))
     # TODO: this is weird and allocates to work together with CUDA!

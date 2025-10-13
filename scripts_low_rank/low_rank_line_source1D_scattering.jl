@@ -16,8 +16,8 @@ struct PlaneSourceEquations{S} <: EPMAfem.AbstractPNEquations end
 EPMAfem.number_of_elements(::PlaneSourceEquations) = 1
 EPMAfem.number_of_scatterings(::PlaneSourceEquations) = 1
 EPMAfem.stopping_power(::PlaneSourceEquations, e, ϵ) = 1.0
-EPMAfem.absorption_coefficient(eq::PlaneSourceEquations, e, ϵ) = 1.0
-EPMAfem.scattering_coefficient(eq::PlaneSourceEquations, e, i, ϵ) = 1.0
+EPMAfem.absorption_coefficient(eq::PlaneSourceEquations, e, ϵ) = 0.0 # 1.0 
+EPMAfem.scattering_coefficient(eq::PlaneSourceEquations, e, i, ϵ) = 0.0 #1.0
 EPMAfem.mass_concentrations(::PlaneSourceEquations, e, x) = 1.0
 
 EPMAfem.scattering_kernel(::PlaneSourceEquations{Inf}, e, i) = μ -> 1/(4π)
@@ -32,7 +32,7 @@ energy_model = 0:0.01:1.0
 # for T in Ts
 #     for N in Ns
 T = Inf
-N = 11
+N = 15
         # plotdata[(T, N)] = Dict()
         equations = PlaneSourceEquations{T}()
         space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (70)))
@@ -83,8 +83,8 @@ N = 11
         @show mass0 - 1.0
         
         nb = EPMAfem.n_basis(model)
-        basis_augmentation = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 2),
-                                 V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 2)),
+        basis_augmentation = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 0),
+                                 V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
                               m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
                                  V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
         
@@ -100,8 +100,8 @@ N = 11
         basis_augmentation.m.U .= qr(basis_augmentation.m.U).Q |> Matrix
         basis_augmentation.m.V .= qr(basis_augmentation.m.V).Q |> Matrix
 
-        conserved_quantities = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 2),
-                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 2)),
+        conserved_quantities = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 1),
+                                   V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
                                 m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
                                    V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
 
@@ -109,55 +109,14 @@ N = 11
         copy!(@view(conserved_quantities.p.U[:, 2]), xp_b)
         copy!(@view(conserved_quantities.p.V[:, 1]), Ωp)
         copy!(@view(conserved_quantities.p.V[:, 2]), Ωp_b)
-
-        # M = EPMAfem.mass_matrix(problem, EPMAfem.first_index(energy_model, false)) |> sparse
-        # A = EPMAfem.system_matrix(problem, EPMAfem.first_index(energy_model, false)) |> sparse
-
-        # m_tilde = vec([EPMAfem.kron_AXB(xp', Ωp) zeros(nb.nx.m*nb.nΩ.m)'])
-        # m = vec([EPMAfem.kron_AXB((Mp \ xp)', Ωp) zeros(nb.nx.m*nb.nΩ.m)'])
-
-        # maximum(abs.(M*m .- m_tilde)) 
-        
-        # xp1, xm1 = EPMAfem.pmview(vec(transpose(m)*A), model)
-        # maximum(abs.(xp1))
-        # maximum(abs.(xm1))
-    
-        # heatmap(xp1 .> 1e-15)
-        # heatmap(xp2 .> 1e-15)
-    
-        # heatmap(xp1)
-        
-        # heatmap(xp1 .- kron(xp_b, Ωp_b'))
-        # heatmap(xp1 .- kron(xp_b2, Ωp_b2'))
-
-
-        
-        
-        # svd_xp1 = svd(xp1)
-        # plot(svd_xp1.V[:, 1] |> normalize)
-        # plot!(-Ωp_b |> normalize)
-
-        # plot((transpose(m)*A)')
-        # plot!([kron_AXB(xp_b', Ωp_b) zeros(nb.nx.m*nb.nΩ.m)']')
-        
-        # # p, m = EPMAfem.pmview(vec(m*A), model)
-        
-        # heatmap(p)
-        # heatmap(m)
-    
-
-        # conserved_quantities.p.U .= qr(conserved_quantities.p.U).Q |> Matrix
-        # conserved_quantities.p.V .= qr(conserved_quantities.p.V).Q |> Matrix
-        # conserved_quantities.m.U .= qr(conserved_quantities.m.U).Q |> Matrix
-        # conserved_quantities.m.V .= qr(conserved_quantities.m.V).Q |> Matrix
         
         system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5));
         system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation, conserved_quantities=conserved_quantities);
 
         # MAKE THE SYSTEMS FULLY MASS CONSERVATIVE BY A REFLECTIVE BOUNDARY CONDITION
-        # system.coeffs.γ[] = 0
-        # system_lr10.coeffs.γ[] = 0
-        # system_lr10_aug.coeffs.γ[] = 0
+        system.coeffs.γ[] = 0
+        system_lr10.coeffs.γ[] = 0
+        system_lr10_aug.coeffs.γ[] = 0
 
         # SWITCH OFF TRANSPORT
         # system.coeffs.δ[] = 0
@@ -170,12 +129,24 @@ N = 11
         sol_lr10_aug = EPMAfem.IterableDiscretePNSolution(system_lr10_aug, source, initial_solution=initial_condition);
         # sol_lr20 = EPMAfem.IterableDiscretePNSolution(system_lr20, source, initial_solution=initial_condition);
 
+
+        temp, state = iterate(sol_lr10_aug)
+        ((Up, Sp, Vtp), (Um, Sm, Vtm)) = EPMAfem.USVt(temp[2])
+
+        Vtp' * Vtp * system_lr10_aug.basis_augmentation.p.V .- system_lr10_aug.basis_augmentation.p.V .|> abs |> maximum
+        
         #### GIF
         # Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.architecture(problem)
-        @gif for ((ϵ, ψ), (ϵ1, ψ1), (ϵ2, ψ2)) in zip(sol, sol_lr10, sol_lr10_aug)
+        masses = zeros(length(sol), 3)
+        energies = zeros(length(sol), 3)
+        outflux = zeros(length(sol), 3)
+        ranksp = zeros(length(sol), 2)
+        ranksm = zeros(length(sol), 2)
+        @gif for (i, ((ϵ, ψ), (ϵ1, ψ1), (ϵ2, ψ2))) in enumerate(zip(sol, sol_lr10, sol_lr10_aug))
         # @gif for ((ϵ1, ψ1), (ϵ2, ψ2)) in zip(sol_lr10, sol_lr10_aug)
         # @gif for (ϵ, ψ) in sol
             ψp, ψm = EPMAfem.pmview(ψ, model)
+            @show dot(ψp, ψp) + dot(ψm, ψm), dot(ψp, ψp), dot(ψm, ψm)
             ψp1, ψm1 = EPMAfem.pmview(ψ1, model)
             ψp2, ψm2 = EPMAfem.pmview(ψ2, model)
             func = EPMAfem.SpaceModels.interpolable((p=collect(ψp*Ωp), m=collect(ψm*Ωm)), EPMAfem.space_model(model))
@@ -185,30 +156,33 @@ N = 11
             plot!(-1.5:0.01:1.5, x -> func1(VectorValue(x)))
             plot!(-1.5:0.01:1.5, x -> func2(VectorValue(x)))
             # heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y)), aspect_ratio=:equal)
-        end
 
-        masses = zeros(length(sol), 3)
-        outflux = zeros(length(sol), 3)
-        ranksp = zeros(length(sol), 2)
-        ranksm = zeros(length(sol), 2)
-        for (i, (ϵ, ψ)) in enumerate(sol)
-            ψp, ψm = EPMAfem.pmview(ψ, model)
             masses[i, 1] = dot(xp, ψp*Ωp) + dot(xm, ψm*Ωm)
+            energies[i, 1] = dot(ψp, Mp*ψp) + dot(ψm, Mm*ψm)
             outflux[i, 1] = dot(xp_b, ψp*Ωp_b)
-        end
-        for (i, ((ϵ1, ψ1), (ϵ2, ψ2))) in enumerate(zip(sol_lr10, sol_lr10_aug))
-            ψp1, ψm1 = EPMAfem.pmview(ψ1, model)
-            ψp2, ψm2 = EPMAfem.pmview(ψ2, model)
             masses[i, 2] = dot(xp, ψp1*Ωp) + dot(xm, ψm1*Ωm)
             masses[i, 3] = dot(xp, ψp2*Ωp) + dot(xm, ψm2*Ωm)
+            energies[i, 2] = dot(ψp1, Mp*ψp1) + dot(ψm1, Mm*ψm1)
+            energies[i, 3] = dot(ψp2, Mp*ψp2) + dot(ψm2, Mm*ψm2)
             outflux[i, 2] = dot(xp_b, ψp1*Ωp_b)
             outflux[i, 3] = dot(xp_b, ψp2*Ωp_b)
             ranksp[i, 1] = ψ1.ranks.p[]
             ranksm[i, 1] = ψ1.ranks.m[]
             ranksp[i, 2] = ψ2.ranks.p[]
             ranksm[i, 2] = ψ2.ranks.m[]
-            @show masses[i, :]
         end
+
+        for (i, ((ϵ, ψ), (ϵ2, ψ2))) in enumerate(zip(sol,  sol_lr10_aug))
+            ψp, ψm = EPMAfem.pmview(ψ, model)
+            @show dot(ψp, ψp) + dot(ψm, ψm), dot(ψp, ψp), dot(ψm, ψm)
+        end
+
+
+
+
+        plot(energies[:, 1])
+        plot!(energies[:, 2])
+        plot!(energies[:, 3])
 
         function cumtrapz(v, Δ)
             ∫v = similar(v)

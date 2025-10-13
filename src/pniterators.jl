@@ -8,12 +8,13 @@
     initial_solution
 end
 
-function fillzero!(x::AbstractVector{T}) where T
+function fillzero!(x::AbstractVector{T}, _) where T
     fill!(x, zero(T))
 end
 
 initialize!(current_solution::AbstractVector, _, initial_solution) = copyto!(current_solution, initial_solution)
-initialize_or_fillzero!(it::IterableDiscretePNSolution, ::Nothing) = fillzero!(it.current_solution)
+
+initialize_or_fillzero!(it::IterableDiscretePNSolution, ::Nothing) = fillzero!(it.current_solution, it.system)
 
 function initialize_or_fillzero!(it::IterableDiscretePNSolution, initial_solution)
     initialize!(it.current_solution, it.system, initial_solution)

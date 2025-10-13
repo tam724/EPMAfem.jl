@@ -38,8 +38,8 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
         @warn "Trimming the number of max ranks to nΩ/2: $(max_ranks)"
     end
 
-    n_bas_aug_p = isnothing(basis_augmentation) ? 0 : only_unique(size(basis_augmentation.p.U, 2), size(basis_augmentation.p.V, 2))
-    n_bas_aug_m = isnothing(basis_augmentation) ? 0 : only_unique(size(basis_augmentation.m.U, 2), size(basis_augmentation.m.V, 2))
+    n_bas_aug_p = isnothing(basis_augmentation) ? 0 : max(size(basis_augmentation.p.U, 2), size(basis_augmentation.p.V, 2))
+    n_bas_aug_m = isnothing(basis_augmentation) ? 0 : max(size(basis_augmentation.m.U, 2), size(basis_augmentation.m.V, 2))
 
     max_aug_ranks = (p=2max_ranks.p+n_bas_aug_p, m=2max_ranks.m+n_bas_aug_m)
 
@@ -83,11 +83,11 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
     Bᵤ  = cfs.Δ*(cfs.δ*sum(kron_AXB(cache(Utp*∇pm[i]*Um),           Ωpm[i]    ) for i in 1:ns.nd))
     Bᵤᵥ = cfs.Δ*(cfs.δ*sum(kron_AXB(cache(Utp*∇pm[i]*Um), cache(Vtm*Ωpm[i]*Vp)) for i in 1:ns.nd))
 
-    inv_matBM = solver([A(cfs.mat) B
-        transpose(B) C(cfs.mat)])
+    # inv_matBM = solver([A(cfs.mat) B
+    #     transpose(B) C(cfs.mat)])
 
-    rhsBM = [A(cfs.rhs) B
-        transpose(B) C(cfs.rhs)]
+    # rhsBM = [A(cfs.rhs) B
+    #     transpose(B) C(cfs.rhs)]
 
     inv_matBMᵥ = solver([Aᵥ(cfs.mat) Bᵥ
         transpose(Bᵥ) Cᵥ(cfs.mat)])
@@ -114,8 +114,8 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
         Vtm = Vtm,
         Um = Um,
 
-        inv_matBM = inv_matBM,
-        rhsBM = rhsBM,
+        # inv_matBM = inv_matBM,
+        # rhsBM = rhsBM,
 
         inv_matBMᵥ = inv_matBMᵥ,
         rhsBMᵥ = rhsBMᵥ,
@@ -203,12 +203,64 @@ function _orthonormalize(bases...; tol=1e-15)
         Qi_orth, R = qr(Qi_proj)
         # truncate
         diagR = abs.(diag(R))
-        Qi_clean = Matrix(Qi_orth)[:, diagR .> tol]
+        Qi_clean = Matrix(Qi_orth)#[:, diagR .> tol]
         
         Q_combined = hcat(Q_combined, Qi_clean)
     end
 
     return Matrix(qr(Q_combined).Q)
+end
+
+function tsvd(A, r)
+    svd_ = svd(A)
+    return LinearAlgebra.SVD(svd_.U[:, 1:r], svd_.S[1:r], svd_.Vt[1:r, :])
+end
+
+# computes the rank-(length(M)) update ΔS on S such that diag(transpose(Mᵤ) * U (S + ΔS) * transpose(V) * Mᵥ) ≈ M
+function _rank_M_update(S, U, V, Mᵤ, Mᵥ, M)
+    A = transpose(Mᵤ) * U      # r × u
+    B = transpose(V) * Mᵥ      # v × r
+
+    # Current approximation
+    M̂ = diag(A * S * B)
+    R = M - M̂
+
+    r, u = size(A)
+    v, r2 = size(B)
+    @assert r == r2
+
+    C = zeros(r, u * v)
+
+    # Build C matrix row-by-row
+    for i in 1:r
+        C[i, :] = kron(B[:, i]', A[i, :])  # Row i is A[i,:] ⊗ B[:,i]'
+    end
+
+    # Solve least squares: C * vec(ΔS) = R
+    vec_ΔS = C \ R
+    ΔS = reshape(vec_ΔS, u, v)
+
+    return ΔS
+end
+
+# inputs A: full matrix; U, S, Vt: truncated SVD; u, v: invariant vectors
+function _preserve_invariant!(S, A, U, Vt, u, v)
+    @assert size(u, 2) == size(v, 2)
+    m = size(u, 2)
+    if iszero(m) return S end
+    u_tilde = transpose(U)*u
+    v_tilde = Vt*v
+    δ = zeros(m)
+    for i in 1:m
+        δ[i] = dot(@view(u[:, i]), A, @view(v[:, i])) - dot(@view(u_tilde[:, i]), S, @view(v_tilde[:, i]))
+    end
+    A_mat = zeros(m, m*m)
+    for i in 1:m
+        A_mat[i, :] = kron(transpose(transpose(v_tilde)*v_tilde[:, i]), transpose(u_tilde[:, i])*u_tilde)
+    end
+    W_vec = A_mat \ δ
+    W = reshape(W_vec, m, m)
+    S .+= u_tilde * W * transpose(v_tilde)
 end
 
 function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx, Δϵ)
@@ -222,6 +274,8 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
     ((Up₀, Sp₀, Vtp₀), (Um₀, Sm₀, Vtm₀)) = USVt(x)
     ranks = (p=x.ranks.p[], m=x.ranks.m[])
+
+    @show "energy initial", dot(Sp₀, Sp₀) + dot(Sm₀, Sm₀)
     
     CUDA.NVTX.@range "copy basis" begin
         # TODO: maybe we can skip this (this is written to the system mats before the s step..)
@@ -255,12 +309,12 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
 
         if !isnothing(system.basis_augmentation)
+            Up_cons = qr(reshape(Kp₀, nxp, ranks.p) * Vtp₀ * system.basis_augmentation.p.V)
             Uphat = _orthonormalize(system.basis_augmentation.p.U, reshape(Kp₁, (nxp, ranks.p)), Up₀)
         else
             Uphat = _orthonormalize(reshape(Kp₁, (nxp, ranks.p)), Up₀)
         end
         aug_ranks_p_u = size(Uphat, 2)
-        @show abs.(transpose(Uphat) * Uphat - I) |> maximum
 
         if !isnothing(system.basis_augmentation)
             Umhat = _orthonormalize(system.basis_augmentation.m.U, reshape(Km₁, (nxm, ranks.m)), Um₀)
@@ -268,7 +322,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
             Umhat = _orthonormalize(reshape(Km₁, (nxm, ranks.m)), Um₀)
         end
         aug_ranks_m_u = size(Umhat, 2)
-        @show abs.(transpose(Umhat) * Umhat - I) |> maximum
 
 
         Mp = transpose(Uphat)*Up₀
@@ -303,7 +356,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
             Vphat = _orthonormalize(transpose(reshape(Ltp₁, (ranks.p, nΩp))), transpose(Vtp₀))
         end
         aug_ranks_p_v = size(Vphat, 2)
-        @show abs.(transpose(Vphat) * Vphat - I) |> maximum
 
         if !isnothing(system.basis_augmentation)
             Vmhat = _orthonormalize(system.basis_augmentation.m.V, transpose(reshape(Ltm₁, (ranks.m, nΩm))), transpose(Vtm₀))
@@ -311,7 +363,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
             Vmhat = _orthonormalize(transpose(reshape(Ltm₁, (ranks.m, nΩm))), transpose(Vtm₀))
         end
         aug_ranks_m_v = size(Vmhat, 2)
-        @show abs.(transpose(Vmhat) * Vmhat - I) |> maximum
 
         Np = transpose(Vphat)*transpose(Vtp₀)
         Nm = transpose(Vmhat)*transpose(Vtm₀)
@@ -338,6 +389,9 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) .= Mp * Sp₀ * transpose(Np)
         reshape(Sm₀_hat, aug_ranks_m_u, aug_ranks_m_v) .= Mm * Sm₀ * transpose(Nm)
 
+        @show "energy before s step", dot(Sp₀_hat, Sp₀_hat) + dot(Sm₀_hat, Sm₀_hat)
+
+
         if !isnothing(system.conserved_quantities)
             cons_quant = zeros(size(system.conserved_quantities.p.U, 2))
             for i in 1:size(system.conserved_quantities.p.U, 2)
@@ -353,10 +407,14 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         S₁ = @view(system.tmp.tmp1[1:aug_ranks_p_u*aug_ranks_p_v + aug_ranks_m_u*aug_ranks_m_v])
 
         mul!(S₁, system.mats.inv_matBMᵤᵥ, rhs_S, true, false)
+
+
     end
     CUDA.NVTX.@range "truncate" begin
         Sp₁_hat = reshape(@view(S₁[1:aug_ranks_p_u*aug_ranks_p_v]), (aug_ranks_p_u, aug_ranks_p_v))
         Sm₁_hat = reshape(@view(S₁[aug_ranks_p_u*aug_ranks_p_v+1:end]), (aug_ranks_m_u, aug_ranks_m_v))
+
+        @show "energy after s step", dot(Sp₁_hat, Sp₁_hat) + dot(Sm₁_hat, Sm₁_hat), dot(Sp₁_hat, Sp₁_hat), dot(Sm₁_hat, Sm₁_hat)
 
         # debugging
         # mass before truncation
@@ -368,41 +426,112 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
             @show "before trunc", cons_quant
         end
 
-        # NEW STRATEGY
-        @show "before fix", dot(Sp₁_hat, Sp₁_hat)
-        svd_p = svd(Sp₁_hat)
-        svd_m = svd(Sm₁_hat)
-        
-        ranks = _compute_new_ranks(system, svd_p.S, svd_m.S)
-        if !isnothing(system.conserved_quantities)
-            ranks = (p = min(ranks.p, system.max_ranks.p - size(system.conserved_quantities.p.U, 2)), m = min(ranks.m, system.max_ranks.m - size(system.conserved_quantities.m.U, 2)))
-            Pp = _orthonormalize(transpose(Uphat) * system.conserved_quantities.p.U, svd_p.U[:, 1:ranks.p])
-            Qp = _orthonormalize(transpose(Vphat) * system.conserved_quantities.p.V, svd_p.V[:, 1:ranks.p])
-            Pm = _orthonormalize(transpose(Umhat) * system.conserved_quantities.m.U, svd_m.U[:, 1:ranks.m])
-            Qm = _orthonormalize(transpose(Vmhat) * system.conserved_quantities.m.V, svd_m.V[:, 1:ranks.m])
+        # NEWEST STRATEGY
+
+        if !isnothing(system.basis_augmentation)
+            v_hat = transpose(Vphat) * system.basis_augmentation.p.V
+            u_hat = transpose(Uphat) * Matrix(Up_cons.Q)
+            Sp₁_hat_tilde = (I - u_hat*u_hat') * Sp₁_hat * (I - v_hat*v_hat') # project out the mass carrying mode
+            Pp, Sp, Qp = svd(Sp₁_hat_tilde)
+            Pm, Sm, Qm = svd(Sm₁_hat)
+
+            ranks = _compute_new_ranks(system, Sp, Sm)
+            n_aug_u = size(system.basis_augmentation.p.V, 2)
+
+            ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_u), m=ranks.m)
+            x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
+            ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+
+            σ = Up_cons.R;
+            Up₁_ = qr([Matrix(Up_cons.Q) Uphat*Pp[:, 1:ranks.p-n_aug_u]])
+            Vp₁_ = qr([system.basis_augmentation.p.V Vphat*Qp[:, 1:ranks.p-n_aug_u]])
+            Sp₁_ = [
+                σ zeros(n_aug_u, ranks.p-n_aug_u)
+                zeros(ranks.p-n_aug_u, n_aug_u) Diagonal(Sp[1:ranks.p-n_aug_u])
+            ]
+
+            Up₁ .= Matrix(Up₁_.Q)
+            Vtp₁ .= transpose(Matrix(Vp₁_.Q))
+
+            Sp₁ .= Matrix(Up₁_.R) * Sp₁_ * transpose(Matrix(Vp₁_.R))
+
+
+
+            # same for m
+            mul!(Um₁, Umhat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]))
+            mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
+            copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
+            @show σ
+
+            @show dot(σ, σ), dot(diag(σ), diag(σ)), dot(Sp[1:ranks.p - n_aug_u], Sp[1:ranks.p - n_aug_u]), dot(Sm₁, Sm₁)
+
+            @show "energy after truncation step", dot(Sp₁, Sp₁) + dot(Sm₁, Sm₁), dot(Sp₁, Sp₁), dot(Sm₁, Sm₁)
+
         else
-            Pp = svd_p.U[:, 1:ranks.p]
-            Qp = svd_p.V[:, 1:ranks.p]
-            Pm = svd_m.U[:, 1:ranks.m]
-            Qm = svd_m.V[:, 1:ranks.m]
+            Pp, Sp, Qp = svd(Sp₁_hat)
+            Pm, Sm, Qm = svd(Sm₁_hat)
+
+            ranks = _compute_new_ranks(system, Sp, Sm)
+            x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
+            ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+            @show ranks
+
+            mul!(Up₁, Uphat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]))
+            mul!(Um₁, Umhat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]))
+            mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Vphat))
+            mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
+            copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
+            copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
+
+            @show dot(Sp₁, Sp₁), dot(Sm₁, Sm₁)
+
+            @show "energy after truncation step", dot(Sp₁, Sp₁) + dot(Sm₁, Sm₁)
+
         end
 
-        @assert size(Pp, 2) == size(Qp, 2) # can we relax even this? then the svd would be non square from the beginning.. 
-        @assert size(Pm, 2) == size(Qm, 2)
-        x.ranks.p[] = size(Pp, 2)
-        x.ranks.m[] = size(Pm, 2)
-        ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
-        @show x.ranks
+       
+        # Pp, Sp, Qp = svd(Sp₁_hat)
 
-        mul!(Up₁, Uphat, Pp)
-        mul!(Um₁, Umhat, Pm)
-        mul!(Vtp₁, transpose(Qp), transpose(Vphat))
-        mul!(Vtm₁, transpose(Qm), transpose(Vmhat))
 
-        Sp₁ .= transpose(Pp)*Sp₁_hat*Qp
-        Sm₁ .= transpose(Pm)*Sm₁_hat*Qm
+        # Pm, Sm, Qm = svd(Sm₁_hat)
 
-        @show "after fix", dot(Sp₁, Sp₁)
+
+
+        # NEW STRATEGY
+        # @show "before fix", dot(Sp₁_hat, Sp₁_hat)
+        # svd_p = svd(Sp₁_hat)
+        # svd_m = svd(Sm₁_hat)
+        
+        # ranks = _compute_new_ranks(system, svd_p.S, svd_m.S)
+        # if !isnothing(system.conserved_quantities)
+        #     ranks = (p = min(ranks.p, system.max_ranks.p - size(system.conserved_quantities.p.U, 2)), m = min(ranks.m, system.max_ranks.m - size(system.conserved_quantities.m.U, 2)))
+        #     Pp = _orthonormalize(transpose(Uphat) * system.conserved_quantities.p.U, svd_p.U[:, 1:ranks.p])
+        #     Qp = _orthonormalize(transpose(Vphat) * system.conserved_quantities.p.V, svd_p.V[:, 1:ranks.p])
+        #     Pm = _orthonormalize(transpose(Umhat) * system.conserved_quantities.m.U, svd_m.U[:, 1:ranks.m])
+        #     Qm = _orthonormalize(transpose(Vmhat) * system.conserved_quantities.m.V, svd_m.V[:, 1:ranks.m])
+        # else
+        #     Pp = svd_p.U[:, 1:ranks.p]
+        #     Qp = svd_p.V[:, 1:ranks.p]
+        #     Pm = svd_m.U[:, 1:ranks.m]
+        #     Qm = svd_m.V[:, 1:ranks.m]
+        # end
+
+        # @assert size(Pp, 2) == size(Qp, 2) # can we relax even this? then the svd would be non square from the beginning.. 
+        # @assert size(Pm, 2) == size(Qm, 2)
+        # x.ranks.p[] = size(Pp, 2)
+        # x.ranks.m[] = size(Pm, 2)
+        # ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+        # @show x.ranks
+
+        # mul!(Up₁, Uphat, Pp)
+        # mul!(Um₁, Umhat, Pm)
+        # mul!(Vtp₁, transpose(Qp), transpose(Vphat))
+        # mul!(Vtm₁, transpose(Qm), transpose(Vmhat))
+
+        # Sp₁ .= transpose(Pp)*Sp₁_hat*Qp
+        # Sm₁ .= transpose(Pm)*Sm₁_hat*Qm
+
+        # @show "after fix", dot(Sp₁, Sp₁)
 
 
         # OLD STRATEGY
@@ -421,7 +550,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         # copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
         # copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
 
-        # # fix conservation
+        # fix conservation
         # if !isnothing(system.conserved_quantities)
         #     @show "before fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
         #     _preserve_invariant!(Sp₁, Sp₁_hat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]), @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Uphat) * system.conserved_quantities.p.U, transpose(Vphat) * system.conserved_quantities.p.V)
@@ -440,26 +569,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
             @show "after trunc", cons_quant
         end
     end
-end
-
-# inputs A: full matrix; U, S, Vt: truncated SVD; u, v: invariant vectors
-function _preserve_invariant!(S, A, U, Vt, u, v)
-    @assert size(u, 2) == size(v, 2)
-    m = size(u, 2)
-    if iszero(m) return S end
-    u_tilde = transpose(U)*u
-    v_tilde = Vt*v
-    δ = zeros(m)
-    for i in 1:m
-        δ[i] = dot(@view(u[:, i]), A, @view(v[:, i])) - dot(@view(u_tilde[:, i]), S, @view(v_tilde[:, i]))
-    end
-    A_mat = zeros(m, m*m)
-    for i in 1:m
-        A_mat[i, :] = kron(transpose(transpose(v_tilde)*v_tilde[:, i]), transpose(u_tilde[:, i])*u_tilde)
-    end
-    W_vec = A_mat \ δ
-    W = reshape(W_vec, m, m)
-    S .+= u_tilde * W * transpose(v_tilde)
 end
 
 function allocate_solution_vector(system::DiscreteDLRPNSystem5)

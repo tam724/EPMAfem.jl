@@ -20,6 +20,7 @@ _reshape_view(R::LazyResizeMatrix) = reshape(@view(R.R_mem[][1:prod(size(R))]), 
 
 function quiet_resize!(R::LazyResizeMatrix, (m, n)::Tuple{<:Integer, <:Integer})
     if R.max_size[1] < m || R.max_size[2] < n
+        @show R.max_size, (m, n)
         error("size too big!")
     end
     R.size[1][] = m
