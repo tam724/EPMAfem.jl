@@ -70,6 +70,7 @@ N = 15
         copy!(ψ0m, bxm .* bΩm')
 
         Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->1/(4π)) |> EPMAfem.architecture(problem)
+        Ωp_m, Ωm_m = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->EPMAfem.Dimensions.Ωz(Ω)/(4π)) |> EPMAfem.architecture(problem)
         xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> 1.0) |> EPMAfem.architecture(problem)
 
         Ωp_b2 = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(Ω -> abs(Ω[1])/(4π)), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
@@ -128,10 +129,11 @@ N = 15
         sol_lr10 = EPMAfem.IterableDiscretePNSolution(system_lr10, source, initial_solution=initial_condition);
         sol_lr10_aug = EPMAfem.IterableDiscretePNSolution(system_lr10_aug, source, initial_solution=initial_condition);
         # sol_lr20 = EPMAfem.IterableDiscretePNSolution(system_lr20, source, initial_solution=initial_condition);
-        
+
         #### GIF
         # Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.architecture(problem)
         masses = zeros(length(sol), 3)
+        momentum = zeros(length(sol), 3)
         energies = zeros(length(sol), 3)
         outflux = zeros(length(sol), 3)
         ranksp = zeros(length(sol), 2)
@@ -152,10 +154,14 @@ N = 15
             # heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y)), aspect_ratio=:equal)
 
             masses[i, 1] = dot(xp, ψp*Ωp) + dot(xm, ψm*Ωm)
+            momentum[i, 1] = dot(xp, ψp*Ωp_m) + dot(xm, ψm*Ωm_m)
             energies[i, 1] = dot(ψp, Mp*ψp) + dot(ψm, Mm*ψm)
             outflux[i, 1] = dot(xp_b, ψp*Ωp_b)
             masses[i, 2] = dot(xp, ψp1*Ωp) + dot(xm, ψm1*Ωm)
             masses[i, 3] = dot(xp, ψp2*Ωp) + dot(xm, ψm2*Ωm)
+            momentum[i, 2] = dot(xp, ψp1*Ωp_m) + dot(xm, ψm1*Ωm_m)
+            momentum[i, 3] = dot(xp, ψp2*Ωp_m) + dot(xm, ψm2*Ωm_m)
+
             energies[i, 2] = dot(ψp1, Mp*ψp1) + dot(ψm1, Mm*ψm1)
             energies[i, 3] = dot(ψp2, Mp*ψp2) + dot(ψm2, Mm*ψm2)
             outflux[i, 2] = dot(xp_b, ψp1*Ωp_b)
@@ -169,6 +175,10 @@ N = 15
         plot(energies[:, 1])
         plot!(energies[:, 2])
         plot!(energies[:, 3])
+
+        plot(momentum[:, 1])
+        plot(momentum[:, 2])
+        plot(momentum[:, 3])
 
         function cumtrapz(v, Δ)
             ∫v = similar(v)

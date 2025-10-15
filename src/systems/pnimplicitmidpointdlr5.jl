@@ -474,11 +474,13 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
     CUDA.NVTX.@range "truncate" begin
         vphat = transpose(Vphat) * system.basis_augmentation.p.V
+        vmhat = transpose(Vmhat) * system.basis_augmentation.m.V
         Up_cons = qr(Kp₁ * vphat)
-        Kp₁_tilde = qr(Kp₁ * (I - vphat*vphat')) # project out the mass carrying mode(s)
-        Pp, Sp, Qp = svd(Kp₁_tilde.R)
+        Um_cons = qr(Km₁ * vmhat)
+        Kp₁_tilde = qr(Kp₁ .- Kp₁*vphat*(vphat')) # project out the mass carrying mode(s)
+        Km₁_tilde = qr(Km₁ .- Km₁*vmhat*(vmhat'))
 
-        Km₁_tilde = qr(Km₁)
+        Pp, Sp, Qp = svd(Kp₁_tilde.R)
         Pm, Sm, Qm = svd(Km₁_tilde.R)
 
         ranks = _compute_new_ranks(system, Sp, Sm)
@@ -487,7 +489,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_p), m=min(ranks.m, ranks.m+n_aug_m))
         x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
         ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
-
 
         σp = Up_cons.R;
         Up₁_ = qr([Matrix(Up_cons.Q) Kp₁_tilde.Q*Pp[:, 1:ranks.p-n_aug_p]])
@@ -500,12 +501,19 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Up₁ .= Matrix(Up₁_.Q)
         Vtp₁ .= transpose(Matrix(Vp₁_.Q))
         Sp₁ .= Matrix(Up₁_.R) * Sp₁_ * transpose(Matrix(Vp₁_.R))
+        
+        # same for m
+        σm = Um_cons.R;
+        Um₁_ = qr([Matrix(Um_cons.Q) Km₁_tilde.Q*Pm[:, 1:ranks.m-n_aug_m]])
+        Vm₁_ = qr([system.basis_augmentation.m.V Vmhat*Qm[:, 1:ranks.m-n_aug_m]])
+        Sm₁_ = [
+            σm zeros(n_aug_m, ranks.m-n_aug_m)
+            zeros(ranks.m-n_aug_m, n_aug_m) Diagonal(Sm[1:ranks.m-n_aug_m])
+        ]
 
-        # same for m (TODO)
-        mul!(Um₁, Km₁_tilde.Q, @view(Pm[:, 1:ranks.m]))
-        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, :]), transpose(Vmhat))
-        copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
-
+        Um₁ .= Matrix(Um₁_.Q)
+        Vtm₁ .= transpose(Matrix(Vm₁_.Q))
+        Sm₁ .= Matrix(Um₁_.R) * Sm₁_ * transpose(Matrix(Vm₁_.R))
     end
 end
 
