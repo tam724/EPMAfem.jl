@@ -96,6 +96,13 @@ function tsvd(A, r)
 end
 
 
+
+let (a, b) = (2, 3)
+    @show a
+    @show b
+end
+
+
 A = rand(10, 10)*rand(10, 10)
 tsvd_A = tsvd(A, 5)
 u = rand(10, 3)

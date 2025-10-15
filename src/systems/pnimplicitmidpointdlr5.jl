@@ -1,4 +1,4 @@
-Base.@kwdef @concrete struct DiscreteDLRPNSystem5{ADAPTIVE} <: AbstractDiscretePNSystem
+Base.@kwdef @concrete struct DiscreteDLRPNSystem5{ADAPTIVE, AUGMENT} <: AbstractDiscretePNSystem
     adjoint::Bool=false
     problem
 
@@ -9,16 +9,19 @@ Base.@kwdef @concrete struct DiscreteDLRPNSystem5{ADAPTIVE} <: AbstractDiscreteP
 
     max_ranks
     tolerance::ADAPTIVE
-    basis_augmentation
-    conserved_quantities
+    basis_augmentation::AUGMENT
+    conserved_quantities # only used for debugging
 end
 
-function Base.adjoint(A::DiscreteDLRPNSystem5{ADAPTIVE}) where ADAPTIVE
+function Base.adjoint(A::DiscreteDLRPNSystem5{ADAPTIVE, AUGMENT}) where {ADAPTIVE, AUGMENT}
     return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks, tolerance=A.tolerance, basis_augmentation=A.basis_augmentation, conserved_quantities=A.conserved_quantities)
 end
 
 adaptive(::DiscreteDLRPNSystem5{Nothing}) = false
 adaptive(::DiscreteDLRPNSystem5{<:Real}) = true
+
+augmented(::DiscreteDLRPNSystem5{<:Any, Nothing}) = false
+augmented(::DiscreteDLRPNSystem5{<:Any, AUGMENT}) where AUGMENT = true
 
 using EPMAfem.PNLazyMatrices: only_unique
 
@@ -202,7 +205,7 @@ function _orthonormalize(bases...; tol=1e-15)
         # prthonormalize remaining directions
         Qi_orth, R = qr(Qi_proj)
         # truncate
-        diagR = abs.(diag(R))
+        diagR = abs.(diag(R)) # TODO: make this a cutoff again ? 
         Qi_clean = Matrix(Qi_orth)#[:, diagR .> tol]
         
         Q_combined = hcat(Q_combined, Qi_clean)
@@ -261,6 +264,135 @@ function _preserve_invariant!(S, A, U, Vt, u, v)
     W_vec = A_mat \ δ
     W = reshape(W_vec, m, m)
     S .+= u_tilde * W * transpose(v_tilde)
+end
+
+function _decompose_pm(v::AbstractVector, ((mp, np), (mm, nm))::NTuple{2, Tuple{<:Integer, <:Integer}})
+    X = @view(v[1:mp*np + mm*nm])
+    Xp = reshape(@view(X[1:mp*np]), (mp, np))
+    Xm = reshape(@view(X[mp*np+1:end]), (mm, nm))
+    return X, Xp, Xm
+end
+
+# the robust rank-adaptive BUG INTEGRATOR
+function _step!(x, system::DiscreteDLRPNSystem5{<:Any, Nothing}, rhs_ass::PNVectorAssembler, idx, Δϵ)
+    (_, (nxp, nxm), (nΩp, nΩm)) = n_basis(system.problem)
+
+    CUDA.NVTX.@range "rhs assembly" begin
+        assemble_at!(system.rhs.full, rhs_ass, idx, Δϵ, true)
+        u = @view(system.rhs.full[1:nxp*nΩp])
+        v = @view(system.rhs.full[nxp*nΩp+1:end])
+    end
+
+    ((Up₀, Sp₀, Vtp₀), (Um₀, Sm₀, Vtm₀)) = USVt(x)
+    ranks = (p=x.ranks.p[], m=x.ranks.m[])
+
+
+    CUDA.NVTX.@range "L-step prep" begin
+        PNLazyMatrices.set!(system.mats.Up, vec(Up₀), size(Up₀))
+        PNLazyMatrices.set!(system.mats.Um, vec(Um₀), size(Um₀))
+
+        rhs_Lt, rhs_Ltp, rhs_Ltm = _decompose_pm(system.rhs.proj, ((ranks.p, nΩp), (ranks.m, nΩm)))
+
+        # compute û (the projected source/bc)
+        mul!(rhs_Ltp, transpose(Up₀), reshape(u, nxp, nΩp), -1, false)
+        mul!(rhs_Ltm, transpose(Um₀), reshape(v, nxm, nΩm), -1, false)
+
+        let (Lt₀, Ltp₀, Ltm₀) = _decompose_pm(system.tmp.tmp1, ((ranks.p, nΩp), (ranks.m, nΩm)))
+            # compute L0
+            mul!(Ltp₀, Sp₀, Vtp₀)
+            mul!(Ltm₀, Sm₀, Vtm₀)
+
+            # update the rhs from the previous energy/time step
+            mul!(rhs_Lt, system.mats.rhsBMᵤ, Lt₀, -1, true)
+        end
+    end
+    CUDA.NVTX.@range "L-step" begin
+        # solve the L-step linear system
+        Lt₁, Ltp₁, Ltm₁ = _decompose_pm(system.tmp.tmp1, ((ranks.p, nΩp), (ranks.m, nΩm)))
+        mul!(Lt₁, system.mats.inv_matBMᵤ, rhs_Lt, true, false)
+
+        Vphat = _orthonormalize(transpose(Ltp₁), transpose(Vtp₀))
+        Vmhat = _orthonormalize(transpose(Ltm₁), transpose(Vtm₀))
+        Np = transpose(Vphat)*transpose(Vtp₀)
+        Nm = transpose(Vmhat)*transpose(Vtm₀)
+    end
+
+    CUDA.NVTX.@range "K-step prep" begin
+        PNLazyMatrices.set!(system.mats.Vtp, vec(Vtp₀), size(Vtp₀))
+        PNLazyMatrices.set!(system.mats.Vtm, vec(Vtm₀), size(Vtm₀))
+
+        rhs_K, rhs_Kp, rhs_Km = _decompose_pm(system.rhs.proj, ((nxp, ranks.p), (nxm, ranks.m)))
+
+        # compute û (the projected source/bc)
+        mul!(rhs_Kp, reshape(u, nxp, nΩp), transpose(Vtp₀), -1, false)
+        mul!(rhs_Km, reshape(v, nxm, nΩm), transpose(Vtm₀), -1, false)
+
+        let (K₀, Kp₀, Km₀) = _decompose_pm(system.tmp.tmp1, ((nxp, ranks.p), (nxm, ranks.m)))
+            # compute K0
+            mul!(Kp₀, Up₀, Sp₀)
+            mul!(Km₀, Um₀, Sm₀)
+
+            #update the rhs from the previous energy/time step
+            mul!(rhs_K, system.mats.rhsBMᵥ, K₀, -1, true)
+        end
+    end
+    CUDA.NVTX.@range "K-step" begin
+        # solve the K-step linear system
+        K₁, Kp₁, Km₁ = _decompose_pm(system.tmp.tmp1, ((nxp, ranks.p), (nxm, ranks.m)))
+        mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
+
+        Uphat = _orthonormalize(Kp₁, Up₀)
+        Umhat = _orthonormalize(Km₁, Um₀)
+        Mp = transpose(Uphat)*Up₀
+        Mm = transpose(Umhat)*Um₀
+    end
+
+    CUDA.NVTX.@range "S-step prep" begin
+        Vtphat_ = transpose(Vphat) |> mat_type(architecture(system.problem)) # todo
+        Vtmhat_ = transpose(Vmhat) |> mat_type(architecture(system.problem))
+        PNLazyMatrices.set!(system.mats.Vtp, vec(Vtphat_), size(Vtphat_))
+        PNLazyMatrices.set!(system.mats.Vtm, vec(Vtmhat_), size(Vtmhat_))
+        PNLazyMatrices.set!(system.mats.Up, vec(Uphat), size(Uphat))
+        PNLazyMatrices.set!(system.mats.Um, vec(Umhat), size(Umhat))
+
+        aug_ranks = ((size(Uphat, 2), size(Vphat, 2)), (size(Umhat, 2), size(Vmhat, 2)))
+        rhs_S, rhs_Sp, rhs_Sm = _decompose_pm(system.rhs.proj, aug_ranks)
+
+        # compute û (the projected source/bc)
+        rhs_Sp .= -transpose(Uphat)*reshape(u, nxp, nΩp)*Vphat
+        rhs_Sm .= -transpose(Umhat)*reshape(v, nxm, nΩm)*Vmhat
+
+        let (Shat₀, Sphat₀, Smhat₀) = _decompose_pm(system.tmp.tmp1, aug_ranks)
+            # compute Shat0
+            Sphat₀ .= Mp * Sp₀ * transpose(Np)
+            Smhat₀ .= Mm * Sm₀ * transpose(Nm)
+
+            #update the rhs from the previous energy/time step
+            mul!(rhs_S, system.mats.rhsBMᵤᵥ, Shat₀, -1, true)
+        end
+    end    
+    CUDA.NVTX.@range "S-step" begin
+        # solve the S-step linear system
+        Shat₁, Sphat₁, Smhat₁ = _decompose_pm(system.tmp.tmp1, aug_ranks)
+        mul!(Shat₁, system.mats.inv_matBMᵤᵥ, rhs_S, true, false)
+    end
+    CUDA.NVTX.@range "truncate" begin
+        Pp, Sp, Qp = svd(Sphat₁)
+        Pm, Sm, Qm = svd(Smhat₁)
+        
+        ranks = _compute_new_ranks(system, Sp, Sm)
+        x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
+        ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+        @show ranks
+
+        mul!(Up₁, Uphat, @view(Pp[:, 1:ranks.p]))
+        mul!(Um₁, Umhat, @view(Pm[:, 1:ranks.m]))
+        mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, :]), transpose(Vphat))
+        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, :]), transpose(Vmhat))
+        copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
+        copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
+
+    end
 end
 
 function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx, Δϵ)

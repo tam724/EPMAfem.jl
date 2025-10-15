@@ -84,7 +84,7 @@ N = 15
         
         nb = EPMAfem.n_basis(model)
         basis_augmentation = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 0),
-                                 V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
+                                 V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 2)),
                               m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
                                  V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
         
@@ -114,9 +114,9 @@ N = 15
         system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation, conserved_quantities=conserved_quantities);
 
         # MAKE THE SYSTEMS FULLY MASS CONSERVATIVE BY A REFLECTIVE BOUNDARY CONDITION
-        system.coeffs.γ[] = 0
-        system_lr10.coeffs.γ[] = 0
-        system_lr10_aug.coeffs.γ[] = 0
+        # system.coeffs.γ[] = 0
+        # system_lr10.coeffs.γ[] = 0
+        # system_lr10_aug.coeffs.γ[] = 0
 
         # SWITCH OFF TRANSPORT
         # system.coeffs.δ[] = 0
@@ -130,11 +130,6 @@ N = 15
         # sol_lr20 = EPMAfem.IterableDiscretePNSolution(system_lr20, source, initial_solution=initial_condition);
 
 
-        temp, state = iterate(sol_lr10_aug)
-        ((Up, Sp, Vtp), (Um, Sm, Vtm)) = EPMAfem.USVt(temp[2])
-
-        Vtp' * Vtp * system_lr10_aug.basis_augmentation.p.V .- system_lr10_aug.basis_augmentation.p.V .|> abs |> maximum
-        
         #### GIF
         # Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.architecture(problem)
         masses = zeros(length(sol), 3)
@@ -171,14 +166,6 @@ N = 15
             ranksp[i, 2] = ψ2.ranks.p[]
             ranksm[i, 2] = ψ2.ranks.m[]
         end
-
-        for (i, ((ϵ, ψ), (ϵ2, ψ2))) in enumerate(zip(sol,  sol_lr10_aug))
-            ψp, ψm = EPMAfem.pmview(ψ, model)
-            @show dot(ψp, ψp) + dot(ψm, ψm), dot(ψp, ψp), dot(ψm, ψm)
-        end
-
-
-
 
         plot(energies[:, 1])
         plot!(energies[:, 2])
