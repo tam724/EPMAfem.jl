@@ -406,8 +406,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
     ((Up₀, Sp₀, Vtp₀), (Um₀, Sm₀, Vtm₀)) = USVt(x)
     ranks = (p=x.ranks.p[], m=x.ranks.m[])
-
-    @show "energy initial", dot(Sp₀, Sp₀) + dot(Sm₀, Sm₀)
     
     CUDA.NVTX.@range "copy basis" begin
         # TODO: maybe we can skip this (this is written to the system mats before the s step..)
@@ -419,297 +417,95 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
     end
 
     CUDA.NVTX.@range "L-step prep" begin
-        rhs_Lt = @view(system.rhs.proj[1:ranks.p*nΩp + ranks.m*nΩm])
-        rhs_Ltp = @view(rhs_Lt[1:ranks.p*nΩp])
-        rhs_Ltm = @view(rhs_Lt[ranks.p*nΩp+1:end])
-        #compute û
-        mul!(reshape(rhs_Ltp, ranks.p, nΩp), transpose(Up₀), reshape(u, nxp, nΩp), -1, false)
-        mul!(reshape(rhs_Ltm, ranks.m, nΩm), transpose(Um₀), reshape(v, nxm, nΩm), -1, false)
-        # compute A₀L₀
-        L₀ = @view(system.tmp.tmp1[1:ranks.p*nΩp + ranks.m*nΩm])
-        Lp₀ = @view(L₀[1:ranks.p*nΩp])
-        mul!(reshape(Lp₀, ranks.p, nΩp), Sp₀, Vtp₀)
-        Lm₀ = @view(L₀[ranks.p*nΩp+1:end])
-        mul!(reshape(Lm₀, ranks.m, nΩm), Sm₀, Vtm₀)
+        PNLazyMatrices.set!(system.mats.Up, vec(Up₀), size(Up₀))
+        PNLazyMatrices.set!(system.mats.Um, vec(Um₀), size(Um₀))
 
-        mul!(rhs_Lt, system.mats.rhsBMᵤ, L₀, -1, true)
+        rhs_Lt, rhs_Ltp, rhs_Ltm = _decompose_pm(system.rhs.proj, ((ranks.p, nΩp), (ranks.m, nΩm)))
+
+        # compute û (the projected source/bc)
+        mul!(rhs_Ltp, transpose(Up₀), reshape(u, nxp, nΩp), -1, false)
+        mul!(rhs_Ltm, transpose(Um₀), reshape(v, nxm, nΩm), -1, false)
+
+        let (Lt₀, Ltp₀, Ltm₀) = _decompose_pm(system.tmp.tmp1, ((ranks.p, nΩp), (ranks.m, nΩm)))
+            # compute L0
+            mul!(Ltp₀, Sp₀, Vtp₀)
+            mul!(Ltm₀, Sm₀, Vtm₀)
+
+            # update the rhs from the previous energy/time step
+            mul!(rhs_Lt, system.mats.rhsBMᵤ, Lt₀, -1, true)
+        end
     end
     CUDA.NVTX.@range "L-step" begin
-        Lt₁ = @view(system.tmp.tmp1[1:ranks.p*nΩp + ranks.m*nΩm])
-        Ltp₁ = @view(Lt₁[1:ranks.p*nΩp])
-        Ltm₁ = @view(Lt₁[ranks.p*nΩp+1:end])
+        # solve the L-step linear system
+        Lt₁, Ltp₁, Ltm₁ = _decompose_pm(system.tmp.tmp1, ((ranks.p, nΩp), (ranks.m, nΩm)))
         mul!(Lt₁, system.mats.inv_matBMᵤ, rhs_Lt, true, false)
-        
-        if !isnothing(system.basis_augmentation)
-            Vphat = _orthonormalize(system.basis_augmentation.p.V, transpose(reshape(Ltp₁, (ranks.p, nΩp))), transpose(Vtp₀))
-        else
-            Vphat = _orthonormalize(transpose(reshape(Ltp₁, (ranks.p, nΩp))), transpose(Vtp₀))
-        end
-        aug_ranks_p_v = size(Vphat, 2)
 
-        if !isnothing(system.basis_augmentation)
-            Vmhat = _orthonormalize(system.basis_augmentation.m.V, transpose(reshape(Ltm₁, (ranks.m, nΩm))), transpose(Vtm₀))
-        else
-            Vmhat = _orthonormalize(transpose(reshape(Ltm₁, (ranks.m, nΩm))), transpose(Vtm₀))
-        end
-        aug_ranks_m_v = size(Vmhat, 2)
-
+        Vphat = _orthonormalize(transpose(Ltp₁), transpose(Vtp₀))
+        Vmhat = _orthonormalize(transpose(Ltm₁), transpose(Vtm₀))
         Np = transpose(Vphat)*transpose(Vtp₀)
         Nm = transpose(Vmhat)*transpose(Vtm₀)
+        aug_ranks_v = (p=size(Vphat, 2), m=size(Vmhat, 2))
     end
 
-    # temporary
-    Vtphat_temp = Matrix(transpose(Vphat))
-    Vtmhat_temp = Matrix(transpose(Vmhat))
-    PNLazyMatrices.set!(system.mats.Vtp, vec(Vtphat_temp), size(Vtphat_temp))
-    PNLazyMatrices.set!(system.mats.Vtm, vec(Vtmhat_temp), size(Vtmhat_temp))
+    CUDA.NVTX.@range "aug K-step prep" begin
+        PNLazyMatrices.set!(system.mats.Vtp, vec(Matrix(transpose(Vphat))), size(transpose(Vphat))) # TODO: should not copy
+        PNLazyMatrices.set!(system.mats.Vtm, vec(Matrix(transpose(Vmhat))), size(transpose(Vmhat)))
 
-    CUDA.NVTX.@range "K-step prep" begin
-        rhs_K = @view(system.rhs.proj[1:nxp*aug_ranks_p_v+nxm*aug_ranks_m_v])
-        rhs_Kp = @view(rhs_K[1:nxp*aug_ranks_p_v])
-        rhs_Km = @view(rhs_K[nxp*aug_ranks_p_v+1:end])
-        #compute û
-        mul!(reshape(rhs_Kp, nxp, aug_ranks_p_v), reshape(u, nxp, nΩp), transpose(Vtphat_temp), -1, false)
-        mul!(reshape(rhs_Km, nxm, aug_ranks_m_v), reshape(v, nxm, nΩm), transpose(Vtmhat_temp), -1, false)
-        # compute A₀K₀
-        K₀ = @view(system.tmp.tmp1[1:nxp*aug_ranks_p_v + nxm*aug_ranks_m_v])
-        Kp₀ = @view(K₀[1:nxp*aug_ranks_p_v])
-        # mul!(reshape(Kp₀, nxp, aug_ranks_p_v), Up₀, Sp₀)
-        reshape(Kp₀, nxp, aug_ranks_p_v) .= Up₀ * Sp₀ * transpose(Np)
-        Km₀ = @view(K₀[nxp*aug_ranks_p_v+1:end])
-        # mul!(reshape(Km₀, nxm, aug_ranks_m_v), Um₀, Sm₀)
-        reshape(Km₀, nxm, aug_ranks_m_v) .= Um₀ * Sm₀ * transpose(Nm)
+        rhs_K, rhs_Kp, rhs_Km = _decompose_pm(system.rhs.proj, ((nxp, aug_ranks_v.p), (nxm, aug_ranks_v.m)))
 
-        mul!(rhs_K, system.mats.rhsBMᵥ, K₀, -1, true)
+        # compute û (the projected source/bc)
+        mul!(rhs_Kp, reshape(u, nxp, nΩp), Vphat, -1, false)
+        mul!(rhs_Km, reshape(v, nxm, nΩm), Vmhat, -1, false)
+
+        let (K₀, Kp₀, Km₀) = _decompose_pm(system.tmp.tmp1, ((nxp, aug_ranks_v.p), (nxm, aug_ranks_v.m)))
+            # compute K0
+            mul!(Kp₀, Up₀ * Sp₀, transpose(Np)) # TODO: temporary storage for U*S ? 
+            mul!(Km₀, Um₀ * Sm₀, transpose(Nm))
+
+            #update the rhs from the previous energy/time step
+            mul!(rhs_K, system.mats.rhsBMᵥ, K₀, -1, true)
+        end
     end
-    CUDA.NVTX.@range "K-step" begin
-        K₁ = @view(system.tmp.tmp1[1:nxp*aug_ranks_p_v + nxm*aug_ranks_m_v])
-        Kp₁ = @view(K₁[1:nxp*aug_ranks_p_v])
-        Km₁ = @view(K₁[nxp*aug_ranks_p_v+1:end])
+    CUDA.NVTX.@range "aug K-step" begin
+        # solve the K-step linear system
+        K₁, Kp₁, Km₁ = _decompose_pm(system.tmp.tmp1, ((nxp, aug_ranks_v.p), (nxm, aug_ranks_v.m)))
         mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
-
-        if !isnothing(system.basis_augmentation)
-            Up_cons = qr(reshape(Kp₀, nxp, aug_ranks_p_v) * Vtphat_temp * system.basis_augmentation.p.V)
-            Uphat = _orthonormalize(system.basis_augmentation.p.U, reshape(Kp₁, (nxp, aug_ranks_p_v)), Up₀)
-        else
-            Uphat = _orthonormalize(reshape(Kp₁, (nxp, aug_ranks_p_v)), Up₀)
-        end
-        aug_ranks_p_u = size(Uphat, 2)
-
-        if !isnothing(system.basis_augmentation)
-            Umhat = _orthonormalize(system.basis_augmentation.m.U, reshape(Km₁, (nxm, aug_ranks_m_v)), Um₀)
-        else
-            Umhat = _orthonormalize(reshape(Km₁, (nxm, aug_ranks_m_v)), Um₀)
-        end
-        aug_ranks_m_u = size(Umhat, 2)
-
-        Mp = transpose(Uphat)*Up₀
-        Mm = transpose(Umhat)*Um₀
     end
 
-    CUDA.NVTX.@range "S-step prep" begin
-        Vtphat_ = transpose(Vphat) |> mat_type(architecture(system.problem))
-        Vtmhat_ = transpose(Vmhat) |> mat_type(architecture(system.problem))
-        PNLazyMatrices.set!(system.mats.Vtp, vec(Vtphat_), size(Vtphat_))
-        PNLazyMatrices.set!(system.mats.Vtm, vec(Vtmhat_), size(Vtmhat_))
-        PNLazyMatrices.set!(system.mats.Up, vec(Uphat), size(Uphat))
-        PNLazyMatrices.set!(system.mats.Um, vec(Umhat), size(Umhat))
-
-        rhs_S = @view(system.rhs.proj[1:aug_ranks_p_u*aug_ranks_p_v + aug_ranks_m_u*aug_ranks_m_v])
-        rhs_Sp = @view(rhs_S[1:aug_ranks_p_u*aug_ranks_p_v])
-        rhs_Sm = @view(rhs_S[aug_ranks_p_u*aug_ranks_p_v+1:end])
-        #compute û
-        reshape(rhs_Sp, (aug_ranks_p_u, aug_ranks_p_v)) .= -transpose(Uphat)*reshape(u, nxp, nΩp)*Vphat
-        reshape(rhs_Sm, (aug_ranks_m_u, aug_ranks_m_v)) .= -transpose(Umhat)*reshape(v, nxm, nΩm)*Vmhat
-        # compute A₀Ŝ₀
-        S₀_hat = @view(system.tmp.tmp1[1:aug_ranks_p_u*aug_ranks_p_v + aug_ranks_m_u*aug_ranks_m_v])
-        Sp₀_hat = @view(S₀_hat[1:aug_ranks_p_u*aug_ranks_p_v])
-        Sm₀_hat = @view(S₀_hat[aug_ranks_p_u*aug_ranks_p_v+1:end])
-        reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) .= Mp * Sp₀ * transpose(Np)
-        reshape(Sm₀_hat, aug_ranks_m_u, aug_ranks_m_v) .= Mm * Sm₀ * transpose(Nm)
-
-        @show "energy before s step", dot(Sp₀_hat, Sp₀_hat) + dot(Sm₀_hat, Sm₀_hat)
-
-
-        if !isnothing(system.conserved_quantities)
-            cons_quant = zeros(size(system.conserved_quantities.p.U, 2))
-            for i in 1:size(system.conserved_quantities.p.U, 2)
-                cons_quant[i] = transpose(system.conserved_quantities.p.U[:, i]) * Uphat * reshape(Sp₀_hat, aug_ranks_p_u, aug_ranks_p_v) * transpose(Vphat) * system.conserved_quantities.p.V[:, i]
-            end
-            @show "before S", cons_quant
-        end
-        mul!(rhs_S, system.mats.rhsBMᵤᵥ, S₀_hat, -1, true)
-        # @show rhs_S
-
-    end    
-    CUDA.NVTX.@range "S-step" begin
-        S₁ = @view(system.tmp.tmp1[1:aug_ranks_p_u*aug_ranks_p_v + aug_ranks_m_u*aug_ranks_m_v])
-
-        mul!(S₁, system.mats.inv_matBMᵤᵥ, rhs_S, true, false)
-
-
-    end
     CUDA.NVTX.@range "truncate" begin
-        Sp₁_hat = reshape(@view(S₁[1:aug_ranks_p_u*aug_ranks_p_v]), (aug_ranks_p_u, aug_ranks_p_v))
-        Sm₁_hat = reshape(@view(S₁[aug_ranks_p_u*aug_ranks_p_v+1:end]), (aug_ranks_m_u, aug_ranks_m_v))
+        vphat = transpose(Vphat) * system.basis_augmentation.p.V
+        Up_cons = qr(Kp₁ * vphat)
+        Kp₁_tilde = qr(Kp₁ * (I - vphat*vphat')) # project out the mass carrying mode(s)
+        Pp, Sp, Qp = svd(Kp₁_tilde.R)
 
-        @show "energy after s step", dot(Sp₁_hat, Sp₁_hat) + dot(Sm₁_hat, Sm₁_hat), dot(Sp₁_hat, Sp₁_hat), dot(Sm₁_hat, Sm₁_hat)
+        Km₁_tilde = qr(Km₁)
+        Pm, Sm, Qm = svd(Km₁_tilde.R)
 
-        # debugging
-        # mass before truncation
-        if !isnothing(system.conserved_quantities)
-            cons_quant = zeros(size(system.conserved_quantities.p.U, 2))
-            for i in 1:size(system.conserved_quantities.p.U, 2)
-                cons_quant[i] = transpose(system.conserved_quantities.p.U[:, i]) * Uphat * Sp₁_hat * transpose(Vphat) * system.conserved_quantities.p.V[:, i]
-            end
-            @show "before trunc", cons_quant
-        end
-
-        # NEWEST STRATEGY
-
-        if !isnothing(system.basis_augmentation)
-            v_hat = transpose(Vphat) * system.basis_augmentation.p.V
-            Sp₁_hat_tilde = Sp₁_hat * (I - v_hat*v_hat') # project out the mass carrying mode
-            Pp, Sp, Qp = svd(Sp₁_hat_tilde)
-            Pm, Sm, Qm = svd(Sm₁_hat)
-
-            ranks = _compute_new_ranks(system, Sp, Sm)
-            n_aug_u = size(system.basis_augmentation.p.V, 2)
-
-            ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_u), m=ranks.m)
-            x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
-            ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
+        ranks = _compute_new_ranks(system, Sp, Sm)
+        n_aug_p = size(system.basis_augmentation.p.V, 2)
+        n_aug_m = size(system.basis_augmentation.m.V, 2)
+        ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_p), m=min(ranks.m, ranks.m+n_aug_m))
+        x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
+        ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
 
 
+        σp = Up_cons.R;
+        Up₁_ = qr([Matrix(Up_cons.Q) Kp₁_tilde.Q*Pp[:, 1:ranks.p-n_aug_p]])
+        Vp₁_ = qr([system.basis_augmentation.p.V Vphat*Qp[:, 1:ranks.p-n_aug_p]])
+        Sp₁_ = [
+            σp zeros(n_aug_p, ranks.p-n_aug_p)
+            zeros(ranks.p-n_aug_p, n_aug_p) Diagonal(Sp[1:ranks.p-n_aug_p])
+        ]
 
-            σ = Up_cons.R;
-            Up₁_ = qr([Matrix(Up_cons.Q) Uphat*Pp[:, 1:ranks.p-n_aug_u]])
-            Vp₁_ = qr([system.basis_augmentation.p.V Vphat*Qp[:, 1:ranks.p-n_aug_u]])
-            Sp₁_ = [
-                σ zeros(n_aug_u, ranks.p-n_aug_u)
-                zeros(ranks.p-n_aug_u, n_aug_u) Diagonal(Sp[1:ranks.p-n_aug_u])
-            ]
+        Up₁ .= Matrix(Up₁_.Q)
+        Vtp₁ .= transpose(Matrix(Vp₁_.Q))
+        Sp₁ .= Matrix(Up₁_.R) * Sp₁_ * transpose(Matrix(Vp₁_.R))
 
-            Up₁ .= Matrix(Up₁_.Q)
-            Vtp₁ .= transpose(Matrix(Vp₁_.Q))
+        # same for m (TODO)
+        mul!(Um₁, Km₁_tilde.Q, @view(Pm[:, 1:ranks.m]))
+        mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, :]), transpose(Vmhat))
+        copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
 
-            Sp₁ .= Matrix(Up₁_.R) * Sp₁_ * transpose(Matrix(Vp₁_.R))
-
-
-
-            # same for m
-            mul!(Um₁, Umhat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]))
-            mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
-            copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
-            @show σ
-
-            @show "energy before truncation step", dot(σ, σ) + dot(Sp₁_hat_tilde, Sp₁_hat_tilde) + dot(Sm, Sm), dot(σ, σ) + dot(Sp₁_hat_tilde, Sp₁_hat_tilde), dot(Sm, Sm)
-
-            @show dot(σ, σ), dot(diag(σ), diag(σ)), dot(Sp[1:ranks.p - n_aug_u], Sp[1:ranks.p - n_aug_u]), dot(Sm₁, Sm₁)
-
-            @show "energy after truncation step", dot(Sp₁, Sp₁) + dot(Sm₁, Sm₁), dot(Sp₁, Sp₁), dot(Sm₁, Sm₁)
-
-        else
-            Pp, Sp, Qp = svd(Sp₁_hat)
-            Pm, Sm, Qm = svd(Sm₁_hat)
-
-            ranks = _compute_new_ranks(system, Sp, Sm)
-            x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
-            ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
-            @show ranks
-
-            mul!(Up₁, Uphat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]))
-            mul!(Um₁, Umhat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]))
-            mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Vphat))
-            mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
-            copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
-            copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
-
-            @show dot(Sp₁, Sp₁), dot(Sm₁, Sm₁)
-
-            @show "energy after truncation step", dot(Sp₁, Sp₁) + dot(Sm₁, Sm₁)
-
-        end
-
-       
-        # Pp, Sp, Qp = svd(Sp₁_hat)
-
-
-        # Pm, Sm, Qm = svd(Sm₁_hat)
-
-
-
-        # NEW STRATEGY
-        # @show "before fix", dot(Sp₁_hat, Sp₁_hat)
-        # svd_p = svd(Sp₁_hat)
-        # svd_m = svd(Sm₁_hat)
-        
-        # ranks = _compute_new_ranks(system, svd_p.S, svd_m.S)
-        # if !isnothing(system.conserved_quantities)
-        #     ranks = (p = min(ranks.p, system.max_ranks.p - size(system.conserved_quantities.p.U, 2)), m = min(ranks.m, system.max_ranks.m - size(system.conserved_quantities.m.U, 2)))
-        #     Pp = _orthonormalize(transpose(Uphat) * system.conserved_quantities.p.U, svd_p.U[:, 1:ranks.p])
-        #     Qp = _orthonormalize(transpose(Vphat) * system.conserved_quantities.p.V, svd_p.V[:, 1:ranks.p])
-        #     Pm = _orthonormalize(transpose(Umhat) * system.conserved_quantities.m.U, svd_m.U[:, 1:ranks.m])
-        #     Qm = _orthonormalize(transpose(Vmhat) * system.conserved_quantities.m.V, svd_m.V[:, 1:ranks.m])
-        # else
-        #     Pp = svd_p.U[:, 1:ranks.p]
-        #     Qp = svd_p.V[:, 1:ranks.p]
-        #     Pm = svd_m.U[:, 1:ranks.m]
-        #     Qm = svd_m.V[:, 1:ranks.m]
-        # end
-
-        # @assert size(Pp, 2) == size(Qp, 2) # can we relax even this? then the svd would be non square from the beginning.. 
-        # @assert size(Pm, 2) == size(Qm, 2)
-        # x.ranks.p[] = size(Pp, 2)
-        # x.ranks.m[] = size(Pm, 2)
-        # ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
-        # @show x.ranks
-
-        # mul!(Up₁, Uphat, Pp)
-        # mul!(Um₁, Umhat, Pm)
-        # mul!(Vtp₁, transpose(Qp), transpose(Vphat))
-        # mul!(Vtm₁, transpose(Qm), transpose(Vmhat))
-
-        # Sp₁ .= transpose(Pp)*Sp₁_hat*Qp
-        # Sm₁ .= transpose(Pm)*Sm₁_hat*Qm
-
-        # @show "after fix", dot(Sp₁, Sp₁)
-
-
-        # OLD STRATEGY
-        # Pp, Sp, Qp = svd(Sp₁_hat)
-        # Pm, Sm, Qm = svd(Sm₁_hat)
-
-        # ranks = _compute_new_ranks(system, Sp, Sm)
-        # x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
-        # ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
-        # @show ranks
-
-        # mul!(Up₁, Uphat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]))
-        # mul!(Um₁, Umhat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]))
-        # mul!(Vtp₁, @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Vphat))
-        # mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Vmhat))
-        # copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
-        # copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
-
-        # fix conservation
-        # if !isnothing(system.conserved_quantities)
-        #     @show "before fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
-        #     _preserve_invariant!(Sp₁, Sp₁_hat, @view(Pp[1:aug_ranks_p_u, 1:ranks.p]), @view(adjoint(Qp)[1:ranks.p, 1:aug_ranks_p_v]), transpose(Uphat) * system.conserved_quantities.p.U, transpose(Vphat) * system.conserved_quantities.p.V)
-        #     @show "after fix", dot(Sp₁_hat, Sp₁_hat), dot(Sp₁, Sp₁)
-        # end
-        # if  !isnothing(system.conserved_quantities)
-        #     _preserve_invariant!(Sm₁, Sm₁_hat, @view(Pm[1:aug_ranks_m_u, 1:ranks.m]), @view(adjoint(Qm)[1:ranks.m, 1:aug_ranks_m_v]), transpose(Umhat) * system.conserved_quantities.m.U, transpose(Vmhat) * system.conserved_quantities.m.V)
-        # end
-
-        # mass after truncation
-        if !isnothing(system.conserved_quantities)
-            cons_quant = zeros(size(system.conserved_quantities.p.U, 2))
-            for i in 1:size(system.conserved_quantities.p.U, 2)
-                cons_quant[i] = transpose(system.conserved_quantities.p.U[:, i]) * Up₁ * Sp₁ * Vtp₁ * system.conserved_quantities.p.V[:, i]
-            end
-            @show "after trunc", cons_quant
-        end
     end
 end
 
