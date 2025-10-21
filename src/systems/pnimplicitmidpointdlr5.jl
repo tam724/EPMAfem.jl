@@ -10,11 +10,10 @@ Base.@kwdef @concrete struct DiscreteDLRPNSystem5{ADAPTIVE, AUGMENT} <: Abstract
     max_ranks
     tolerance::ADAPTIVE
     basis_augmentation::AUGMENT
-    conserved_quantities # only used for debugging
 end
 
 function Base.adjoint(A::DiscreteDLRPNSystem5{ADAPTIVE, AUGMENT}) where {ADAPTIVE, AUGMENT}
-    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks, tolerance=A.tolerance, basis_augmentation=A.basis_augmentation, conserved_quantities=A.conserved_quantities)
+    return DiscreteDLRPNSystem5(adjoint=!A.adjoint, problem=A.problem, coeffs=A.coeffs, mats=A.mats, rhs=A.rhs, tmp=A.tmp, max_ranks=A.max_ranks, tolerance=A.tolerance, basis_augmentation=A.basis_augmentation)
 end
 
 adaptive(::DiscreteDLRPNSystem5{Nothing}) = false
@@ -25,7 +24,7 @@ augmented(::DiscreteDLRPNSystem5{<:Any, AUGMENT}) where AUGMENT = true
 
 using EPMAfem.PNLazyMatrices: only_unique
 
-function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing, basis_augmentation=nothing, conserved_quantities=nothing)
+function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=nothing, basis_augmentation=nothing)
     arch = architecture(pbl)
 
     T = base_type(architecture(pbl))
@@ -391,7 +390,6 @@ function _step!(x, system::DiscreteDLRPNSystem5{<:Any, Nothing}, rhs_ass::PNVect
         mul!(Vtm₁, @view(adjoint(Qm)[1:ranks.m, :]), transpose(Vmhat))
         copyto!(Sp₁, Diagonal(@view(Sp[1:ranks.p])))
         copyto!(Sm₁, Diagonal(@view(Sm[1:ranks.m])))
-
     end
 end
 
