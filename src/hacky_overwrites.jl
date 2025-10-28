@@ -226,3 +226,55 @@ function LinearAlgebra.transpose!(B::GPUArrays.AbstractGPUArray, A::GPUArrays.An
     transpose_kernel_alphabeta!(get_backend(B))(B, A, α, β; ndrange = size(A))
     return B
 end
+
+# empty triu!/tril!
+function LinearAlgebra.tril!(A::AbstractGPUMatrix{T}, d::Integer = 0) where T
+    if iszero(length(A)) return A end
+    @kernel function tril_kernel!(_A, _d)
+        I = @index(Global, Cartesian)
+        i, j = Tuple(I)
+        if i < j - _d
+            @inbounds _A[i, j] = zero(T)
+        end
+    end
+    tril_kernel!(get_backend(A))(A, d; ndrange = size(A))
+    return A
+end
+
+function LinearAlgebra.triu!(A::AbstractGPUMatrix{T}, d::Integer = 0) where T
+    if iszero(length(A)) return A end
+    @kernel function triu_kernel!(_A, _d)
+        I = @index(Global, Cartesian)
+        i, j = Tuple(I)
+        if j < i + _d
+            @inbounds _A[i, j] = zero(T)
+        end
+    end
+    triu_kernel!(get_backend(A))(A, d; ndrange = size(A))
+    return A
+end
+
+function (T::Type{<: AnyGPUArray{U}})(s::UniformScaling, dims::Dims{2}) where {U}
+    res = similar(T, dims)
+    fill!(res, zero(U))
+    if iszero(minimum(dims)) return res end
+    kernel = GPUArrays.identity_kernel(get_backend(res))
+    kernel(res, size(res, 1), s.λ; ndrange=minimum(dims))
+    return res
+end
+
+function LinearAlgebra.rmul!(A::CuArray{<:Union{Float32, Float64, ComplexF64, ComplexF32}}, val::Bool)
+    if iszero(val) 
+        return fill!(A, zero(eltype(A)))
+    else
+        return A
+    end
+end
+
+function LinearAlgebra.rmul!(A::CuArray{<:Union{Float32, Float64, ComplexF64, ComplexF32}}, val::Int)
+    if iszero(val)
+        return fill!(A, zero(eltype(A)))
+    else
+        return rmul!(A, eltype(A)(val))
+    end
+end

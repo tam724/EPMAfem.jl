@@ -299,9 +299,9 @@ function fillzero!(sol::LowwRankSolution, system)
         n_p_u = size(system.basis_augmentation.p.U, 2) #TODO: only p for now..
         n_p_v = size(system.basis_augmentation.p.V, 2)
 
-        copy!(Up, Matrix(qr([system.basis_augmentation.p.U rand(size(Up, 1), n_p_u)]).Q))
+        copy!(Up, Matrix(qr([system.basis_augmentation.p.U rand(size(Up, 1), sol.ranks.p[] - n_p_u)]).Q))
         copy!(Vtp, transpose(
-            Matrix(qr([system.basis_augmentation.p.V rand(size(Vtp, 2), n_p_v)]).Q)
+            Matrix(qr([system.basis_augmentation.p.V rand(size(Vtp, 2), sol.ranks.p[] - n_p_v)]).Q)
         ))
         fill!(Sp, zero(eltype(Sp)))
     else
@@ -329,7 +329,8 @@ function initialize!(current_solution::LowwRankSolution, system, initial_solutio
         Up_cons = qr(ψ0p * system.basis_augmentation.p.V)
 
         σ = Up_cons.R;
-        Up0_ = qr([Matrix(Up_cons.Q) U0p[:, 1:ranks.p-n_aug_u]])
+        m_type = mat_type(architecture(system.problem))
+        Up0_ = qr([m_type(Up_cons.Q) U0p[:, 1:ranks.p-n_aug_u]])
         Vp0_ = qr([system.basis_augmentation.p.V V0p[:, 1:ranks.p-n_aug_u]])
         Sp0_ = [
             σ zeros(n_aug_u, ranks.p-n_aug_u)
@@ -340,9 +341,9 @@ function initialize!(current_solution::LowwRankSolution, system, initial_solutio
         sol.ranks.p[], sol.ranks.m[] = ranks.p, ranks.m
         ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
         
-        copy!(Up, Matrix(Up0_.Q))
-        copy!(Vtp, transpose(Matrix(Vp0_.Q)))
-        copy!(Sp, Matrix(Up0_.R) * Sp0_ * transpose(Matrix(Vp0_.R)))
+        copy!(Up, m_type(Up0_.Q))
+        copy!(Vtp, transpose(m_type(Vp0_.Q)))
+        copy!(Sp, m_type(Up0_.R) * Sp0_ * transpose(m_type(Vp0_.R)))
 
         copy!(Um, @view(U0m[:, 1:sol.ranks.m[]]))
         copy!(Sm, Diagonal(@view(S0m[1:sol.ranks.m[]])))
