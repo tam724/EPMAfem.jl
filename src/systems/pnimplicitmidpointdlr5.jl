@@ -192,8 +192,8 @@ function step_adjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembl
     _step!(x, system, rhs_ass, plus½(idx), Δϵ)
 end
 
-function _compute_new_rank(S, tol, r_max)
-    S = collect(S)
+function _compute_new_rank(S_, tol, r_max)
+    S = collect(S_)
     Σσ² = 0.0
     r = length(S)
     norm_S² = sum(S.^2)
@@ -214,74 +214,7 @@ end
 _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Nothing}, _, _) = system.max_ranks
 
 function _orthonormalize(arch, bases...; tol=1e-15)
-    Q_combined = bases[1] # retain the first basis
-    for i in 2:length(bases)
-        Qi = bases[i]
-        
-        # remove components in span(Q_combined)
-        Qi_proj = Qi - Q_combined * (Q_combined' * Qi)
-        # orthonormalize remaining directions
-        Qi_orth, R = qr(Qi_proj)
-        # truncate
-        diagR = abs.(diag(R)) # TODO: make this a cutoff again ? 
-        Qi_clean = Qi_orth |> mat_type(arch) #[:, diagR .> tol]
-        
-        Q_combined = hcat(Q_combined, Qi_clean)
-    end
-
-    return qr(Q_combined).Q |> mat_type(arch)
-end
-
-function tsvd(A, r)
-    svd_ = svd(A)
-    return LinearAlgebra.SVD(svd_.U[:, 1:r], svd_.S[1:r], svd_.Vt[1:r, :])
-end
-
-# computes the rank-(length(M)) update ΔS on S such that diag(transpose(Mᵤ) * U (S + ΔS) * transpose(V) * Mᵥ) ≈ M
-function _rank_M_update(S, U, V, Mᵤ, Mᵥ, M)
-    A = transpose(Mᵤ) * U      # r × u
-    B = transpose(V) * Mᵥ      # v × r
-
-    # Current approximation
-    M̂ = diag(A * S * B)
-    R = M - M̂
-
-    r, u = size(A)
-    v, r2 = size(B)
-    @assert r == r2
-
-    C = zeros(r, u * v)
-
-    # Build C matrix row-by-row
-    for i in 1:r
-        C[i, :] = kron(B[:, i]', A[i, :])  # Row i is A[i,:] ⊗ B[:,i]'
-    end
-
-    # Solve least squares: C * vec(ΔS) = R
-    vec_ΔS = C \ R
-    ΔS = reshape(vec_ΔS, u, v)
-
-    return ΔS
-end
-
-# inputs A: full matrix; U, S, Vt: truncated SVD; u, v: invariant vectors
-function _preserve_invariant!(S, A, U, Vt, u, v)
-    @assert size(u, 2) == size(v, 2)
-    m = size(u, 2)
-    if iszero(m) return S end
-    u_tilde = transpose(U)*u
-    v_tilde = Vt*v
-    δ = zeros(m)
-    for i in 1:m
-        δ[i] = dot(@view(u[:, i]), A, @view(v[:, i])) - dot(@view(u_tilde[:, i]), S, @view(v_tilde[:, i]))
-    end
-    A_mat = zeros(m, m*m)
-    for i in 1:m
-        A_mat[i, :] = kron(transpose(transpose(v_tilde)*v_tilde[:, i]), transpose(u_tilde[:, i])*u_tilde)
-    end
-    W_vec = A_mat \ δ
-    W = reshape(W_vec, m, m)
-    S .+= u_tilde * W * transpose(v_tilde)
+    return qr(hcat(bases...)).Q |> mat_type(arch)
 end
 
 function _decompose_pm(v::AbstractVector, ((mp, np), (mm, nm))::NTuple{2, Tuple{<:Integer, <:Integer}})
@@ -303,7 +236,6 @@ function _step!(x, system::DiscreteDLRPNSystem5{<:Any, Nothing}, rhs_ass::PNVect
 
     ((Up₀, Sp₀, Vtp₀), (Um₀, Sm₀, Vtm₀)) = USVt(x)
     ranks = (p=x.ranks.p[], m=x.ranks.m[])
-
 
     CUDA.NVTX.@range "L-step prep" begin
         PNLazyMatrices.set!(system.mats.Up, vec(Up₀), size(Up₀))
@@ -424,8 +356,6 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
     ranks = (p=x.ranks.p[], m=x.ranks.m[])
     
     CUDA.NVTX.@range "copy basis" begin
-        # TODO: maybe we can skip this (this is written to the system mats before the s step..)
-        # K-step (prep)
         PNLazyMatrices.set!(system.mats.Vtp, vec(Vtp₀), size(Vtp₀))
         PNLazyMatrices.set!(system.mats.Vtm, vec(Vtm₀), size(Vtm₀))
         PNLazyMatrices.set!(system.mats.Up, vec(Up₀), size(Up₀))
