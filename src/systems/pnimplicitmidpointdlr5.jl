@@ -192,25 +192,23 @@ function step_adjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembl
     _step!(x, system, rhs_ass, plus½(idx), Δϵ)
 end
 
+function _compute_new_rank(S, tol, r_max)
+    S = collect(S)
+    Σσ² = 0.0
+    r = length(S)
+    norm_S² = sum(S.^2)
+    while ((Σσ² + S[r]^2 < tol^2*norm_S²) || (sqrt(Σσ² + S[r]^2) < 1e-14)) && r > 1
+        Σσ² += S[r]^2
+        r = r - 1
+    end
+    return min(r_max, r)
+end
+
 function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, Sp, Sm)
-    Sp, Sm = collect(Sp), collect(Sm)
-    #p 
-    Σσ²p = 0.0
-    rp = length(Sp)
-    norm_Sp² = Sp[1] # sum(Sp.^2)
-    while (sqrt(Σσ²p + Sp[rp]^2) < system.tolerance^2*norm_Sp²) || (sqrt(Σσ²p + Sp[rp]^2) < 1e-12) && rp > 1
-        Σσ²p += Sp[rp]^2
-        rp = rp - 1
-    end
-    #m  
-    Σσ²m = 0.0
-    rm = length(Sm)
-    norm_Sm² = Sm[1] # sum(Sm.^2)
-    while (sqrt(Σσ²m + Sm[rm]^2) < system.tolerance^2*norm_Sm²) || (sqrt(Σσ²m + Sm[rm]^2) < 1e-12) && rm > 1
-        Σσ²m += Sm[rm]^2
-        rm = rm - 1
-    end
-    return (p=min(system.max_ranks.p, rp), m=min(system.max_ranks.m, rm))
+    return (
+        p = _compute_new_rank(Sp, system.tolerance, system.max_ranks.p),
+        m = _compute_new_rank(Sm, system.tolerance, system.max_ranks.m)
+    )
 end
 
 _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Nothing}, _, _) = system.max_ranks
@@ -403,7 +401,6 @@ function _step!(x, system::DiscreteDLRPNSystem5{<:Any, Nothing}, rhs_ass::PNVect
         ranks = _compute_new_ranks(system, Sp, Sm)
         x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
         ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
-        @show ranks
 
         mul!(Up₁, Uphat, @view(Pp[:, 1:ranks.p]))
         mul!(Um₁, Umhat, @view(Pm[:, 1:ranks.m]))
