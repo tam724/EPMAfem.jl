@@ -16,7 +16,7 @@ struct PlaneSourceEquations{S} <: EPMAfem.AbstractPNEquations end
 EPMAfem.number_of_elements(::PlaneSourceEquations) = 1
 EPMAfem.number_of_scatterings(::PlaneSourceEquations) = 1
 EPMAfem.stopping_power(::PlaneSourceEquations, e, ϵ) = 1.0
-EPMAfem.absorption_coefficient(eq::PlaneSourceEquations, e, ϵ) = 0.0 #1.0
+EPMAfem.absorption_coefficient(eq::PlaneSourceEquations, e, ϵ) = 0.0 # 1.0 
 EPMAfem.scattering_coefficient(eq::PlaneSourceEquations, e, i, ϵ) = 0.0 #1.0
 EPMAfem.mass_concentrations(::PlaneSourceEquations, e, x) = 1.0
 
@@ -26,210 +26,203 @@ EPMAfem.scattering_kernel(eq::PlaneSourceEquations{T}, e, i) where T = μ -> exp
 
 energy_model = 0:0.01:1.0
 
-plotdata = Dict()
-Ts = [Inf] # [Inf, 1.0, 10.0, 100.0]
-Ns = [3, 7, 15, 21]
-for T in Ts
-    for N in Ns
-        plotdata[(T, N)] = Dict()
-        equations = PlaneSourceEquations{T}()
-        space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (200)))
-        direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
-        model = EPMAfem.DiscretePNModel(space_model, energy_model, direction_model)
-        problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
+T = Inf
+N = 17
+equations = PlaneSourceEquations{T}()
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (200)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
+model = EPMAfem.DiscretePNModel(space_model, energy_model, direction_model)
+problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 
-        @show N, EPMAfem.n_basis(problem)
+@show N, EPMAfem.n_basis(problem)
 
-        # source / boundary condition (here: zero)
-        source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
+# source / boundary condition (here: zero)
+source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
 
-        # initial condition
-        Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)), EPMAfem.SpaceModels.even(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
-        Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
-        
-        # system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
-        system = EPMAfem.implicit_midpoint2(problem, LinearAlgebra.:\);
-        system_lr3 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=3, m=3));
-        system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=10, m=10));
-        system_lr20 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=20, m=20));
+# initial condition
+Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)), EPMAfem.SpaceModels.even(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
+Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
 
-        # σ = 0.03
-        σ = 0.08
-        using EPMAfem.HCubature
-        init_x(x) = 1/(σ*sqrt(2π))*exp(-1/2*(x[1]-0.0)^2/σ^2)
-        init_Ω(Ω) = 1.0 # pdf(VonMisesFisher([1, 0, 0], 2.0), [Ω...])
-        bxp = collect(Mp) \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)))
-        bxm = collect(Mm) \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)))
-        bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
-        bΩm = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.odd(EPMAfem.direction_model(model)))
-        # bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(Ω -> 1/4π), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
-        initial_condition = EPMAfem.allocate_solution_vector(system)
-        ψ0p, ψ0m = EPMAfem.pmview(initial_condition, model)
-        copy!(ψ0p, bxp .* bΩp')
-        copy!(ψ0m, bxm .* bΩm')
+# system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
+system = EPMAfem.implicit_midpoint2(problem, LinearAlgebra.:\);
+# system_lr3 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=3, m=3));
+# system_lr20 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=20, m=20));
 
-        sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
-        sol_lr3 = EPMAfem.IterableDiscretePNSolution(system_lr3, source, initial_solution=initial_condition);
-        sol_lr10 = EPMAfem.IterableDiscretePNSolution(system_lr10, source, initial_solution=initial_condition);
-        sol_lr20 = EPMAfem.IterableDiscretePNSolution(system_lr20, source, initial_solution=initial_condition);
+# σ = 0.03
+σ = 0.08
+using EPMAfem.HCubature
+init_x(x) = 1/(σ*sqrt(2π))*exp(-1/2*(x[1]-0.0)^2/σ^2)
+init_Ω(Ω) = 1.0 # pdf(VonMisesFisher([1, 0, 0], 2.0), [Ω...])
+bxp = collect(Mp) \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)))
+bxm = collect(Mm) \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)))
+bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
+bΩm = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.odd(EPMAfem.direction_model(model)))
+# bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(Ω -> 1/4π), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
+initial_condition = EPMAfem.allocate_solution_vector(system)
+ψ0p, ψ0m = EPMAfem.pmview(initial_condition, model)
+copy!(ψ0p, bxp .* bΩp')
+copy!(ψ0m, bxm .* bΩm')
 
-        #### GIF
-        # Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.architecture(problem)
-        # @gif for (ϵ, ψ) in sol
-        #     ψp, ψm = EPMAfem.pmview(ψ, model)
-        #     func = EPMAfem.SpaceModels.interpolable((p=collect(ψp*Ωp), m=collect(ψm*Ωm)), EPMAfem.space_model(model))
-        #     plot(-1.5:0.01:1.5, x -> func(VectorValue(x)))
-        #     # heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y)), aspect_ratio=:equal)
-        # end
+Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->1/(4π)) |> EPMAfem.architecture(problem)
+Ωp_m, Ωm_m = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->EPMAfem.Dimensions.Ωz(Ω)/(4π)) |> EPMAfem.architecture(problem)
+xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> 1.0) |> EPMAfem.architecture(problem)
 
-        probe = EPMAfem.PNProbe(model, EPMAfem.cpu(), Ω=Ω->1.0, ϵ=0.0)
-        func = EPMAfem.interpolable(probe, sol)
-        plotdata[(T, N)][("final", Inf)] = func
-        if EPMAfem.n_basis(problem).nΩ.p > 2*6
-            func_lr3 = EPMAfem.interpolable(probe, sol_lr3)
-            plotdata[(T, N)][("final", 3)] = func_lr3
-        end
-        if EPMAfem.n_basis(problem).nΩ.p > 2*10
-            func_lr10 = EPMAfem.interpolable(probe, sol_lr10)
-            plotdata[(T, N)][("final", 10)] = func_lr10
-        end
+Ωp_b2 = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(Ω -> abs(Ω[1])/(4π)), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
+xp_b2 = EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫∂R_ngv{EPMAfem.Dimensions.Z}(x -> 1.0), EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model))) .|> abs
 
-        Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->1/(4π)) |> EPMAfem.architecture(problem)
-        xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> 1.0) |> EPMAfem.architecture(problem)
+# this avoids numerical errors in the quadrature (for xp_b)
+xp_b = vec((Mp \ xp)' * problem.space_discretization.∂p[1])
+Ωp_b = vec(Ωp' * problem.direction_discretization.absΩp[1])
 
-        energy, energy_lr3, energy_lr10, energy_lr20 = zeros(length(sol)), zeros(length(sol)), zeros(length(sol)), zeros(length(sol))
-        mass, mass_lr3, mass_lr10, mass_lr20 = zeros(length(sol)), zeros(length(sol)), zeros(length(sol)), zeros(length(sol))
+mass0 = dot(xp, ψ0p*Ωp) + dot(xm, ψ0m*Ωm)
 
-        mass0 = dot(xp, ψ0p*Ωp) + dot(xm, ψ0m*Ωm)
-        plotdata[(T, N)]["mass_init"] = mass0
-        energy0 = dot(ψ0p, Mp*ψ0p) + dot(ψ0m, Mm*ψ0m)
-        plotdata[(T, N)]["energy_init"] = energy0
+energy0 = dot(ψ0p, Mp*ψ0p) + dot(ψ0m, Mm*ψ0m)
 
-        @show mass0, energy0
+@show mass0 - 1.0
 
-        for (i, (ϵ, ψ)) in enumerate(sol)
-            ψp, ψm = EPMAfem.pmview(ψ, model)
-            energy[i] = dot(ψp, Mp*ψp) + dot(ψm, Mm*ψm)
-            mass[i] = dot(xp, ψp*Ωp) + dot(xm, ψm*Ωm)
-            @show mass[i]
-        end
-        plotdata[(T, N)][("energy", Inf)] = energy
-        plotdata[(T, N)][("mass", Inf)] = mass
+nb = EPMAfem.n_basis(model)
+basis_augmentation = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 0),
+                            V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
+                        m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
+                            V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
 
-        if EPMAfem.n_basis(problem).nΩ.p > 2*6
-            for (i, (ϵ_lr3, ψ_lr3)) in enumerate(sol_lr3)
-                ψp_lr3, ψm_lr3 = EPMAfem.pmview(ψ_lr3, model)
-                energy_lr3[i] = dot(ψp_lr3, Mp*ψp_lr3) + dot(ψm_lr3, Mm*ψm_lr3)
-                mass_lr3[i] = dot(xp, ψp_lr3*Ωp) + dot(xm, ψm_lr3*Ωm)
-            end
-            plotdata[(T, N)][("energy", 3)] = energy_lr3
-            plotdata[(T, N)][("mass", 3)] = mass_lr3
-        end
+basis_augmentation2 = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 0),
+                            V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 2)),
+                        m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
+                            V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
 
-        if EPMAfem.n_basis(problem).nΩ.p > 2*10
-            for (i, (ϵ_lr10, ψm_lr10)) in enumerate(sol_lr10)
-                ψp_lr10, ψm_lr10 = EPMAfem.pmview(ψm_lr10, model)
-                energy_lr10[i] = dot(ψp_lr10, Mp*ψp_lr10) + dot(ψm_lr10, Mm*ψm_lr10)
-                mass_lr10[i] = dot(xp, ψp_lr10*Ωp) + dot(xm, ψm_lr10*Ωm)
-            end
-            plotdata[(T, N)][("energy", 10)] = energy_lr10
-            plotdata[(T, N)][("mass", 10)] = mass_lr10
-        end
+copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
 
-        if EPMAfem.n_basis(problem).nΩ.p > 2*20
-            for (i, (ϵ_lr20, ψm_lr20)) in enumerate(sol_lr20)
-                ψp_lr20, ψm_lr20 = EPMAfem.pmview(ψm_lr20, model)
-                energy_lr20[i] = dot(ψp_lr20, Mp*ψp_lr20) + dot(ψm_lr20, Mm*ψm_lr20)
-                mass_lr20[i] = dot(xp, ψp_lr20*Ωp) + dot(xm, ψm_lr20*Ωm)
-            end
-            plotdata[(T, N)][("energy", 20)] = energy_lr20
-            plotdata[(T, N)][("mass", 20)] = mass_lr20
-        end
-    end
+copy!(@view(basis_augmentation2.p.V[:, 1]), Ωp)
+copy!(@view(basis_augmentation2.p.V[:, 2]), Ωp_b)
+
+basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> Matrix
+basis_augmentation2.p.V .= qr(basis_augmentation2.p.V).Q |> Matrix
+
+system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5));
+system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation);
+system_lr10_aug2 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation2);
+
+system_lr20_aug2 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=10, m=10), basis_augmentation=basis_augmentation2);
+
+
+sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
+sol_lr10 = EPMAfem.IterableDiscretePNSolution(system_lr10, source, initial_solution=initial_condition);
+sol_lr10_aug = EPMAfem.IterableDiscretePNSolution(system_lr10_aug, source, initial_solution=initial_condition);
+sol_lr10_aug2 = EPMAfem.IterableDiscretePNSolution(system_lr10_aug2, source, initial_solution=initial_condition);
+sol_lr20_aug2 = EPMAfem.IterableDiscretePNSolution(system_lr20_aug2, source, initial_solution=initial_condition);
+
+#### GIF
+# Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.architecture(problem)
+masses = zeros(length(sol), 5)
+# momentum = zeros(length(sol), 5)
+energies = zeros(length(sol), 5)
+outflux = zeros(length(sol), 5)
+ranksp = zeros(length(sol), 4)
+ranksm = zeros(length(sol), 4)
+@gif for (i, ((ϵ, ψ), (ϵ1, ψ1), (ϵ2, ψ2), (ϵ3, ψ3), (ϵ4, ψ4))) in enumerate(zip(sol, sol_lr10, sol_lr10_aug, sol_lr10_aug2, sol_lr20_aug2))
+    ψp, ψm = EPMAfem.pmview(ψ, model)
+    @show dot(ψp, ψp) + dot(ψm, ψm), dot(ψp, ψp), dot(ψm, ψm)
+    ψp1, ψm1 = EPMAfem.pmview(ψ1, model)
+    ψp2, ψm2 = EPMAfem.pmview(ψ2, model)
+    ψp3, ψm3 = EPMAfem.pmview(ψ3, model)
+    ψp4, ψm4 = EPMAfem.pmview(ψ4, model)
+    func = EPMAfem.SpaceModels.interpolable((p=collect(ψp*Ωp), m=collect(ψm*Ωm)), EPMAfem.space_model(model))
+    func1 = EPMAfem.SpaceModels.interpolable((p=collect(ψp1*Ωp), m=collect(ψm1*Ωm)), EPMAfem.space_model(model))
+    func2 = EPMAfem.SpaceModels.interpolable((p=collect(ψp2*Ωp), m=collect(ψm2*Ωm)), EPMAfem.space_model(model))
+    func3 = EPMAfem.SpaceModels.interpolable((p=collect(ψp3*Ωp), m=collect(ψm3*Ωm)), EPMAfem.space_model(model))
+    func4 = EPMAfem.SpaceModels.interpolable((p=collect(ψp4*Ωp), m=collect(ψm4*Ωm)), EPMAfem.space_model(model))
+    plot(-1.5:0.01:1.5, x -> func(VectorValue(x)), label=L"P_{%$(N)}")
+    plot!(-1.5:0.01:1.5, x -> func1(VectorValue(x)), label=L"P_{%$(N)} \textrm{(5, default)}")
+    plot!(-1.5:0.01:1.5, x -> func2(VectorValue(x)), label=L"P_{%$(N)} \textrm{(5, mass)}")
+    plot!(-1.5:0.01:1.5, x -> func3(VectorValue(x)), label=L"P_{%$(N)} \textrm{(5, mass + outflux)}")
+    plot!(-1.5:0.01:1.5, x -> func4(VectorValue(x)), label=L"P_{%$(N)} \textrm{(10, mass + outflux)}")
+    plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000, legend=:bottom)
+    xlabel!(L"x")
+    ylabel!(L"\langle \psi \rangle")
+    savefig(joinpath(figpath, "snapshots/t_$(ϵ).png"))
+    # heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y)), aspect_ratio=:equal)
+
+    masses[i, 1] = dot(xp, ψp*Ωp) + dot(xm, ψm*Ωm)
+    # momentum[i, 1] = dot(xp, ψp*Ωp_m) + dot(xm, ψm*Ωm_m)
+    energies[i, 1] = dot(ψp, Mp*ψp) + dot(ψm, Mm*ψm)
+    outflux[i, 1] = dot(xp_b, ψp*Ωp_b)
+
+    masses[i, 2] = dot(xp, ψp1*Ωp) + dot(xm, ψm1*Ωm)
+    masses[i, 3] = dot(xp, ψp2*Ωp) + dot(xm, ψm2*Ωm)
+    masses[i, 4] = dot(xp, ψp3*Ωp) + dot(xm, ψm3*Ωm)
+    masses[i, 5] = dot(xp, ψp4*Ωp) + dot(xm, ψm4*Ωm)
+    # momentum[i, 2] = dot(xp, ψp1*Ωp_m) + dot(xm, ψm1*Ωm_m)
+    # momentum[i, 3] = dot(xp, ψp2*Ωp_m) + dot(xm, ψm2*Ωm_m)
+    # momentum[i, 4] = dot(xp, ψp3*Ωp_m) + dot(xm, ψm3*Ωm_m)
+    # momentum[i, 5] = dot(xp, ψp4*Ωp_m) + dot(xm, ψm4*Ωm_m)
+
+    energies[i, 2] = dot(ψp1, Mp*ψp1) + dot(ψm1, Mm*ψm1)
+    energies[i, 3] = dot(ψp2, Mp*ψp2) + dot(ψm2, Mm*ψm2)
+    energies[i, 4] = dot(ψp3, Mp*ψp3) + dot(ψm3, Mm*ψm3)
+    energies[i, 5] = dot(ψp4, Mp*ψp4) + dot(ψm4, Mm*ψm4)
+    outflux[i, 2] = dot(xp_b, ψp1*Ωp_b)
+    outflux[i, 3] = dot(xp_b, ψp2*Ωp_b)
+    outflux[i, 4] = dot(xp_b, ψp3*Ωp_b)
+    outflux[i, 5] = dot(xp_b, ψp4*Ωp_b)
 end
-
-# dot(bΩp, bΩp) ./ 4π * dot(bxp, Mp*bxp)
 
 using Serialization
-serialize(joinpath(figpath, "plotdata.jls"), plotdata)
-plotdata = deserialize(joinpath(figpath, "plotdata.jls"))
+serialize(joinpath(figpath, "data.jls"), (masses, energies, outflux))
 
-N_to_color = Dict(3 => 1, 7 => 2, 15 => 3, 21 => 4)
-# FINAL
-for T in Ts
-    p1 = plot()
-    for N in Ns
-        plot!(p1, -1.5:0.01:1.5, x -> plotdata[(T, N)][("final", Inf)](VectorValue(x)), label=L"P_{%$(N)}", color=N_to_color[N])
-        m_every = 15
-        if haskey(plotdata[(T, N)], ("final", 3))
-            plot!(p1, -1.5:0.01:1.5, x -> plotdata[(T, N)][("final", 3)](VectorValue(x)),  label=L"P_{%$(N)}, r=3", color=N_to_color[N], ls=:dot)
-        end
-        if haskey(plotdata[(T, N)], ("final", 10))
-            plot!(p1, -1.5:0.01:1.5, x -> plotdata[(T, N)][("final", 10)](VectorValue(x)), label=nothing, color=N_to_color[N], ls=:solid)
-            scatter!(p1, -1.5:0.15:1.5, x -> plotdata[(T, N)][("final", 10)](VectorValue(x)), label=nothing, color=N_to_color[N], marker=:x)
-            plot!(p1, [missing], [missing], label=L"P_{%$(N)}, r=10", color=N_to_color[N], marker=:x, ls=:solid)
-        end
-    end
-    plot!(p1, size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm, legend=:topright)
-    xlabel!(p1, L"x")
-    ylabel!(p1, L"\psi_0")
-    savefig(p1, joinpath(figpath, "T_$(T)_final.png"))
+
+begin
+    t = energy_model
+    plot(t, energies[:, 1], label=L"P_{%$(N)}")
+    plot!(t, energies[:, 2], label=L"P_{%$(N)} \textrm{(default)}")
+    plot!(t, energies[:, 3], label=L"P_{%$(N)} \textrm{(mass)}")
+    plot!(t, energies[:, 4], label=L"P_{%$(N)} \textrm{(mass + bc)}")
+
+    zoom_range = 20:1:55
+    zoom_datarange = (44.30, 44.32)
+    plot!([t[first(zoom_range)], t[last(zoom_range)]], [zoom_datarange[1], zoom_datarange[1]], color=:black, label=nothing, linewidth=1)
+    plot!([t[first(zoom_range)], t[last(zoom_range)]], [zoom_datarange[2], zoom_datarange[2]], color=:black, label=nothing, linewidth=1)
+    plot!([t[first(zoom_range)], t[first(zoom_range)]], [zoom_datarange[1], zoom_datarange[2]], color=:black, label=nothing, linewidth=1)
+    plot!([t[last(zoom_range)], t[last(zoom_range)]], [zoom_datarange[1], zoom_datarange[2]], color=:black, label=nothing, linewidth=1)
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm, legend=:bottomleft)
+    xlabel!(L"t")
+    ylabel!(L"\mathcal{E}(t)")
+    p_i = plot!([t[zoom_range] t[zoom_range] t[zoom_range] t[zoom_range]],
+            [energies[zoom_range, 1] energies[zoom_range, 2] energies[zoom_range, 3] energies[zoom_range, 4]], 
+            color=[1 2 3 4],
+            ls=[:solid, :solid, :solid, :solid],
+            label=nothing,
+            inset=(1, bbox(0.4, 0.4, 0.5, 0.35, :bottom, :right)), subplot=2, ylims=zoom_datarange, xflip=false, framestyle=:box, tickfontsize=5)
+    savefig(joinpath(figpath, "energy.png"))
 end
 
-# ENERGY
-for T in Ts
-    for N in Ns
-        @show plotdata[(T, N)]["energy_init"]
+function cumtrapz(v, Δ)
+    ∫v = similar(v)
+    ∫v[1] = v[1]*Δ/2
+    for i in 2:length(v)
+        ∫v[i] = ∫v[i-1] + (v[i-1] + v[i])*Δ/2 
     end
-    E_init = plotdata[(T, 21)]["energy_init"]/4π
-    # E_init = hquadrature(x -> init_x(x)^2, -1.5, 1.5)[1]
-    p2 = plot()
-    for N in Ns
-        plot!(p2, 1.0 .- energy_model, abs.(reverse(plotdata[(T, N)][("energy", Inf)]/(4π) .- E_init)), label=L"P_{%$(N)}", color=N_to_color[N])
-        if haskey(plotdata[(T, N)], ("energy", 3))
-            plot!(p2, 1.0 .- energy_model, abs.(reverse(plotdata[(T, N)][("energy", 3)]/(4π) .- E_init)), label=L"P_{%$(N)}, r=3", color=N_to_color[N], ls=:dot)
-        end
-        if haskey(plotdata[(T, N)], ("energy", 10))
-            plot!(p2,1.0 .-  energy_model, abs.(reverse(plotdata[(T, N)][("energy", 10)]/(4π) .- E_init)), label=nothing, color=N_to_color[N], ls=:solid)
-            scatter!(p2, 1.0 .- energy_model[3:5:end], abs.(reverse(plotdata[(T, N)][("energy", 10)]/(4π) .- E_init))[3:5:end] , label=nothing, color=N_to_color[N], marker=:x)
-            plot!(p2, [missing], [missing], label=L"P_{%$(N)}, r=10", color=N_to_color[N], ls=:solid, marker=:x)
-        end
-        if haskey(plotdata[(T, N)], ("energy", 20))
-           plot!(p2, 1.0 .- energy_model, abs.(reverse(plotdata[(T, N)][("energy", 20)]/(4π) .- E_init)), label=L"P_{%$(N)}, r=20", color=N_to_color[N], ls=:dash)
-        end
-    end
-    ylims!(3e-16, 1e-0)
-    plot!(p2, size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm, legend=:topleft, yaxis=:log, yticks=[1e0, 1e-5, 1e-10, 1e-15])
-    xlabel!(p2, L"t")
-    ylabel!(p2, L"|{\mathcal{E}}(t)-\mathcal{E}_0\,\, |")
-    savefig(p2, joinpath(figpath, "T_$(T)_energy.png"))
+    return ∫v
 end
 
-# MASS
-for T in Ts
-    for N in Ns
-        @show plotdata[(T, N)]["mass_init"]
-    end
-    M_init = plotdata[(T, 21)]["mass_init"]
-    p3 = plot()
-    for N in Ns
-        plot!(p3, (1 .- energy_model), abs.(reverse(plotdata[(T, N)][("mass", Inf)]) .- M_init), label=L"P_{%$(N)}", color=N_to_color[N])
-        if haskey(plotdata[(T, N)], ("mass", 3))
-            plot!(p3, (1 .- energy_model), abs.(reverse(plotdata[(T, N)][("mass", 3)]) .- M_init), label=L"P_{%$(N)}, r=3", color=N_to_color[N], ls=:dot)
-        end
-        if haskey(plotdata[(T, N)], ("mass", 10))
-            plot!(p3, (1 .- energy_model), abs.(reverse(plotdata[(T, N)][("mass", 10)]) .- M_init), label=nothing, color=N_to_color[N], ls=:solid)
-            scatter!(p3, (1 .- energy_model)[3:5:end], abs.(reverse(plotdata[(T, N)][("mass", 10)])[3:5:end] .- M_init), label=nothing, color=N_to_color[N], marker=:x)
-            plot!(p3, [missing], [missing], label=L"P_{%$(N)}, r=10", color=N_to_color[N], ls=:solid, marker=:x)
-        end
-        if haskey(plotdata[(T, N)], ("mass", 20))
-           plot!(p3, (1. .- energy_model), abs.(reverse(plotdata[(T, N)][("mass", 20)]) .- M_init), label=L"P_{%$(N)}, r=20", color=N_to_color[N], ls=:dash)
-        end
-    end
-    ylims!(3e-16, 1e-0)
-    plot!(p3, size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm, legend=:topleft, yaxis=:log, yticks=[1e0, 1e-5, 1e-10, 1e-15])
-    xlabel!(p3, L"t")
-    ylabel!(p3, L"|M(t) - M_0\, \, |")
-    savefig(p3, joinpath(figpath, "T_$(T)_mass.png"))
-end
+begin
+    t = energy_model
 
+    plot(t, abs.(masses[:, 1] .- 1.0), yaxis=:log, label=L"P_{%$(N)}")
+    plot!(t, abs.(masses[:, 2] .- 1.0), label=L"P_{%$(N)} \textrm{(default)}")
+    plot!(t, abs.(masses[:, 3] .- 1.0), label=L"P_{%$(N)} \textrm{(mass)}")
+    plot!(t, abs.(masses[:, 4] .- 1.0), label=L"P_{%$(N)} \textrm{(mass + bc)}")
+
+    plot!(t, abs.(masses[:, 1] .+ cumtrapz(outflux[:, 1], step(energy_model)) .- 1.0), yaxis=:log, color=1, ls=:dash, label=nothing)
+    plot!(t, abs.(masses[:, 2] .+ cumtrapz(outflux[:, 2], step(energy_model)) .- 1.0), color=2, ls=:dash, label=nothing)
+    plot!(t, abs.(masses[:, 3] .+ cumtrapz(outflux[:, 3], step(energy_model)) .- 1.0), color=3, ls=:dash, label=nothing)
+    plot!(t, abs.(masses[:, 4] .+ cumtrapz(outflux[:, 4], step(energy_model)) .- 1.0), color=4, ls=:dash, label=nothing)
+    plot!([], [], color=:gray, ls=:dash, label="boundary flux corr.")
+    ylims!(1e-16, 1.0)
+    yticks!([1, 1e-2, 1e-4, 1e-6, 1e-8, 1e-10, 1e-12, 1e-14, 1e-16])
+    
+    plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm, legend=:topleft)
+    xlabel!(L"t")
+    ylabel!(L"|\mathcal{M}(t) - \mathcal{M}(0)|")
+    savefig(joinpath(figpath, "mass.png"))
+end

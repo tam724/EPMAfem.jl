@@ -152,3 +152,15 @@ invariant(tisvd_A, u, v)
 U*Diagonal(S)*transpose(V) .- A
 Uk*Diagonal(Sk)*transpose(Vk) .- A
 
+
+
+R = EPMAfem.CUDA.rand(5, 2)
+
+t = EPMAfem._orthonormalize(EPMAfem.cuda(), R, R[:, 1])
+
+t'*t
+
+
+
+
+[system_lr_2_cons.basis_augmentation.m.V EPMAfem.CUDA.rand(210, 5)]
