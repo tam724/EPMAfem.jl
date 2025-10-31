@@ -386,8 +386,8 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Lt₁, Ltp₁, Ltm₁ = _decompose_pm(system.tmp.tmp1, ((ranks.p, nΩp), (ranks.m, nΩm)))
         mul!(Lt₁, system.mats.inv_matBMᵤ, rhs_Lt, true, false)
 
-        Vphat = _orthonormalize(architecture(system.problem), transpose(Ltp₁), transpose(Vtp₀))
-        Vmhat = _orthonormalize(architecture(system.problem), transpose(Ltm₁), transpose(Vtm₀))
+        Vphat = _orthonormalize(architecture(system.problem), transpose(Vtp₀), transpose(Ltp₁))
+        Vmhat = _orthonormalize(architecture(system.problem), transpose(Vtm₀), transpose(Ltm₁))
         Np = transpose(Vphat)*transpose(Vtp₀)
         Nm = transpose(Vmhat)*transpose(Vtm₀)
         aug_ranks_v = (p=size(Vphat, 2), m=size(Vmhat, 2))
@@ -410,6 +410,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
 
             #update the rhs from the previous energy/time step
             mul!(rhs_K, system.mats.rhsBMᵥ, K₀, -1, true)
+            # @show sum(Kp₀ * transpose(Vphat) * system.basis_augmentation.p.V)
         end
     end
     CUDA.NVTX.@range "aug K-step" begin
@@ -417,51 +418,41 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         K₁, Kp₁, Km₁ = _decompose_pm(system.tmp.tmp1, ((nxp, aug_ranks_v.p), (nxm, aug_ranks_v.m)))
         mul!(K₁, system.mats.inv_matBMᵥ, rhs_K, true, false)
     end
+    # @show sum(Kp₁ * transpose(Vphat) * system.basis_augmentation.p.V)
 
     CUDA.NVTX.@range "truncate" begin
-        vphat = transpose(Vphat) * system.basis_augmentation.p.V
-        vmhat = transpose(Vmhat) * system.basis_augmentation.m.V
-        Up_cons = qr(Kp₁ * vphat)
-        Um_cons = qr(Km₁ * vmhat)
-        Kp₁_tilde = qr(Kp₁ .- Kp₁*vphat*(vphat')) # project out the mass carrying mode(s)
-        Km₁_tilde = qr(Km₁ .- Km₁*vmhat*(vmhat'))
+        Wphat = transpose(Vphat) * system.basis_augmentation.p.V
+        Wmhat = transpose(Vmhat) * system.basis_augmentation.m.V
 
-        Pp, Sp, Qp = svd(Kp₁_tilde.R)
-        Pm, Sm, Qm = svd(Km₁_tilde.R)
+        VRptilde = qr(Vphat .- system.basis_augmentation.p.V * transpose(Wphat))
+        VRmtilde = qr(Vmhat .- system.basis_augmentation.m.V * transpose(Wmhat))
+
+        Pp, Sp, Qp = svd(Kp₁*transpose(VRptilde.R))
+        Pm, Sm, Qm = svd(Km₁*transpose(VRmtilde.R))
 
         ranks = _compute_new_ranks(system, Sp, Sm)
-        n_aug_p = size(system.basis_augmentation.p.V, 2)
-        n_aug_m = size(system.basis_augmentation.m.V, 2)
+        n_aug_p, n_aug_m = size(system.basis_augmentation.p.V, 2), size(system.basis_augmentation.m.V, 2)
         ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_p), m=min(ranks.m, ranks.m+n_aug_m))
         x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
         ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
 
-        σp = Up_cons.R;
+        URp = qr([Kp₁*Wphat Pp[:, 1:ranks.p-n_aug_p]])
+        URm = qr([Km₁*Wmhat Pm[:, 1:ranks.m-n_aug_m]])
+
         m_type = mat_type(architecture(system.problem))
-        Up₁_ = qr([m_type(Up_cons.Q) Kp₁_tilde.Q*Pp[:, 1:ranks.p-n_aug_p]])
-        Vp₁_ = qr([system.basis_augmentation.p.V Vphat*Qp[:, 1:ranks.p-n_aug_p]])
-        Sp₁_ = [
-            σp zeros(n_aug_p, ranks.p-n_aug_p)
-            zeros(ranks.p-n_aug_p, n_aug_p) Diagonal(Sp[1:ranks.p-n_aug_p])
-        ]
+        Up₁ .= m_type(URp.Q)
+        Um₁ .= m_type(URm.Q)
 
-        Up₁ .= m_type(Up₁_.Q)
-        Vtp₁ .= transpose(m_type(Vp₁_.Q))
-        Sp₁ .= m_type(Up₁_.R) * Sp₁_ * transpose(m_type(Vp₁_.R))
+        Vtp₁ .= transpose([system.basis_augmentation.p.V m_type(VRptilde.Q)*Qp[:, 1:ranks.p-n_aug_p]])
+        Vtm₁ .= transpose([system.basis_augmentation.m.V m_type(VRmtilde.Q)*Qm[:, 1:ranks.m-n_aug_m]])
+
+        @view(Sp₁[:, 1:n_aug_p]) .= @view(URp.R[:, 1:n_aug_p])
+        @view(Sm₁[:, 1:n_aug_m]) .= @view(URm.R[:, 1:n_aug_m])
         
-        # same for m
-        σm = Um_cons.R;
-        Um₁_ = qr([m_type(Um_cons.Q) Km₁_tilde.Q*Pm[:, 1:ranks.m-n_aug_m]])
-        Vm₁_ = qr([system.basis_augmentation.m.V Vmhat*Qm[:, 1:ranks.m-n_aug_m]])
-        Sm₁_ = [
-            σm zeros(n_aug_m, ranks.m-n_aug_m)
-            zeros(ranks.m-n_aug_m, n_aug_m) Diagonal(Sm[1:ranks.m-n_aug_m])
-        ]
-
-        Um₁ .= m_type(Um₁_.Q)
-        Vtm₁ .= transpose(m_type(Vm₁_.Q))
-        Sm₁ .= m_type(Um₁_.R) * Sm₁_ * transpose(m_type(Vm₁_.R))
+        mul!(@view(Sp₁[:, n_aug_p+1:end]), @view(URp.R[:, n_aug_p+1:end]), Diagonal(Sp[1:ranks.p-n_aug_p]))
+        mul!(@view(Sm₁[:, n_aug_m+1:end]), @view(URm.R[:, n_aug_m+1:end]), Diagonal(Sm[1:ranks.m-n_aug_m]))
     end
+    # @show sum(Up₁ * Sp₁ * Vtp₁ * system.basis_augmentation.p.V)
 end
 
 function allocate_solution_vector(system::DiscreteDLRPNSystem5)

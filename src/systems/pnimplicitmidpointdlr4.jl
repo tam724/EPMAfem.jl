@@ -320,34 +320,34 @@ function initialize!(current_solution::LowwRankSolution, system, initial_solutio
 
     # truncate, if the dlr is adaptive
     if !isnothing(system.basis_augmentation)
-        U0p, S0p, V0p = svd(ψ0p * (I - system.basis_augmentation.p.V * system.basis_augmentation.p.V')) # project out the mass carrying modes
-        U0m, S0m, V0m = svd(ψ0m)
-        ranks = _compute_new_ranks(system, S0p, S0m)
-        n_aug_u = size(system.basis_augmentation.p.V, 2)
-        ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_u), m=ranks.m)
 
-        Up_cons = qr(ψ0p * system.basis_augmentation.p.V)
+        ψ0p_tilde = ψ0p .- ψ0p * system.basis_augmentation.p.V * transpose(system.basis_augmentation.p.V)
+        ψ0m_tilde = ψ0m .- ψ0m * system.basis_augmentation.m.V * transpose(system.basis_augmentation.m.V)
 
-        σ = Up_cons.R;
+        Pp, Sp, Qp = svd(ψ0p_tilde)
+        Pm, Sm, Qm = svd(ψ0m_tilde)
+
+        ranks = _compute_new_ranks(system, Sp, Sm)
+        n_aug_p, n_aug_m = size(system.basis_augmentation.p.V, 2), size(system.basis_augmentation.m.V, 2)
+        ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_p), m=min(ranks.m, ranks.m+n_aug_m))
+        current_solution.ranks.p[], current_solution.ranks.m[] = ranks.p, ranks.m
+        ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(current_solution)
+
+        URp = qr([ψ0p*system.basis_augmentation.p.V Pp[:, 1:ranks.p-n_aug_p]])
+        URm = qr([ψ0m*system.basis_augmentation.m.V Pm[:, 1:ranks.m-n_aug_m]])
+
         m_type = mat_type(architecture(system.problem))
-        Up0_ = qr([m_type(Up_cons.Q) U0p[:, 1:ranks.p-n_aug_u]])
-        Vp0_ = qr([system.basis_augmentation.p.V V0p[:, 1:ranks.p-n_aug_u]])
-        Sp0_ = [
-            σ zeros(n_aug_u, ranks.p-n_aug_u)
-            zeros(ranks.p-n_aug_u, n_aug_u) Diagonal(S0p[1:ranks.p-n_aug_u])
-        ]
+        Up₁ .= m_type(URp.Q)
+        Um₁ .= m_type(URm.Q)
 
-        sol = current_solution
-        sol.ranks.p[], sol.ranks.m[] = ranks.p, ranks.m
-        ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
+        Vtp₁ .= transpose([system.basis_augmentation.p.V Qp[:, 1:ranks.p-n_aug_p]])
+        Vtm₁ .= transpose([system.basis_augmentation.m.V Qm[:, 1:ranks.m-n_aug_m]])
+
+        @view(Sp₁[:, 1:n_aug_p]) .= @view(URp.R[:, 1:n_aug_p])
+        @view(Sm₁[:, 1:n_aug_m]) .= @view(URm.R[:, 1:n_aug_m])
         
-        copy!(Up, m_type(Up0_.Q))
-        copy!(Vtp, transpose(m_type(Vp0_.Q)))
-        copy!(Sp, m_type(Up0_.R) * Sp0_ * transpose(m_type(Vp0_.R)))
-
-        copy!(Um, @view(U0m[:, 1:sol.ranks.m[]]))
-        copy!(Sm, Diagonal(@view(S0m[1:sol.ranks.m[]])))
-        copy!(Vtm, transpose(V0m)[1:sol.ranks.m[], :])
+        mul!(@view(Sp₁[:, n_aug_p+1:end]), @view(URp.R[:, n_aug_p+1:end]), Diagonal(Sp[1:ranks.p-n_aug_p]))
+        mul!(@view(Sm₁[:, n_aug_m+1:end]), @view(URm.R[:, n_aug_m+1:end]), Diagonal(Sm[1:ranks.m-n_aug_m]))
     else
         U0p, S0p, V0p = svd(ψ0p)
         U0m, S0m, V0m = svd(ψ0m)
