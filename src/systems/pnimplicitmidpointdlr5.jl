@@ -26,15 +26,28 @@ using EPMAfem.PNLazyMatrices: only_unique
 
 function init_basis_augmentation(pbl, aug::Symbol)
     if aug == :mass
-        nb = EPMAfem.n_basis(pbl)
-        basis_augmentation = (p=(V = EPMAfem.allocate_mat(architecture(pbl), nb.nΩ.p, 1), ),
-                              m=(V = EPMAfem.allocate_mat(architecture(pbl), nb.nΩ.m, 0), ))
-        Ωp, _ = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(pbl.model), Ω->1)
+        nb = n_basis(pbl)
+        basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, 1), ),
+                              m=(V = allocate_mat(architecture(pbl), nb.nΩ.m, 0), ))
+        Ωp, _ = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω->1)
         copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
         basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> mat_type(architecture(pbl))
         return (1, 0), basis_augmentation
+    elseif aug == :mass_outflux
+        nb = n_basis(pbl)
+        ns = n_sums(pbl)
+        basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, 1+ns.nd), ),
+                              m=(V = allocate_mat(architecture(pbl), nb.nΩ.m, 0), ))
+        Ωp, _ = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω->1) |> architecture(pbl)
+        # vec(Ωp' * problem.direction_discretization.absΩp[1])
+        copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
+        for i in 1:ns.nd
+            copy!(@view(basis_augmentation.p.V[:, 1+i]), pbl.direction_discretization.absΩp[i]*Ωp)
+        end
+        basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> mat_type(architecture(pbl))
+        return (1+ns.nd, 0), basis_augmentation
     else
-        error("$aug ")
+        error("$aug")
     end 
 end
 
@@ -452,7 +465,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         mul!(@view(Sp₁[:, n_aug_p+1:end]), @view(URp.R[:, n_aug_p+1:end]), Diagonal(Sp[1:ranks.p-n_aug_p]))
         mul!(@view(Sm₁[:, n_aug_m+1:end]), @view(URm.R[:, n_aug_m+1:end]), Diagonal(Sm[1:ranks.m-n_aug_m]))
     end
-    # @show sum(Up₁ * Sp₁ * Vtp₁ * system.basis_augmentation.p.V)
+    #@show x.ranks # sum(Up₁ * Sp₁ * Vtp₁ * system.basis_augmentation.p.V)
 end
 
 function allocate_solution_vector(system::DiscreteDLRPNSystem5)

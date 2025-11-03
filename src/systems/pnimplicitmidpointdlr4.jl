@@ -296,13 +296,11 @@ function fillzero!(sol::LowwRankSolution, system)
 
     if !isnothing(system.basis_augmentation)
         # make sure that the k and L step satisfy the weak local conservation laws..
-        n_p_u = size(system.basis_augmentation.p.U, 2) #TODO: only p for now..
+        #n_p_u = 0 #size(system.basis_augmentation.p.U, 2) #TODO: only p for now..
         n_p_v = size(system.basis_augmentation.p.V, 2)
 
-        copy!(Up, Matrix(qr([system.basis_augmentation.p.U rand(size(Up, 1), sol.ranks.p[] - n_p_u)]).Q))
-        copy!(Vtp, transpose(
-            Matrix(qr([system.basis_augmentation.p.V rand(size(Vtp, 2), sol.ranks.p[] - n_p_v)]).Q)
-        ))
+        copy!(Up, @view(qr(rand(size(Up)...)).Q[:, 1:sol.ranks.p[]]))
+        copy!(Vtp, Matrix(transpose(Matrix(qr([system.basis_augmentation.p.V |> collect rand(size(Vtp, 2), sol.ranks.p[] - n_p_v)]).Q))))
         fill!(Sp, zero(eltype(Sp)))
     else
         # TODO: this is weird and allocates to work together with CUDA!

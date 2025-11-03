@@ -6,6 +6,7 @@
 
     reverse
     initial_solution
+    step_callback
 end
 
 function fillzero!(x::AbstractVector{T}, _) where T
@@ -20,13 +21,13 @@ function initialize_or_fillzero!(it::IterableDiscretePNSolution, initial_solutio
     initialize!(it.current_solution, it.system, initial_solution)
 end
 
-function IterableDiscretePNSolution(system::AbstractDiscretePNSystem, b::AbstractDiscretePNVector; initial_solution=nothing)
+function IterableDiscretePNSolution(system::AbstractDiscretePNSystem, b::AbstractDiscretePNVector; initial_solution=nothing, step_callback=nothing )
     if system.adjoint != _is_adjoint_vector(b)
         @warn "System {$(system.adjoint)} is marked as not compatible with the vector {$(_is_adjoint_vector(b))}"
     end
     current_solution = allocate_solution_vector(system)
     b_assembler = initialize_assembly(b)
-    return IterableDiscretePNSolution(system, b_assembler, current_solution, false, initial_solution)
+    return IterableDiscretePNSolution(system, b_assembler, current_solution, false, initial_solution, step_callback)
 end
 
 function _is_adjoint_solution(ψ::IterableDiscretePNSolution)
@@ -44,7 +45,7 @@ function Base.iterate(it::IterableDiscretePNSolution)
         @info "iterating in reverse"
         idx = last_index(ϵs, _is_adjoint_solution(it))
     end
-    @show idx
+    if !isnothing(it.step_callback) it.step_callback(idx, it.current_solution) end
     return idx => it.current_solution, idx
 end
 
@@ -79,7 +80,7 @@ function Base.iterate(it::IterableDiscretePNSolution, idx::ϵidx)
         # update the system from idx.i -> idx.i - 1
         step_nonadjoint!(it.current_solution, it.system, it.b_assembler, idx, Δϵ)
     end
-    @show idx_next
+    if !isnothing(it.step_callback) it.step_callback(idx_next, it.current_solution) end
     return idx_next => it.current_solution, idx_next
 end
 
