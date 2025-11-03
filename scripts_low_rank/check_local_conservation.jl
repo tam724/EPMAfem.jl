@@ -10,14 +10,12 @@ using Distributions
 using EPMAfem.HCubature
 using LaTeXStrings
 
-figpath = mkpath(joinpath(dirname(@__FILE__), "figures/1D_vacuum_linesource"))
-
 struct PlaneSourceEquations{S} <: EPMAfem.AbstractPNEquations end
 EPMAfem.number_of_elements(::PlaneSourceEquations) = 1
 EPMAfem.number_of_scatterings(::PlaneSourceEquations) = 1
 EPMAfem.stopping_power(::PlaneSourceEquations, e, ϵ) = 1.0
-EPMAfem.absorption_coefficient(eq::PlaneSourceEquations, e, ϵ) = 0.0 # 1.0 
-EPMAfem.scattering_coefficient(eq::PlaneSourceEquations, e, i, ϵ) = 0.0 #1.0
+EPMAfem.absorption_coefficient(eq::PlaneSourceEquations, e, ϵ) = 0.0
+EPMAfem.scattering_coefficient(eq::PlaneSourceEquations, e, i, ϵ) = 0.0
 EPMAfem.mass_concentrations(::PlaneSourceEquations, e, x) = 1.0
 
 EPMAfem.scattering_kernel(::PlaneSourceEquations{Inf}, e, i) = μ -> 1/(4π)
@@ -27,14 +25,12 @@ EPMAfem.scattering_kernel(eq::PlaneSourceEquations{T}, e, i) where T = μ -> exp
 energy_model = 0:0.01:1.0
 
 T = Inf
-N = 23
+N = 1
 equations = PlaneSourceEquations{T}()
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (200)))
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (50)))
 direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
 model = EPMAfem.DiscretePNModel(space_model, energy_model, direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
-
-@show N, EPMAfem.n_basis(problem)
 
 # source / boundary condition (here: zero)
 source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
@@ -66,6 +62,26 @@ copy!(ψ0m, bxm .* bΩm')
 Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->1/(4π)) |> EPMAfem.architecture(problem)
 Ωp_m, Ωm_m = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->EPMAfem.Dimensions.Ωz(Ω)/(4π)) |> EPMAfem.architecture(problem)
 xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> 1.0) |> EPMAfem.architecture(problem)
+
+in_interval(x, (l, r)) = x >= l && x <= r
+xp_local, xm_local = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> in_interval(x[1], (-0.3, 0.3))) |> EPMAfem.architecture(problem)
+
+sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
+
+mass = zeros(length(sol))
+local_mass = zeros(length(sol))
+
+@gif for (i, (ϵ, ψ)) in enumerate(sol)
+    @show ϵ
+    ψp, ψm = EPMAfem.pmview(ψ, model)
+    func = EPMAfem.SpaceModels.interpolable((p=ψp*Ωp, m=ψm*Ωm), EPMAfem.space_model(model))
+    plot(-1.5:0.01:1.5, x -> func(VectorValue(x)))
+    mass[i] = dot(xp, ψp, Ωp) + dot(xm, ψm, Ωm)
+    local_mass[i] = dot(xp_local, ψp, Ωp) + dot(xm_local, ψm, Ωm)
+end
+
+plot(mass .- 1.0, yaxis=:log)
+ylims!(1e-15, 1.0)
 
 # Ωp_b2 = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(Ω -> abs(Ω[1])/(4π)), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
 # xp_b2 = EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫∂R_ngv{EPMAfem.Dimensions.Z}(x -> 1.0), EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model))) .|> abs
