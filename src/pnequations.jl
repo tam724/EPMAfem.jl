@@ -57,9 +57,9 @@ function stopping_power(::PNEquations, e, ϵ)
     # for viz:
     # return 1.0
     if e == 1
-        return exp(-ϵ*0.5)
+        return 1/(sqrt(5ϵ)+ 1e-10)
     elseif e == 2
-        return exp(-ϵ*0.8)
+        return 1/(sqrt(2ϵ)+ 1e-10)
     end 
 end
 
@@ -72,9 +72,9 @@ function scattering_coefficient(::PNEquations, e, i, ϵ)
     # for viz:
     # return 20.0
     if e == 1
-        return 2*exp(-ϵ*0.7)
+        return 5*exp(-ϵ*0.7)
     elseif e == 2
-        return 2*exp(-ϵ*1.1)
+        return 5*exp(-ϵ*1.1)
     end 
 end
 

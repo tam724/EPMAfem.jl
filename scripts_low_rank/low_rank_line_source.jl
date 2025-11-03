@@ -18,20 +18,20 @@ EPMAfem.scattering_kernel(::LineSourceEquations, e, i) = μ -> 1/(4π)
 # equations = EPMAfem.filter_exp(LineSourceEquations(), 0.2, 4)
 equations = LineSourceEquations()
 
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (250, 250)))
-N = 37
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (150, 150)))
+N = 47
 direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 2)
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
-problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda())
+problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda(Float64))
 
 # source / boundary condition (here: zero)
-source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cuda(), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
+source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cuda(Float64), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
 
 # initial condition
 σ = 0.03
 # σ = 0.2
 using EPMAfem.HCubature
-# init_x(x) = 1/(2π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(2*σ^2)) #normal gaussian
+# init_x(x) = 1/(2π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(2*σ^2)) # normal gaussian
 # init_x(x) = 1/(8π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(2*σ^2)) # from (https://doi.org/10.1080/00411450.2014.910226)
 init_x(x) = 1/(4π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(4*σ^2)) # from (https://doi.org/10.1051/m2an/2022090)
 init_Ω(_) = 1.0
@@ -46,11 +46,10 @@ bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmoni
 bΩm = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.odd(EPMAfem.direction_model(model)))
 
 nb = EPMAfem.n_basis(problem)
-initial_condition = EPMAfem.allocate_vec(EPMAfem.cuda(), nb.nx.p*nb.nΩ.p + nb.nx.m*nb.nΩ.m)
+initial_condition = EPMAfem.allocate_vec(EPMAfem.cuda(Float64), nb.nx.p*nb.nΩ.p + nb.nx.m*nb.nΩ.m)
 ψ0p, ψ0m = EPMAfem.pmview(initial_condition, model)
 copy!(ψ0p, bxp .* bΩp')
 copy!(ψ0m, bxm .* bΩm')
-
 
 # #### GIF
 # Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.architecture(problem)
@@ -64,20 +63,27 @@ using Serialization
 figpath = mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/"))
 mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/solutions/$(N)"))
 
-probe = EPMAfem.PNProbe(model, EPMAfem.cuda(), ϵ=0.0, Ω=Ω->1.0)
-
-system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
-sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
-func = EPMAfem.interpolable(probe, sol)
-serialize(joinpath(figpath, "solutions/$N/full.jls"), Dict("final" => func))
-
 function compute_sol_and_rank_evolution(sol)
     data = Dict()
     data["ranks"] = (p=zeros(length(sol)), m=zeros(length(sol)))
+    data["mass"] = zeros(length(sol))
+    data["outflux"] = zeros(length(sol))
+    Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(sol.system.problem.model), Ω -> 1.0) |> EPMAfem.architecture(sol.system.problem)
+    xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(sol.system.problem.model), x -> 1.0) |> EPMAfem.architecture(sol.system.problem)
+
+    pbl = sol.system.problem
+    xp_b = unlazy(pbl.space_discretization.∂p[1], vec_size -> EPMAfem.allocate_vec(EPMAfem.architecture(pbl), vec_size))*(EPMAfem.cu(Mp_cpu \ collect(xp)))
+    Ωp_b = vec(Ωp' * pbl.direction_discretization.absΩp[1])
+
     for (i, (ϵ, ψ)) in enumerate(sol)
-        data["ranks"].p[i], data["ranks"].m[i] = ψ.ranks.p[], ψ.ranks.m[]
+        ψp, ψm = EPMAfem.pmview(ψ, sol.system.problem.model)
+        data["mass"][i] = dot(xp, ψp*Ωp) + dot(xm, ψm*Ωm)
+        data["outflux"][i] = dot(xp_b, ψp*Ωp_b)
+        if hasproperty(ψ, :ranks)
+            data["ranks"].p[i], data["ranks"].m[i] = ψ.ranks.p[], ψ.ranks.m[]
+        end
+        @show data["ranks"].p[i], data["ranks"].m[i]
         if i == length(sol)
-            Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(sol.system.problem.model), Ω -> 1.0) |> EPMAfem.architecture(sol.system.problem)
             ψp, ψm = EPMAfem.pmview(ψ, sol.system.problem.model)
             data["final"] = EPMAfem.SpaceModels.interpolable((p=collect(ψp*Ωp), m=collect(ψm*Ωm)), EPMAfem.space_model(sol.system.problem.model))
         end
@@ -85,61 +91,172 @@ function compute_sol_and_rank_evolution(sol)
     return data
 end
 
-system_lr_2 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=50, m=50), tolerance=0.05);
-sol_lr_2 = EPMAfem.IterableDiscretePNSolution(system_lr_2, source, initial_solution=initial_condition);
-serialize(joinpath(figpath, "solutions/$N/lr_2.jls"), compute_sol_and_rank_evolution(sol_lr_2))
+# system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=100, m=100), tolerance=0.05, basis_augmentation=:mass, solver=Krylov.minres);
+# sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition);
+# Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.cuda(Float64)
 
-system_lr_3 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=100, m=100), tolerance=0.025);
-sol_lr_3 = EPMAfem.IterableDiscretePNSolution(system_lr_3, source, initial_solution=initial_condition);
-serialize(joinpath(figpath, "solutions/$N/lr_3.jls"), compute_sol_and_rank_evolution(sol_lr_3))
+# for (ϵ, ψ) in sol_lr
+#     ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = EPMAfem.USVt(ψ)
+#     @show collect(transpose(Up₁) * Up₁ - I) .|> abs |> maximum
+#     @show collect(transpose(Um₁) * Um₁ - I) .|> abs |> maximum
+#     @show collect(Vtp₁ * transpose(Vtp₁) - I) .|> abs |> maximum
+#     @show collect(Vtm₁ * transpose(Vtm₁) - I) .|> abs |> maximum
 
-system_lr_4 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=200, m=200), tolerance=0.0125);
-sol_lr_4 = EPMAfem.IterableDiscretePNSolution(system_lr_4, source, initial_solution=initial_condition);
-serialize(joinpath(figpath, "solutions/$N/lr_4.jls"), compute_sol_and_rank_evolution(sol_lr_4))
+#     @show collect(transpose(Vtp₁ ) * (Vtp₁ * Ωp) .- Ωp) .|> abs |> maximum
+# end
+# data = compute_sol_and_rank_evolution(sol_lr)
 
-system_lr_5 = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=400, m=400), tolerance=0.00625);
-sol_lr_5 = EPMAfem.IterableDiscretePNSolution(system_lr_5, source, initial_solution=initial_condition);
-serialize(joinpath(figpath, "solutions/$N/lr_5.jls"), compute_sol_and_rank_evolution(sol_lr_5))
+system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
+sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
+serialize(joinpath(figpath, "solutions/$N/full.jls"), compute_sol_and_rank_evolution(sol))
+
+for (i, (rmax, tol)) in collect(enumerate([(100, 0.05), (200, 0.025), (200, 0.0125), (310, 0.00625)]))
+    let
+        system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=rmax, m=rmax), tolerance=tol);
+        sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition);
+        serialize(joinpath(figpath, "solutions/$(N)/lr_$(i).jls"), compute_sol_and_rank_evolution(sol_lr))
+    end
+    let
+        system_lr_cons = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=rmax, m=rmax), tolerance=tol, basis_augmentation=:mass);
+        sol_lr_cons = EPMAfem.IterableDiscretePNSolution(system_lr_cons, source, initial_solution=initial_condition);
+        serialize(joinpath(figpath, "solutions/$(N)/lr_$(i)_cons.jls"), compute_sol_and_rank_evolution(sol_lr_cons))
+    end
+end
 
 using CSV
+using LaTeXStrings
+
 ref_sol = CSV.File(joinpath(figpath, "refPhiFull.txt"), header=0) |> CSV.Tables.matrix
 heatmap(range(-1.5, 1.5, 250), range(-1.5, 1.5, 250), ref_sol, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
 plot!(size=(300, 288), fontfamily="Computer Modern", margin=2Plots.mm, dpi=1000)
+xlabel!(L"x")
+ylabel!(L"y")
 savefig(joinpath(figpath, "ref.png"))
 
-using LaTeXStrings
-path(N, t) = joinpath(figpath, "solutions", "$(N)", t==-1 ? "full.jls" : "lr_$(t).jls")
-tol(t) = Dict(2=>L"5 \times 10^{-2}", 3=>L"2.5 \times 10^{-2}", 4=>L"1.25 \times 10^{-2}", 5=>L"6.25 \times 10^{-3}")[t]
-for N in [17, 27, 37, 47]
-    ts =  [-1, 2, 3, 4, 5]
+path(N, t, ::Val{:def}) = joinpath(figpath, "solutions", "$(N)", t==-1 ? "full.jls" : "lr_$(t).jls")
+path(N, t, ::Val{:cons}) = joinpath(figpath, "solutions", "$(N)", t==-1 ? "full.jls" : "lr_$(t)_cons.jls")
+tol(t) = Dict(1=>L"\vartheta = 5 \times 10^{-2}", 2=>L"\vartheta = 2.5 \times 10^{-2}", 3=>L"\vartheta = 1.25 \times 10^{-2}", 4=>L"\vartheta = 6.25 \times 10^{-3}")[t]
+for N in [47]
+    ts =  [-1, 1, 2, 3, 4]
+    # xy plots
     for t in ts
-        data = deserialize(path(N, t))
-        heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> data["final"](VectorValue(x, y))/4π, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
-        plot!(size=(300, 288), fontfamily="Computer Modern", margin=2Plots.mm, dpi=1000)
-        xlabel!(L"x")
-        ylabel!(L"y")
-        savefig(joinpath(figpath, "final_$(N)_$(t).png"))
+        if t == -1
+            data = deserialize(path(N, t, Val(:def)))
+            heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> data["final"](VectorValue(x, y))/4π, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
+            plot!(size=(300, 288), fontfamily="Computer Modern", margin=2Plots.mm, dpi=1000)
+            xlabel!(L"x")
+            ylabel!(L"y")
+            savefig(joinpath(figpath, "final_$(N)_full.png"))
+        else
+            for cons in [Val(:def), Val(:cons)]
+                data = deserialize(path(N, t, cons))
+                heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> data["final"](VectorValue(x, y))/4π, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
+                plot!(size=(300, 288), fontfamily="Computer Modern", margin=2Plots.mm, dpi=1000)
+                xlabel!(L"x")
+                ylabel!(L"y")
+                savefig(joinpath(figpath, "final_$(N)_$(t)_$(cons).png"))
+            end
+        end
     end
 
-    plot(range(-1.5, 1.5, 250), ref_sol[250÷2, :], color=:black, label="reference", linewidth=2, ls=:dot)
-    for (i, t) in enumerate(ts)
-        data = deserialize(path(N, t))
-        plot!(-1.5:0.01:1.5, x -> data["final"](VectorValue(x, 0.0))/4π, color=i, label=t==-1 ? L"\textrm{full}" : L"\textrm{tol}="*"$(tol(t))")
+    # lineouts
+    for cons in [Val(:def), Val(:cons)]
+        plot(range(-1.5, 1.5, 250), ref_sol[:, 250÷2], color=:gray, ls=:dash, label="reference")
+        for t in [-1, 2, 3, 4]
+            if t == -1
+                data = deserialize(path(N, -1, Val(:def)))
+                plot!(-1.5:0.005:1.5, x -> data["final"](VectorValue(x, 0.0))/4π, label=L"P_{47}", color=:black)
+            else
+                data = deserialize(path(N, t, cons))
+                plot!(-1.5:0.005:1.5, x -> data["final"](VectorValue(x, 0.0))/4π, label=tol(t), color=t-1)
+            end
+        end
+        plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000)
+        savefig(joinpath(figpath, "lineout_$(N)_$(cons).png"))
     end
-    ylabel!(L"\langle \psi \rangle")
-    xlabel!(L"x")
-    plot!(size=(400, 300), fontfamily="Computer Modern", margin=2Plots.mm,  dpi=1000, legend=:topright)
-    savefig(joinpath(figpath, "lineout_$(N).png"))
 
-    plot()
-    for (i, t) in enumerate(ts)
-        if t == -1 continue end
-        data = deserialize(path(N, t))
-        plot!(range(0, 1, 101), data["ranks"].p, color=i, label=t==-1 ? L"\textrm{full}" : L"\textrm{tol}="*"$(tol(t))")
-        plot!(range(0, 1, 101), data["ranks"].m, ls=:dash, color=i, label=nothing)
+    # mass evolution
+    let
+        plot()
+        data = deserialize(path(N, -1, Val(:def)))
+        plot!(EPMAfem.energy_model(model), data["mass"]./4π, color=:black, label=L"P_{47}", ls=:solid, linewidth=2)
+        # default
+        # data = deserialize(path(N, 1, Val(:def)))
+        # plot!(EPMAfem.energy_model(model), data["mass"], label=L"r^+ (\vartheta=5 \times 10^{-2})", color=1, ls=:solid)
+
+        data = deserialize(path(N, 2, Val(:def)))
+        plot!(EPMAfem.energy_model(model), data["mass"]./4π, label=L"\vartheta=2.5 \times 10^{-2}", color=1, ls=:solid)
+
+        data = deserialize(path(N, 3, Val(:def)))
+        plot!(EPMAfem.energy_model(model), data["mass"]./4π, label=L"\vartheta=1.25 \times 10^{-2}", color=2, ls=:solid)
+
+        data = deserialize(path(N, 4, Val(:def)))
+        plot!(EPMAfem.energy_model(model), data["mass"]./4π, label=L"\vartheta=6.25 \times 10^{-3}", color=3, ls=:solid)
+
+        # conservative
+        # data = deserialize(path(N, 1, Val(:cons)))
+        # plot!(EPMAfem.energy_model(model), data["mass"], label=nothing, color=1, ls=:dash)
+
+        data = deserialize(path(N, 2, Val(:cons)))
+        plot!(EPMAfem.energy_model(model), data["mass"]./4π, label=nothing, color=1, ls=:dash)
+
+        data = deserialize(path(N, 3, Val(:cons)))
+        plot!(EPMAfem.energy_model(model), data["mass"]./4π, label=nothing, color=2, ls=:dash)
+
+        data = deserialize(path(N, 4, Val(:cons)))
+        plot!(EPMAfem.energy_model(model), data["mass"]./4π, label=nothing, color=3, ls=:dash)
+
+        plot!([], [], ls=:dash, color=:gray, label=L"(\textrm{mass \, conservative})")
+        xlabel!(L"t")
+        ylabel!("mass")
+        ylims!(0.98, 1.001)
+        plot!(fontfamily="Computer Modern", size=(400, 300), dpi=1000)
+        savefig(joinpath(figpath, "mass.png"))
     end
-    ylabel!(L"\textrm{ranks}")
-    xlabel!(L"t")
-    plot!(size=(400, 300), fontfamily="Computer Modern", margin=2Plots.mm,  dpi=1000)
-    savefig(joinpath(figpath, "ranks_$(N).png"))
+
+    # rank evolution
+    let
+        plot()
+        # default
+        data = deserialize(path(N, 1, Val(:def)))
+        # plot!(EPMAfem.energy_model(model), data["ranks"].m, label=nothing, color=1, ls=:solid, alpha=0.5)
+        # plot!(EPMAfem.energy_model(model), data["ranks"].p, label=L"r^+ (\vartheta=5 \times 10^{-2})", color=1, ls=:solid)
+
+        data = deserialize(path(N, 2, Val(:def)))
+        plot!(EPMAfem.energy_model(model), data["ranks"].m, label=nothing, color=1, ls=:solid, alpha=0.5)
+        plot!(EPMAfem.energy_model(model), data["ranks"].p, label=L"r^+ (\vartheta=2.5 \times 10^{-2})", color=1, ls=:solid)
+
+        data = deserialize(path(N, 3, Val(:def)))
+        plot!(EPMAfem.energy_model(model), data["ranks"].m, label=nothing, color=2, ls=:solid, alpha=0.5)
+        plot!(EPMAfem.energy_model(model), data["ranks"].p, label=L"r^+ (\vartheta=1.25 \times 10^{-2})", color=2, ls=:solid)
+
+        data = deserialize(path(N, 4, Val(:def)))
+        plot!(EPMAfem.energy_model(model), data["ranks"].m, label=nothing, color=3, ls=:solid, alpha=0.5)
+        plot!(EPMAfem.energy_model(model), data["ranks"].p, label=L"r^+ (\vartheta=6.25 \times 10^{-3})", color=3, ls=:solid)
+
+        # conservative
+        data = deserialize(path(N, 1, Val(:cons)))
+        # plot!(EPMAfem.energy_model(model), data["ranks"].m, label=nothing, color=1, ls=:dash, alpha=0.5)
+        # plot!(EPMAfem.energy_model(model), data["ranks"].p, label=nothing, color=1, ls=:dash)
+
+        data = deserialize(path(N, 2, Val(:cons)))
+        plot!(EPMAfem.energy_model(model), data["ranks"].m, label=nothing, color=1, ls=:dash, alpha=0.5)
+        plot!(EPMAfem.energy_model(model), data["ranks"].p, label=nothing, color=1, ls=:dash)
+
+        data = deserialize(path(N, 3, Val(:cons)))
+        plot!(EPMAfem.energy_model(model), data["ranks"].m, label=nothing, color=2, ls=:dash, alpha=0.5)
+        plot!(EPMAfem.energy_model(model), data["ranks"].p, label=nothing, color=2, ls=:dash)
+
+        data = deserialize(path(N, 4, Val(:cons)))
+        plot!(EPMAfem.energy_model(model), data["ranks"].m, label=nothing, color=3, ls=:dash, alpha=0.5)
+        plot!(EPMAfem.energy_model(model), data["ranks"].p, label=nothing, color=3, ls=:dash)
+
+        plot!([], [], ls=:solid, alpha=0.5, color=:gray, label=L"r^- (\textrm{transparent})")
+        plot!([], [], ls=:dash, color=:gray, label=L"(\textrm{mass \, conservative})")
+        xlabel!(L"t")
+        ylabel!("rank")
+        plot!(fontfamily="Computer Modern", size=(400, 300), dpi=1000)
+        savefig(joinpath(figpath, "ranks.png"))
+    end
+
 end

@@ -1,4 +1,5 @@
 kron_AXB(A::AbstractMatrix, B::AbstractMatrix) = kron(transpose(B), A)
+kron_AXB(A::AbstractMatrix, B::AbstractVector) = kron(transpose(B), A)
 const KronAXBMatrix{T} = LazyOpMatrix{T, typeof(kron_AXB), <:Tuple{AbstractMatrix{T}, AbstractMatrix{T}}}
 @inline A(K::KronAXBMatrix) = K.args[1]
 @inline B(K::KronAXBMatrix) = K.args[2]

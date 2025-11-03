@@ -22,7 +22,10 @@ using EPMAfem.Sparse3Tensor
 include("special_matrices/blockedmatrices.jl")
 using EPMAfem.BlockedMatrices
 
-include("special_matrices/twodiagonalmatrix.jl")
+# include("special_matrices/twodiagonalmatrix.jl")
+
+include("special_matrices/rowsparsematrices.jl")
+using EPMAfem.RowSparseMatrices
 
 include("pn_lazy_matrices/pnlazymatrices.jl")
 using EPMAfem.PNLazyMatrices
@@ -37,8 +40,8 @@ include("space_model/space.jl")
 using EPMAfem.SpaceModels
 
 
-PNLazyMatrices.has_batched_mul!(A::TwoDiagonalMatrix) = true
-PNLazyMatrices.has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true
+# PNLazyMatrices.has_batched_mul!(A::TwoDiagonalMatrix) = true
+# PNLazyMatrices.has_batched_mul!(A::Transpose{<:Number, <:TwoDiagonalMatrix}) = true
 
 include("utils.jl")
 

@@ -11,5 +11,6 @@ using Test
 @time @testset "BlockSchurMatrixTest" begin include("block_schur_mat_test.jl") end
 @time @testset "EPMAfemLazyMatrix" begin include("pnsystem_test.jl") end
 @time @testset "TwoDiagMatrix" begin include("twodiagmatrix_test.jl") end
+@time @testset "RowSparseMatrices" begin include("rowsparsematrices_test.jl") end
 
 end

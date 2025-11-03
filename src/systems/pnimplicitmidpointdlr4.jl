@@ -291,14 +291,23 @@ function pmview(sol::LowwRankSolution, model::DiscretePNModel)
     return Up*Sp*Vtp, Um*Sm*Vtm
 end
 
-function fillzero!(sol::LowwRankSolution)
+function fillzero!(sol::LowwRankSolution, system)
     ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
 
-    # TODO: this is weird and allocates to work together with CUDA!
-    copy!(Up, @view(qr(rand(size(Up)...)).Q[:, 1:sol.ranks.p[]]))
-    copy!(Vtp, transpose(qr(rand(reverse(size(Vtp))...)).Q[:, 1:sol.ranks.p[]]) |> collect) # better ?
-    fill!(Sp, zero(eltype(Sp)))
+    if !isnothing(system.basis_augmentation)
+        # make sure that the k and L step satisfy the weak local conservation laws..
+        #n_p_u = 0 #size(system.basis_augmentation.p.U, 2) #TODO: only p for now..
+        n_p_v = size(system.basis_augmentation.p.V, 2)
 
+        copy!(Up, @view(qr(rand(size(Up)...)).Q[:, 1:sol.ranks.p[]]))
+        copy!(Vtp, Matrix(transpose(Matrix(qr([system.basis_augmentation.p.V |> collect rand(size(Vtp, 2), sol.ranks.p[] - n_p_v)]).Q))))
+        fill!(Sp, zero(eltype(Sp)))
+    else
+        # TODO: this is weird and allocates to work together with CUDA!
+        copy!(Up, @view(qr(rand(size(Up)...)).Q[:, 1:sol.ranks.p[]]))
+        copy!(Vtp, transpose(qr(rand(reverse(size(Vtp))...)).Q[:, 1:sol.ranks.p[]]) |> collect) # better ?
+        fill!(Sp, zero(eltype(Sp)))
+    end
     copy!(Um, @view(qr(rand(size(Um)...)).Q[:, 1:sol.ranks.m[]]))
     copy!(Vtm, transpose(qr(rand(reverse(size(Vtm))...)).Q[:, 1:sol.ranks.m[]]) |> collect)
     fill!(Sm, zero(eltype(Sm)))
@@ -306,20 +315,51 @@ end
 
 function initialize!(current_solution::LowwRankSolution, system, initial_solution)
     ψ0p, ψ0m = pmview(initial_solution, system.problem.model)
-    U0p, S0p, V0p = svd(ψ0p)
-    U0m, S0m, V0m = svd(ψ0m)
 
     # truncate, if the dlr is adaptive
-    ranks = _compute_new_ranks(system, S0p, S0m)
-    sol = current_solution
-    sol.ranks.p[], sol.ranks.m[] = ranks.p, ranks.m
-    ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
-    
-    copy!(Up, @view(U0p[:, 1:sol.ranks.p[]]))
-    copy!(Sp, Diagonal(@view(S0p[1:sol.ranks.p[]])))
-    copy!(Vtp, transpose(V0p)[1:sol.ranks.p[], :])
+    if !isnothing(system.basis_augmentation)
 
-    copy!(Um, @view(U0m[:, 1:sol.ranks.m[]]))
-    copy!(Sm, Diagonal(@view(S0m[1:sol.ranks.m[]])))
-    copy!(Vtm, transpose(V0m)[1:sol.ranks.m[], :])
+        ψ0p_tilde = ψ0p .- ψ0p * system.basis_augmentation.p.V * transpose(system.basis_augmentation.p.V)
+        ψ0m_tilde = ψ0m .- ψ0m * system.basis_augmentation.m.V * transpose(system.basis_augmentation.m.V)
+
+        Pp, Sp, Qp = svd(ψ0p_tilde)
+        Pm, Sm, Qm = svd(ψ0m_tilde)
+
+        ranks = _compute_new_ranks(system, Sp, Sm)
+        n_aug_p, n_aug_m = size(system.basis_augmentation.p.V, 2), size(system.basis_augmentation.m.V, 2)
+        ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_p), m=min(ranks.m, ranks.m+n_aug_m))
+        current_solution.ranks.p[], current_solution.ranks.m[] = ranks.p, ranks.m
+        ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(current_solution)
+
+        URp = qr([ψ0p*system.basis_augmentation.p.V Pp[:, 1:ranks.p-n_aug_p]])
+        URm = qr([ψ0m*system.basis_augmentation.m.V Pm[:, 1:ranks.m-n_aug_m]])
+
+        m_type = mat_type(architecture(system.problem))
+        Up₁ .= m_type(URp.Q)
+        Um₁ .= m_type(URm.Q)
+
+        Vtp₁ .= transpose([system.basis_augmentation.p.V Qp[:, 1:ranks.p-n_aug_p]])
+        Vtm₁ .= transpose([system.basis_augmentation.m.V Qm[:, 1:ranks.m-n_aug_m]])
+
+        @view(Sp₁[:, 1:n_aug_p]) .= @view(URp.R[:, 1:n_aug_p])
+        @view(Sm₁[:, 1:n_aug_m]) .= @view(URm.R[:, 1:n_aug_m])
+        
+        mul!(@view(Sp₁[:, n_aug_p+1:end]), @view(URp.R[:, n_aug_p+1:end]), Diagonal(Sp[1:ranks.p-n_aug_p]))
+        mul!(@view(Sm₁[:, n_aug_m+1:end]), @view(URm.R[:, n_aug_m+1:end]), Diagonal(Sm[1:ranks.m-n_aug_m]))
+    else
+        U0p, S0p, V0p = svd(ψ0p)
+        U0m, S0m, V0m = svd(ψ0m)
+        ranks = _compute_new_ranks(system, S0p, S0m)
+        sol = current_solution
+        sol.ranks.p[], sol.ranks.m[] = ranks.p, ranks.m
+        ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
+        
+        copy!(Up, @view(U0p[:, 1:sol.ranks.p[]]))
+        copy!(Sp, Diagonal(@view(S0p[1:sol.ranks.p[]])))
+        copy!(Vtp, transpose(V0p)[1:sol.ranks.p[], :])
+
+        copy!(Um, @view(U0m[:, 1:sol.ranks.m[]]))
+        copy!(Sm, Diagonal(@view(S0m[1:sol.ranks.m[]])))
+        copy!(Vtm, transpose(V0m)[1:sol.ranks.m[], :])
+    end
 end
