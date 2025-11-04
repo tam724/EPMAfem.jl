@@ -22,7 +22,7 @@ space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5,
 N = 47
 direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 2, :OE)
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
-arch = EPMAfem.cuda(Float32)
+arch = EPMAfem.cuda(Float64)
 problem = EPMAfem.discretize_problem(equations, model, arch)
 
 # source / boundary condition (here: zero)
@@ -61,38 +61,6 @@ copy!(ψ0m, bxm .* bΩm')
 #     heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y)), aspect_ratio=:equal, cmap=:jet)
 # end
 
-
-# debugging
-probe = EPMAfem.PNProbe(model, arch, Ω=Ω -> 1.0, ϵ=0.0)
-system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
-sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
-func = EPMAfem.interpolable(probe, sol)
-heatmap(-1.5:0.002:1.5, -1.5:0.002:1.5, (x, y) -> func(VectorValue(x, y)))
-
-system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=30, m=30), tolerance=0.01);
-sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition, step_callback = (ϵ, ψ) -> @show ψ.ranks);
-func_lr = EPMAfem.interpolable(probe, sol_lr)
-heatmap(-1.5:0.002:1.5, -1.5:0.002:1.5, (x, y) -> func_lr(VectorValue(x, y)))
-
-system_lr_basis = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=30, m=30), tolerance=0.01, basis_augmentation=:mass);
-sol_lr_basis = EPMAfem.IterableDiscretePNSolution(system_lr_basis, source, initial_solution=initial_condition, step_callback = (ϵ, ψ) -> @show ψ.ranks);
-func_lr_basis = EPMAfem.interpolable(probe, sol_lr_basis)
-heatmap(-1.5:0.002:1.5, -1.5:0.002:1.5, (x, y) -> func_lr_basis(VectorValue(x, y)))
-
-data = compute_sol_and_rank_evolution(sol)
-data_lr_basis = compute_sol_and_rank_evolution(sol_lr_basis)
-
-(_, ψ0), state = iterate(sol_lr_basis)
-(_, ψ1), state = iterate(sol_lr_basis, state)
-(_, ψ2), state = iterate(sol_lr_basis, state)
-
-((Up0, Sp0, Vpt0), (Um0, Sm0, Vmt0)) = EPMAfem.USVt(ψ0)
-((Up1, Sp1, Vpt1), (Um1, Sm1, Vmt1)) = EPMAfem.USVt(ψ1)
-((Up2, Sp2, Vpt2), (Um2, Sm2, Vmt2)) = EPMAfem.USVt(ψ2)
-
-
-
-#end debugging
 using Serialization
 figpath = mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/"))
 mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/solutions/$(N)"))
