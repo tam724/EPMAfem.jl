@@ -95,12 +95,12 @@ system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complemen
 sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
 serialize(joinpath(figpath, "solutions/$N/full.jls"), compute_sol_and_rank_evolution(sol))
 
-for (i, (rmax, tol)) in collect(enumerate([(100, 0.05), (200, 0.025), (200, 0.0125), (310, 0.00625)]))[3:end]
-    # let
-    #     system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=rmax, m=rmax), tolerance=tol);
-    #     sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition);
-    #     serialize(joinpath(figpath, "solutions/$(N)/lr_$(i).jls"), compute_sol_and_rank_evolution(sol_lr))
-    # end
+for (i, (rmax, tol)) in collect(enumerate([(100, 0.05), (200, 0.025), (200, 0.0125), (310, 0.00625)]))
+    let
+        system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=rmax, m=rmax), tolerance=tol);
+        sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition);
+        serialize(joinpath(figpath, "solutions/$(N)/lr_$(i).jls"), compute_sol_and_rank_evolution(sol_lr))
+    end
     let
         system_lr_cons = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=rmax, m=rmax), tolerance=tol, basis_augmentation=:mass);
         sol_lr_cons = EPMAfem.IterableDiscretePNSolution(system_lr_cons, source, initial_solution=initial_condition);
