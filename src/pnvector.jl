@@ -4,8 +4,8 @@
     arch
     bϵ
     # might be moved to gpu
-    bxp
-    bΩp
+    bx
+    bΩ
 end
 
 Base.show(io::IO, v::Rank1DiscretePNVector) = print(io, "Rank1DiscretePNVector [$(n_basis(v.model)) adj=$(v.adjoint)]")
@@ -14,8 +14,8 @@ Base.show(io::IO, ::MIME"text/plain", v::Rank1DiscretePNVector) = show(io, v)
 _is_adjoint_vector(b::Rank1DiscretePNVector) = b.adjoint
 
 function initialize_integration(b::Rank1DiscretePNVector)
-    (_, (_, _), (nΩp, _)) = n_basis(b.model)
-    buf = allocate_vec(b.arch, nΩp)
+    (_, (_, _), (nΩp, nΩm)) = n_basis(b.model)
+    buf = (p=allocate_vec(b.arch, nΩp), m=allocate_vec(b.arch, nΩm))
     cache = (integral = [0.0], buf = buf)
     return PNVectorIntegrator(b, cache)
 end
@@ -25,7 +25,7 @@ function finalize_integration((; b, cache)::PNVectorIntegrator{<:Rank1DiscretePN
 end
 
 function ((; b, cache)::PNVectorIntegrator{<:Rank1DiscretePNVector})(idx, ψ)
-    ψp = pview(ψ, b.model)
+    ψp, ψm = pmview(ψ, b.model)
     Δϵ = step(energy_model(b.model))
     T = base_type(b.arch)
     if idx.adjoint
@@ -36,9 +36,10 @@ function ((; b, cache)::PNVectorIntegrator{<:Rank1DiscretePNVector})(idx, ψ)
         bϵ2 = b.bϵ[idx]
     end
     # CUDA does not like this :(
-    # mul!(transpose(cache.buf), transpose(b.bxp), ψp) AT = BT * C <=> A = CT * B
-    mul!(cache.buf, transpose(ψp), b.bxp)
-    cache.integral[1] += Δϵ * bϵ2 * dot(cache.buf, b.bΩp)
+    # mul!(transpose(cache.buf), transpose(b.bx.p), ψp) AT = BT * C <=> A = CT * B
+    mul!(cache.buf.p, transpose(ψp), b.bx.p)
+    mul!(cache.buf.m, transpose(ψm), b.bx.m)
+    cache.integral[1] += Δϵ * bϵ2 * (dot(cache.buf.p, b.bΩ.p), dot(cache.buf.m, b.bΩ.m))
     return nothing
 end
 
@@ -57,23 +58,22 @@ function assemble_at!(rhs, (; b)::PNVectorAssembler{<:Rank1DiscretePNVector}, id
         @assert _is_adjoint_vector(b)
         bϵ2 = b.bϵ[idx]
     end
-    mul!(rhs_p, b.bxp, transpose(b.bΩp), bϵ2*Δ, β)
-    my_rmul!(rhs_m, β) # * -1 if sym
+    mul!(rhs_p, b.bx.p, transpose(b.bΩ.p), bϵ2*Δ, β)
+    mul!(rhs_m, b.bx.m, transpose(b.bΩ.m), bϵ2*Δ, β)
 end
-
 
 ## for array valued integrations
 function ideal_index_order(b_arr::Array{<:Rank1DiscretePNVector})
     d = Dict{Int64, Vector{Int64}}()
     for i in eachindex(b_arr)
-        key_or_nothing = findfirst(((key, val), ) -> b_arr[key].bxp === b_arr[i].bxp, ((k, v) for (k, v) in d))
+        key_or_nothing = findfirst(((key, val), ) -> b_arr[key].bx === b_arr[i].bx, ((k, v) for (k, v) in d))
         push!(get!(Vector{typeof(i)}, d, isnothing(key_or_nothing) ? i : key_or_nothing), i)
     end
     d2 = Dict{Int64, Dict{Int64, Vector{Int64}}}()
     for (k, v) in d
         d2[k] = Dict()
         for i in eachindex(v)
-            key_or_nothing = findfirst(((key, val), ) -> b_arr[key].bΩp === b_arr[v[i]].bΩp, ((k, v) for (k, v) in d2[k]))
+            key_or_nothing = findfirst(((key, val), ) -> b_arr[key].bΩ === b_arr[v[i]].bΩ, ((k, v) for (k, v) in d2[k]))
             push!(get!(Vector{typeof(i)}, d2[k], isnothing(key_or_nothing) ? v[i] : key_or_nothing), v[i])
         end
     end
@@ -105,15 +105,17 @@ function finalize_integration((; b, cache)::PNVectorIntegrator{<:Array{<:Rank1Di
 end
 
 function ((; b, cache)::PNVectorIntegrator{<:Array{<:Rank1DiscretePNVector}})(idx, ψ)
-    ψp = pview(ψ, first(b).model)
+    ψp, ψm = pmview(ψ, first(b).model)
     Δϵ = step(energy_model(first(b).model))
     T = base_type(first(b).arch)
     for (x_base, x_rem) in cache.idx_order
         # CUDA does not like this :(
-        # mul!(transpose(cache.buf), transpose(b[x_base].bxp), ψp) AT = BT * C <=> A = CT * B
-        mul!(cache.buf, transpose(ψp), b[x_base].bxp)
+        # mul!(transpose(cache.buf), transpose(b[x_base].bx.p), ψp) AT = BT * C <=> A = CT * B
+        mul!(cache.buf.p, transpose(ψp), b[x_base].bx.p)
+        mul!(cache.buf.m, transpose(ψm), b[x_base].bx.m)
         for (Ω_base, Ωx_rem) in x_rem
-            bufbuf = dot(b[Ω_base].bΩp, cache.buf)
+            bufbuf = (p=dot(b[Ω_base].bΩ.p, cache.buf.p),
+                    m=dot(b[Ω_base].bΩ.m, cache.buf.m))
             for (ϵ_base, ϵΩx_rem) in Ωx_rem
                 if idx.adjoint
                     @assert !_is_adjoint_vector(b[ϵ_base])
@@ -123,7 +125,7 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:Rank1DiscretePNVector}})(id
                     bϵ = Δϵ * b[ϵ_base].bϵ[idx]
                 end
                 for i in ϵΩx_rem
-                    cache.integral[i] += bϵ * bufbuf
+                    cache.integral[i] += bϵ * (bufbuf.p + bufbuf.m)
                 end
             end
         end

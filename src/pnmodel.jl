@@ -65,22 +65,6 @@ end
 Dimensions.dimensionality(model::DiscretePNModel) = dimensionality(space_model(model))
 Dimensions.dimensions(model::DiscretePNModel) = dimensions(dimensionality(model))
 
-# max_degree(model::PNGridapModel) = model.direction_model
-# space_directions(model::PNGridapModel) = space_directions(space_model(model))
-
-# function function_spaces(space_model::DiscreteModel)
-#     V = MultiFieldFESpace([TestFESpace(space_model, ReferenceFE(lagrangian, Float64, 1), conformity=:H1), TestFESpace(space_model, ReferenceFE(lagrangian, Float64, 0), conformity=:L2)])
-#     U = MultiFieldFESpace([TrialFESpace(V[1]), TrialFESpace(V[2])])
-#     return U, V
-# end
-
-# function gridap_model(space_model::DiscreteModel)
-#     U, V = function_spaces(space_model)
-#     R = Triangulation(space_model)
-#     ∂R = BoundaryTriangulation(space_model)
-#     return U, V, (model=space_model, R=R, dx=Measure(R, 2), ∂R=∂R, dΓ= Measure(∂R, 2), n=get_normal_vector(∂R))
-# end
-
 function n_basis(model::DiscretePNModel)
     return model.number_of_basis_functions
 end
@@ -104,44 +88,3 @@ function pmview(v::AbstractVector, model::DiscretePNModel)
     mview = reshape(@view(v[nxp*nΩp+1:nxp*nΩp + nxm*nΩm]), (nxm, nΩm))
     return pview, mview
 end
-
-# @concrete struct MonoChromPNGridapModel{PNA<:PNArchitecture, S<:DiscreteModel} <: AbstractPNGridapModel{PNA}
-#     architecture::PNA
-#     space_model::S
-#     direction_model
-#     n_basis::Tuple{Tuple{Int64, Int64}, Tuple{Int64, Int64}}
-# end
-
-# architecture(discrete_model::MonoChromPNGridapModel) = discrete_model.architecture
-# function MonoChromPNGridapModel(space_domain, direction_model, architecture=PNCPU{Float64}())
-#     space_model = CartesianDiscreteModel(space_domain[1], space_domain[2])
-
-#     U, _ = function_spaces(space_model)
-#     evens = SphericalHarmonicsMatrices.get_even_moments(direction_model, nd(space_model))
-#     odds = SphericalHarmonicsMatrices.get_odd_moments(direction_model, nd(space_model))
-
-#     n_basis = ((num_free_dofs(U[1]), num_free_dofs(U[2])),
-#         (length(evens), length(odds)))
-
-#     return MonoChromPNGridapModel(
-#         architecture,
-#         space_model,
-#         direction_model,
-#         n_basis
-#     )
-# end
-
-# function space(model::MonoChromPNGridapModel)
-#     return model.space_model
-# end
-
-# nd(model::MonoChromPNGridapModel) = nd(space(model))
-
-# max_degree(model::MonoChromPNGridapModel) = model.direction_model
-# space_directions(model::MonoChromPNGridapModel) = space_directions(space(model))
-
-# function number_of_basis_functions(model::MonoChromPNGridapModel)
-#     nb = (x=(p=model.n_basis[1][1], m=model.n_basis[1][2]),
-#           Ω=(p=model.n_basis[2][1], m=model.n_basis[2][2]))
-#     return nb
-# end

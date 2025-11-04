@@ -140,6 +140,7 @@ function compute_influx(eq::PNExcitation, mdl, ϵ_func=ϵ->1.0)
     n_ = VectorValue(1.0, 0.0, 0.0) #assuming outwards normal
     dir_influx = [quad(Ω -> dot(n_, Ω) <= 0 ? dot(n_, Ω)*beam_direction_distribution(eq, i, Ω) : 0.0) for i in 1:number_of_beam_directions(eq)]
     space_mdl = space_model(mdl)
+    error("TODO: even/plus etc.")
     space_influx = [SpaceModels.assemble_linear(SpaceModels.∫∂R_ngv{Dimensions.Z}(x -> beam_space_distribution(eq, i, Dimensions.extend_3D(x))), space_mdl, SpaceModels.even(space_mdl))|>sum for i in 1:number_of_beam_positions(eq)]
     function trapz_quad(f, xs)
         v = [f(x) for x in xs]

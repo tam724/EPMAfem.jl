@@ -211,7 +211,6 @@ function initialize_integration(b::TangentDiscretePNVector{<:UpdatableRank1Discr
 end
 
 function finalize_integration((; b, cache)::PNVectorIntegrator{<:TangentDiscretePNVector{<:UpdatableRank1DiscretePNVector}})
-    arch = b.updatable_problem_or_vector.vector.arch
     if b.parameter_index[1] == b.updatable_problem_or_vector.element_index
         # this is inefficient.. 
         ρ_adjoint = zeros(n_parameters(b.updatable_problem_or_vector))
@@ -236,7 +235,7 @@ function ((; b, cache)::PNVectorIntegrator{<:TangentDiscretePNVector{<:Updatable
         @assert _is_adjoint_vector(b)
         bϵ2 = vector.bϵ[idx]
     end
-    mul!(cache.bxp_adjoint, ψp, vector.bΩp, Δϵ * bϵ2, true)
+    mul!(cache.bxp_adjoint, ψp, vector.bΩ.p, Δϵ * bϵ2, true)
 end
 
 ## for array valued integrations

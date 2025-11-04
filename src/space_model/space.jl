@@ -15,7 +15,7 @@ include("space_model_matrices.jl")
 include("space_model_vectors.jl")
 include("space_model_tensors.jl")
 
-export GridapSpaceModel, even, odd
+export GridapSpaceModel, plus, minus
 export assemble_bilinear, assemble_linear
 
 end

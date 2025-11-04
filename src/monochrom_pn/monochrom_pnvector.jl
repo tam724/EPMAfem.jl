@@ -4,10 +4,8 @@
     arch
 
     # might be moded to gpu
-    bxp
-    # bxm
-    bΩp
-    # bΩm
+    bx
+    bΩ
 end
 
 _is_adjoint_vector(b::DiscreteMonochromPNVector) = b.adjoint
@@ -21,11 +19,12 @@ end
 
 function assemble!(rhs, b::DiscreteMonochromPNVector, Δ, sym, β=false)
     rhs_p, rhs_m = pmview(rhs, b.model)
-    mul!(rhs_p, b.bxp, transpose(b.bΩp), Δ, β)
-    my_rmul!(rhs_m, β) # *-1 if sym
+    mul!(rhs_p, b.bx.p, transpose(b.bΩ.p), Δ, β)
+    mul!(rhs_m, b.bx.m, transpose(b.bΩ.m), Δ, β)
+    # my_rmul!(rhs_m, β) # *-1 if sym
 end
 
 function integrate(b::DiscreteMonochromPNVector, ψ)
-    ψp = pview(ψ, b.model)
-    return dot(transpose(ψp) * b.bxp, b.bΩp)
+    ψp, ψm = pmview(ψ, b.model)
+    return dot(b.bx.p, ψp, b.bΩ.p) + dot(b.bx.p, ψm, b.bΩ.p)
 end

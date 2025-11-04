@@ -16,6 +16,6 @@ function discretize_problem(pn_eq::AbstractMonochromPNEquations, mdl::DiscreteMo
 end
 
 function discretize_rhs(b::PNXΩExcitation, mdl::DiscreteMonochromPNModel, arch::PNArchitecture)
-    (bxp, _), (bΩp, _) = discretize(b, mdl, arch)
-    return DiscreteMonochromPNVector(false, mdl, arch, bxp, bΩp)
+    (bxp, bxm), (bΩp, bΩm) = discretize(b, mdl, arch)
+    return DiscreteMonochromPNVector(false, mdl, arch, (p=bxp, m=bxm), (p=bΩp, m=bΩm))
 end

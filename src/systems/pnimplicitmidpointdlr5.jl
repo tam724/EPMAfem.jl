@@ -27,13 +27,35 @@ using EPMAfem.PNLazyMatrices: only_unique
 function init_basis_augmentation(pbl, aug::Symbol)
     if aug == :mass
         nb = n_basis(pbl)
-        basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, 1), ),
-                              m=(V = allocate_mat(architecture(pbl), nb.nΩ.m, 0), ))
-        Ωp, _ = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω->1)
-        copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
+        Ωp, Ωm = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), one)
+        basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, isnothing(Ωp) ? 0 : 1), ),
+                              m=(V = allocate_mat(architecture(pbl), nb.nΩ.m, isnothing(Ωm) ? 0 : 1), ))
+        !isnothing(Ωp) && copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
+        !isnothing(Ωm) && copy!(@view(basis_augmentation.m.V[:, 1]), Ωm)
+
         basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> mat_type(architecture(pbl))
-        return (1, 0), basis_augmentation
+        basis_augmentation.m.V .= qr(basis_augmentation.m.V).Q |> mat_type(architecture(pbl))
+        return (size(basis_augmentation.p.V, 2), size(basis_augmentation.m.V, 2)), basis_augmentation
+    elseif aug == :mass_momentum
+        nb = n_basis(pbl)
+        Ωp, Ωm = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), one)
+        @warn "assumes OE!!"
+        Ωpz, Ωmz = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω -> Ω[1])
+        Ωpx, Ωmx = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω -> Ω[2])
+
+        @show norm(Ωmz), norm(Ωmx)
+
+        basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, 2), ),
+                              m=(V = allocate_mat(architecture(pbl), nb.nΩ.m, 1), ))
+        copy!(@view(basis_augmentation.p.V[:, 1]), Ωpz)
+        copy!(@view(basis_augmentation.p.V[:, 2]), Ωpx)
+        copy!(@view(basis_augmentation.m.V[:, 1]), Ωm)
+
+        basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> mat_type(architecture(pbl))
+        basis_augmentation.m.V .= qr(basis_augmentation.m.V).Q |> mat_type(architecture(pbl))
+        return (size(basis_augmentation.p.V, 2), size(basis_augmentation.m.V, 2)), basis_augmentation
     elseif aug == :mass_outflux
+        error("todo")
         nb = n_basis(pbl)
         ns = n_sums(pbl)
         basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, 1+ns.nd), ),
@@ -205,22 +227,24 @@ function step_adjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembl
     _step!(x, system, rhs_ass, plus½(idx), Δϵ)
 end
 
-function _compute_new_rank(S_, tol, r_max)
-    S = collect(S_)
+function _compute_new_rank(S, abs_tol, r_max)
     Σσ² = 0.0
     r = length(S)
-    norm_S² = sum(S.^2)
-    while ((Σσ² + S[r]^2 < tol^2*norm_S²) || (sqrt(Σσ² + S[r]^2) < 1e-14)) && r > 1
+    while ((Σσ² + S[r]^2 < abs_tol) || (sqrt(Σσ² + S[r]^2) < 1e-14)) && r > 1
         Σσ² += S[r]^2
         r = r - 1
     end
     return min(r_max, r)
 end
 
-function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, Sp, Sm)
+function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, _Sp, _Sm)
+    Sp = collect(_Sp)
+    Sm = collect(_Sm)
+    @show Sp, Sm
+    norm_S² = sum(Sp.^2) + sum(Sm.^2)
     return (
-        p = _compute_new_rank(Sp, system.tolerance, system.max_ranks.p),
-        m = _compute_new_rank(Sm, system.tolerance, system.max_ranks.m)
+        p = _compute_new_rank(Sp, system.tolerance^2*norm_S², system.max_ranks.p),
+        m = _compute_new_rank(Sm, system.tolerance^2*norm_S², system.max_ranks.m)
     )
 end
 
@@ -368,12 +392,12 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
     ((Up₀, Sp₀, Vtp₀), (Um₀, Sm₀, Vtm₀)) = USVt(x)
     ranks = (p=x.ranks.p[], m=x.ranks.m[])
     
-    CUDA.NVTX.@range "copy basis" begin
-        PNLazyMatrices.set!(system.mats.Vtp, vec(Vtp₀), size(Vtp₀))
-        PNLazyMatrices.set!(system.mats.Vtm, vec(Vtm₀), size(Vtm₀))
-        PNLazyMatrices.set!(system.mats.Up, vec(Up₀), size(Up₀))
-        PNLazyMatrices.set!(system.mats.Um, vec(Um₀), size(Um₀))
-    end
+    # CUDA.NVTX.@range "copy basis" begin
+    #     PNLazyMatrices.set!(system.mats.Vtp, vec(Vtp₀), size(Vtp₀))
+    #     PNLazyMatrices.set!(system.mats.Vtm, vec(Vtm₀), size(Vtm₀))
+    #     PNLazyMatrices.set!(system.mats.Up, vec(Up₀), size(Up₀))
+    #     PNLazyMatrices.set!(system.mats.Um, vec(Um₀), size(Um₀))
+    # end
 
     CUDA.NVTX.@range "L-step prep" begin
         PNLazyMatrices.set!(system.mats.Up, vec(Up₀), size(Up₀))
@@ -399,8 +423,10 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Lt₁, Ltp₁, Ltm₁ = _decompose_pm(system.tmp.tmp1, ((ranks.p, nΩp), (ranks.m, nΩm)))
         mul!(Lt₁, system.mats.inv_matBMᵤ, rhs_Lt, true, false)
 
-        Vphat = _orthonormalize(architecture(system.problem), transpose(Vtp₀), transpose(Ltp₁))
-        Vmhat = _orthonormalize(architecture(system.problem), transpose(Vtm₀), transpose(Ltm₁))
+        Vphat = _orthonormalize(architecture(system.problem), system.basis_augmentation.p.V, transpose(Vtp₀), transpose(Ltp₁))
+        Vmhat = _orthonormalize(architecture(system.problem), system.basis_augmentation.m.V, transpose(Vtm₀), transpose(Ltm₁))
+
+        @show size(Vphat), size(Vmhat)
         Np = transpose(Vphat)*transpose(Vtp₀)
         Nm = transpose(Vmhat)*transpose(Vtm₀)
         aug_ranks_v = (p=size(Vphat, 2), m=size(Vmhat, 2))

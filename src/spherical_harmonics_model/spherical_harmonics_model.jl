@@ -22,13 +22,12 @@ function findSHML_index(m, N)
     return findall(m_ -> m_ == (degree(m), order(m)), SphericalHarmonics.ML(0:N)) |> only
 end
 
-@concrete struct EOSphericalHarmonicsModel{ND} <: AbstractSphericalHarmonicsModel{ND}
+@concrete struct EOSphericalHarmonicsModel{ND, EO} <: AbstractSphericalHarmonicsModel{ND}
     N
-    num_dofs
     moments
 end
 
-function EOSphericalHarmonicsModel(N, ND)
+function EOSphericalHarmonicsModel(N, ND, eo=:EO)
     _XD = dimensionality(ND)
     viable_moments = get_all_viable_harmonics_up_to(N, _XD)
     sort!(viable_moments, lt=isless_evenodd)
@@ -39,31 +38,21 @@ function EOSphericalHarmonicsModel(N, ND)
 
     moments = ComponentVector(even=even_moments, odd=odd_moments)
 
-    # compute the number of even and odd basis functions
-    num_dofs_even = length(even_moments)
-    num_dofs_odd = length(odd_moments)
-    num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
-
-    return EOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, num_dofs, moments)
+    return EOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND), eo}(N, moments)
 end
 
-function even(model::EOSphericalHarmonicsModel)
-    return model.moments.even
-end
+plus(model::EOSphericalHarmonicsModel{ND, :EO}) where ND = model.moments.even
+plus(model::EOSphericalHarmonicsModel{ND, :OE}) where ND = model.moments.odd
 
-function odd(model::EOSphericalHarmonicsModel)
-    return model.moments.odd
-end
+minus(model::EOSphericalHarmonicsModel{ND, :EO}) where ND = model.moments.odd
+minus(model::EOSphericalHarmonicsModel{ND, :OE}) where ND = model.moments.even
 
 function get_basis_harmonics(model::EOSphericalHarmonicsModel{ND}) where ND
-    # viable_moments = get_all_viable_harmonics_up_to(max_degree(model), dimensionality(ND))
-    # sort!(viable_moments, lt=isless_evenodd)
     return model.moments
 end
 
 @concrete struct EEEOSphericalHarmonicsModel{ND} <: AbstractSphericalHarmonicsModel{ND}
     N
-    num_dofs
     moments
 end
 
@@ -85,12 +74,7 @@ function EEEOSphericalHarmonicsModel(N, ND)
 
     moments = ComponentVector(eee=moments_eee, eoo=moments_eoo, oeo=moments_oeo, ooe=moments_ooe, oee=moments_oee, eoe=moments_eoe, eeo=moments_eeo, ooo=moments_ooo)
 
-    # compute the number of even and odd basis functions
-    num_dofs_even = count(is_even.(viable_moments))
-    num_dofs_odd = count(is_odd.(viable_moments))
-    num_dofs = (even=num_dofs_even, odd=num_dofs_odd)
-
-    return EEEOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, num_dofs, moments)
+    return EEEOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND)}(N, moments)
 end
 
 function get_basis_harmonics(model::EEEOSphericalHarmonicsModel{ND}) where ND
@@ -177,15 +161,15 @@ function get_indices_∫S²Ωuv(model::EEEOSphericalHarmonicsModel{3}, ::Y)
 end
 
 function num_dofs(model::EOSphericalHarmonicsModel)
-    return model.num_dofs.even + model.num_dofs.odd
+    return length(plus(model)) + length(minus(model))
 end
 
 function num_dofs(model::EEEOSphericalHarmonicsModel)
-    return model.num_dofs.even + model.num_dofs.odd
+    return length(plus(model)) + length(minus(model))
 end
 
 function n_basis(model::AbstractSphericalHarmonicsModel)
-    return (p=model.num_dofs.even, m=model.num_dofs.odd)
+    return (p=length(plus(model)), m=length(minus(model)))
 end
 
 # should not be needed anymore
@@ -225,27 +209,36 @@ end
 
 #dirac basis evaluation
 function eval_basis(model::AbstractSphericalHarmonicsModel, Ω::VectorValue)
-    p_vals, m_vals = eval_basis_functions!(model, Ω, even(model), odd(model))
+    p_vals, m_vals = eval_basis_functions!(model, Ω, plus(model), minus(model))
     (p=p_vals, m=m_vals)
 end
 
 #integrated basis functions
 function eval_basis(model, h::Function)
-    (p=assemble_linear(∫S²_hv(h), model, even(model)), m=assemble_linear(∫S²_hv(h), model, odd(model)))
+    (p=assemble_linear(∫S²_hv(h), model, plus(model)), m=assemble_linear(∫S²_hv(h), model, minus(model)))
 end
+
+function eval_basis(model::EOSphericalHarmonicsModel{ND, :EO}, h::typeof(one)) where ND
+    (p=assemble_linear(∫S²_hv(Ω -> 1.0), model, plus(model)), m=nothing)
+end
+
+function eval_basis(model::EOSphericalHarmonicsModel{ND, :OE}, h::typeof(one)) where ND
+    (p=nothing, m=assemble_linear(∫S²_hv(Ω -> 1.0), model, minus(model)))
+end
+
 
 function interpolable(b, model)
     function interpolant(Ω)
         # Ωx = Dimensions.constrain(Ω, dimensionality(model))
         if hasproperty(b, :m) # if not we assume its zero
-            Y_even, Y_odd = eval_basis_functions!(model, Ω, even(model), odd(model))
-            return dot(b.p, Y_even) + dot(b.m, Y_odd)
+            Yp, Ym = eval_basis_functions!(model, Ω, plus(model), minus(model))
+            return dot(b.p, Yp) + dot(b.m, Ym)
         elseif hasproperty(b, :p) # if not we assume that b = b.p
-            Y_even = eval_basis_functions!(model, Ω, even(model))
-            return dot(b.p, Y_even)
+            Yp = eval_basis_functions!(model, Ω, plus(model))
+            return dot(b.p, Yp)
         else
-            Y_even = eval_basis_functions!(model, Ω, even(model))
-            return dot(b, Y_even)
+            Yp = eval_basis_functions!(model, Ω, plus(model))
+            return dot(b, Yp)
         end
     end
     return interpolant

@@ -1,48 +1,48 @@
 abstract type GridapSpaceModel{ND} end
 @concrete struct GeneralSpaceModel{ND} <: GridapSpaceModel{ND}
     discrete_model
-    even_fe_space
-    odd_fe_space
+    plus_fe_space
+    minus_fe_space
     args
 end
 @concrete struct CartesianSpaceModel{ND} <: GridapSpaceModel{ND}
     discrete_model
-    even_fe_space
-    odd_fe_space
+    plus_fe_space
+    minus_fe_space
     args
 
     discrete_models
-    even_fe_spaces
-    odd_fe_spaces
+    plus_fe_spaces
+    minus_fe_spaces
     _args
 end
 
-function GeneralSpaceModel(discrete_model::DiscreteModel{ND, ND}; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2)) where ND
-    reffe1 = ReferenceFE(lagrangian, Float64, even.order)
-    even_fe_space = TestFESpace(discrete_model, reffe1, conformity=even.conformity)
-    reffe0 = ReferenceFE(lagrangian, Float64, odd.order)
-    odd_fe_space = TestFESpace(discrete_model, reffe0, conformity=odd.conformity)
-    return GeneralSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space, get_args_(discrete_model))
+function GeneralSpaceModel(discrete_model::DiscreteModel{ND, ND}; plus=(order=1, conformity=:H1), minus=(order=0, conformity=:L2)) where ND
+    reffe1 = ReferenceFE(lagrangian, Float64, plus.order)
+    plus_fe_space = TestFESpace(discrete_model, reffe1, conformity=plus.conformity)
+    reffe0 = ReferenceFE(lagrangian, Float64, minus.order)
+    minus_fe_space = TestFESpace(discrete_model, reffe0, conformity=minus.conformity)
+    return GeneralSpaceModel{ND}(discrete_model, plus_fe_space, minus_fe_space, get_args_(discrete_model))
 end
 
-function GridapSpaceModel(discrete_model::DiscreteModel; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2))
-   return GeneralSpaceModel(discrete_model, even=even, odd=odd)
+function GridapSpaceModel(discrete_model::DiscreteModel; plus=(order=1, conformity=:H1), minus=(order=0, conformity=:L2))
+   return GeneralSpaceModel(discrete_model, plus=plus, minus=minus)
 end
 
-function GridapSpaceModel(discrete_model::CartesianDiscreteModel{ND}; even=(order=1, conformity=:H1), odd=(order=0, conformity=:L2)) where ND
+function GridapSpaceModel(discrete_model::CartesianDiscreteModel{ND}; plus=(order=1, conformity=:H1), minus=(order=0, conformity=:L2)) where ND
     c_descr = Gridap.Geometry.get_cartesian_descriptor(discrete_model)
     c_descrs = Gridap.Geometry.CartesianDescriptor.(VectorValue.(c_descr.origin.data), tuple.(c_descr.sizes), c_descr.partition)
     discrete_models = CartesianDiscreteModel.(c_descrs)
 
-    even_reffe = ReferenceFE(lagrangian, Float64, even.order)
-    even_fe_space = TestFESpace(discrete_model, even_reffe, conformity=even.conformity)
-    even_fe_spaces = TestFESpace.(discrete_models, Ref(even_reffe), conformity=even.conformity)
+    plus_reffe = ReferenceFE(lagrangian, Float64, plus.order)
+    plus_fe_space = TestFESpace(discrete_model, plus_reffe, conformity=plus.conformity)
+    plus_fe_spaces = TestFESpace.(discrete_models, Ref(plus_reffe), conformity=plus.conformity)
     
-    odd_reffe = ReferenceFE(lagrangian, Float64, odd.order)
-    odd_fe_space = TestFESpace(discrete_model, odd_reffe, conformity=odd.conformity)
-    odd_fe_spaces = TestFESpace.(discrete_models, Ref(odd_reffe), conformity=odd.conformity)
+    minus_reffe = ReferenceFE(lagrangian, Float64, minus.order)
+    minus_fe_space = TestFESpace(discrete_model, minus_reffe, conformity=minus.conformity)
+    minus_fe_spaces = TestFESpace.(discrete_models, Ref(minus_reffe), conformity=minus.conformity)
 
-    return CartesianSpaceModel{ND}(discrete_model, even_fe_space, odd_fe_space, get_args_(discrete_model), discrete_models, even_fe_spaces, odd_fe_spaces, get_args_.(discrete_models))
+    return CartesianSpaceModel{ND}(discrete_model, plus_fe_space, minus_fe_space, get_args_(discrete_model), discrete_models, plus_fe_spaces, minus_fe_spaces, get_args_.(discrete_models))
 end
 
 Dimensions.dimensionality(::GridapSpaceModel{ND}) where ND = dimensionality(ND)
@@ -78,12 +78,12 @@ end
 
 get_args(model::GridapSpaceModel) = model.args
 
-function even(model::GridapSpaceModel)
-    return model.even_fe_space
+function plus(model::GridapSpaceModel)
+    return model.plus_fe_space
 end
 
-function odd(model::GridapSpaceModel)
-    return model.odd_fe_space
+function minus(model::GridapSpaceModel)
+    return model.minus_fe_space
 end
 
 function material(model::GridapSpaceModel)
@@ -92,7 +92,7 @@ function material(model::GridapSpaceModel)
 end
 
 function n_basis(model::GridapSpaceModel)
-    return (p=num_free_dofs(even(model)), m=num_free_dofs(odd(model)))
+    return (p=num_free_dofs(plus(model)), m=num_free_dofs(minus(model)))
 end
 
 function projection_fefunc(f, model, space)
@@ -115,22 +115,22 @@ end
 function eval_basis(model, x::Point{D}) where D
     @assert length(dimensions(dimensionality(model))) == D
     δ = DiracDelta(model.discrete_model, x)
-    bp = assemble_linear((v, args...) -> δ(v), model, even(model))
-    bm = assemble_linear((v, args...) -> δ(v), model, odd(model))
+    bp = assemble_linear((v, args...) -> δ(v), model, plus(model))
+    bm = assemble_linear((v, args...) -> δ(v), model, minus(model))
     return (p=bp, m=bm)
 end
 
 # dirac basis evaluation
 function eval_basis(model, μ::Function)
-    bp = assemble_linear(∫R_μv(μ), model, even(model))
-    bm = assemble_linear(∫R_μv(μ), model, odd(model))
+    bp = assemble_linear(∫R_μv(μ), model, plus(model))
+    bm = assemble_linear(∫R_μv(μ), model, minus(model))
     return (p=bp, m=bm)
 end
 
 # boundary basis evaluation
 function eval_basis_boundary(model, μ::Function, dim)
-    bp = assemble_linear(∫∂R_ngv{dim}(μ), model, even(model))
-    bm = zeros(num_free_dofs(odd(model)))
+    bp = assemble_linear(∫∂R_ngv{dim}(μ), model, plus(model))
+    bm = zeros(num_free_dofs(minus(model)))
     return (p=bp, m=bm)
 end
 
@@ -143,14 +143,14 @@ end
 
 function uncached_interpolable(vec, model)
     if hasproperty(vec, :p) && hasproperty(vec, :m)
-        p_func = FEFunction(even(model), Float64.(vec.p))
-        m_func = FEFunction(odd(model), Float64.(vec.m))
+        p_func = FEFunction(plus(model), Float64.(vec.p))
+        m_func = FEFunction(minus(model), Float64.(vec.m))
         return p_func + m_func
     elseif hasproperty(vec, :p)
-        p_func = FEFunction(even(model), Float64.(vec.p))
+        p_func = FEFunction(plus(model), Float64.(vec.p))
         return p_func
     else
-        p_func = FEFunction(even(model), Float64.(vec))
+        p_func = FEFunction(plus(model), Float64.(vec))
         return p_func
     end
 end

@@ -67,17 +67,17 @@ rank_decomp(::typeof(∫R_u_∂xv), ::_3D) = (∫R_uv, ∫R_u_∂zv, ∫R_uv)
 rank_decomp(::typeof(∫R_u_∂yv), ::_3D) = (∫R_uv, ∫R_uv, ∫R_u_∂zv)
 
 function assemble_bilinear(a::Union{typeof(∫R_u_∂zv), typeof(∫R_u_∂xv), typeof(∫R_u_∂yv), typeof(∫∂R_absnz_uv), typeof(∫∂R_absnx_uv), typeof(∫∂R_absny_uv)}, model::CartesianSpaceModel{N}, U, V) where N
-    if U == even(model)
-        Us = model.even_fe_spaces
+    if U == plus(model)
+        Us = model.plus_fe_spaces
     else
-        @assert U == odd(model)
-        Us = model.odd_fe_spaces
+        @assert U == minus(model)
+        Us = model.minus_fe_spaces
     end
-    if V == even(model)
-        Vs = model.even_fe_spaces
+    if V == plus(model)
+        Vs = model.plus_fe_spaces
     else
-        @assert V == odd(model)
-        Vs = model.odd_fe_spaces
+        @assert V == minus(model)
+        Vs = model.minus_fe_spaces
     end
     return kron(reverse(lazy.(Matrix.(_assemble_bilinear.(rank_decomp(a, dimensionality(model)), model._args, Us, Vs))))...)
     # return assemble_bilinear(a, model, U, V)

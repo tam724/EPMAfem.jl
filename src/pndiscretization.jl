@@ -48,11 +48,11 @@ function discretize_space(pn_eq::Union{AbstractPNEquations, AbstractMonochromPNE
 
     SM = EPMAfem.SpaceModels
 
-    ρp = [diag_if_diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.even(space_mdl), SM.even(space_mdl))) |> arch for e in 1:n_elem]
-    ρm = [diag_if_diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl,  SM.odd(space_mdl),  SM.odd(space_mdl))) |> arch for e in 1:n_elem]
+    ρp = [diag_if_diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl, SM.plus(space_mdl), SM.plus(space_mdl))) |> arch for e in 1:n_elem]
+    ρm = [diag_if_diag(SM.assemble_bilinear(SM.∫R_ρuv(x -> mass_concentrations(pn_eq, e, x)), space_mdl,  SM.minus(space_mdl),  SM.minus(space_mdl))) |> arch for e in 1:n_elem]
 
-    ∂p = [SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl)) |> arch for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))] 
-    ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) |> arch for ∫ ∈ SM.∫R_u_∂v(dimensionality(space_mdl))] 
+    ∂p = [SM.assemble_bilinear(∫, space_mdl, SM.plus(space_mdl), SM.plus(space_mdl)) |> arch for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))] 
+    ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.minus(space_mdl), SM.plus(space_mdl)) |> arch for ∫ ∈ SM.∫R_u_∂v(dimensionality(space_mdl))] 
 
     return SpaceDiscretization(space_mdl, arch, ρp, ρm, ∂p, ∇pm)
 end
@@ -62,15 +62,15 @@ function discretize_space_updatable(pn_eq::Union{AbstractPNEquations, AbstractMo
 
     SM = EPMAfem.SpaceModels
 
-    ρp_tens = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_mdl, SM.even(space_mdl), SM.even(space_mdl)))
+    ρp_tens = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_mdl, SM.plus(space_mdl), SM.plus(space_mdl)))
     ρp = [similar(ρp_tens.skeleton) |> arch for _ in 1:n_elem]
 
-    ρm_tens = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.odd(space_mdl)))
+    ρm_tens = Sparse3Tensor.convert_to_SSM(SM.assemble_trilinear(SM.∫R_uv, space_mdl, SM.minus(space_mdl), SM.minus(space_mdl)))
     ρm = [similar(ρm_tens.skeleton) |> arch for _ in 1:n_elem]
 
 
-    ∂p = [SM.assemble_bilinear(∫, space_mdl, SM.even(space_mdl), SM.even(space_mdl)) |> arch for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))]
-    ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.odd(space_mdl), SM.even(space_mdl)) |> arch for ∫ ∈ SM.∫R_u_∂v(dimensionality(space_mdl))]
+    ∂p = [SM.assemble_bilinear(∫, space_mdl, SM.plus(space_mdl), SM.plus(space_mdl)) |> arch for ∫ ∈ SM.∫∂R_absn_uv(dimensionality(space_mdl))]
+    ∇pm = [SM.assemble_bilinear(∫, space_mdl, SM.minus(space_mdl), SM.plus(space_mdl)) |> arch for ∫ ∈ SM.∫R_u_∂v(dimensionality(space_mdl))]
 
     return SpaceDiscretization(space_mdl, arch, ρp, ρm, ∂p, ∇pm), ρp_tens, ρm_tens
 end
@@ -82,13 +82,13 @@ function discretize_direction(pn_eq::Union{AbstractPNEquations, AbstractMonochro
     n_scat = number_of_scatterings(pn_eq)
 
     ## assemble all the direction matrices
-    kp = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) |> arch for i in 1:n_scat] for e in 1:n_elem]
-    km = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) |> arch for i in 1:n_scat] for e in 1:n_elem]
+    kp = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) |> arch for i in 1:n_scat] for e in 1:n_elem]
+    km = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.minus(direction_mdl), SH.minus(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) |> arch for i in 1:n_scat] for e in 1:n_elem]
 
-    Ip = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.exact_quadrature())) |> arch
-    Im = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.odd(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature())) |> arch
+    Ip = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.exact_quadrature())) |> arch
+    Im = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.minus(direction_mdl), SH.minus(direction_mdl), SH.exact_quadrature())) |> arch
 
-    absΩp_full = [SH.assemble_bilinear(∫, direction_mdl, SH.even(direction_mdl), SH.even(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(direction_mdl))]
+    absΩp_full = [SH.assemble_bilinear(∫, direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(direction_mdl))]
     if direction_mdl isa SH.EOSphericalHarmonicsModel
         absΩp = arch.(absΩp_full)
     else
@@ -96,7 +96,7 @@ function discretize_direction(pn_eq::Union{AbstractPNEquations, AbstractMonochro
         absΩp = [BlockedMatrices.blocked_from_mat(absΩp_full[i], SH.get_indices_∫S²absΩuv(direction_mdl)) |> arch for (i, dim) in enumerate(dimensions(dimensionality(direction_mdl)))] 
     end
 
-    Ωpm_full = [SH.assemble_bilinear(∫, direction_mdl, SH.even(direction_mdl), SH.odd(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(direction_mdl))]
+    Ωpm_full = [SH.assemble_bilinear(∫, direction_mdl, SH.plus(direction_mdl), SH.minus(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(direction_mdl))]
     if direction_mdl isa SH.EOSphericalHarmonicsModel
         Ωpm = arch.(Ωpm_full)
     else
@@ -151,30 +151,20 @@ function discretize_rhs(pn_ex::PNExcitation, mdl::DiscretePNModel, arch::PNArchi
 
     space_mdl = space_model(mdl)
     direction_mdl = direction_model(mdl)
+
+    nb = EPMAfem.n_basis(mdl)
     ## assemble excitation 
     gϵs = [Vector{T}([beam_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(mdl)]) for i in 1:number_of_beam_energies(pn_ex)]
-    gxps = [sparse(SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> beam_space_distribution(pn_ex, i, Dimensions.extend_3D(x))), space_mdl, SM.even(space_mdl))) |> arch for i in 1:number_of_beam_positions(pn_ex)]
+    gxp = [(p = sparse(SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> beam_space_distribution(pn_ex, i, Dimensions.extend_3D(x))), space_mdl, SM.plus(space_mdl))),
+            m = spzeros(nb.nx.m)) |> arch for i in 1:number_of_beam_positions(pn_ex)]
 
     nz = Dimensions.cartesian_unit_vector(Dimensions.Z(), dimensionality(mdl))
     nz3D = Dimensions.extend_3D(nz)
-    gΩps = [SH.assemble_linear(SH.∫S²_nΩgv(nz3D, Ω -> beam_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.even(direction_mdl), SH.lebedev_quadrature_max()) |> arch for i in 1:number_of_beam_directions(pn_ex)]
-    return [Rank1DiscretePNVector(false, mdl, arch, gϵs[i], gxps[j], gΩps[k]) for i in 1:number_of_beam_energies(pn_ex), j in 1:number_of_beam_positions(pn_ex), k in 1:number_of_beam_directions(pn_ex)]
+    gΩs = [(p = SH.assemble_linear(SH.∫S²_nΩgv(nz3D, Ω -> beam_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.plus(direction_mdl), SH.lebedev_quadrature_max()),
+             m = spzeros(nb.nΩ.m)) |> arch for i in 1:number_of_beam_directions(pn_ex)]
+
+    return [Rank1DiscretePNVector(false, mdl, arch, gϵs[i], gxp[j], gΩs[k]) for i in 1:number_of_beam_energies(pn_ex), j in 1:number_of_beam_positions(pn_ex), k in 1:number_of_beam_directions(pn_ex)]
 end
-
-# function discretize_stange_rhs(pn_ex::PNExcitation, discrete_model::PNGridapModel, arch::PNArchitecture)
-#     T = base_type(arch)
-
-#     SM = EPMAfem.SpaceModels
-#     SH = EPMAfem.SphericalHarmonicsModels
-
-#     space_mdl = space_model(discrete_model)
-#     direction_mdl = direction_model(discrete_model)
-#     ## assemble excitation 
-#     gϵs = Vector{T}([beam_energy_distribution(pn_ex, 1, ϵ) for ϵ ∈ energy_model(discrete_model)])
-#     gxps = (SM.assemble_linear(SM.∫R_μv(x -> -exp(-100.0*((x[1]+0.5)^2+(x[2])^2))), space_mdl, SM.even(space_mdl)))
-#     gΩps = (SH.assemble_linear(SH.∫S²_hv(Ω -> 1.0), direction_mdl, SH.even(direction_mdl)))
-#     return Rank1DiscretePNVector{false}(discrete_model, gϵs, gxps, gΩps)
-# end
 
 function discretize_extraction(pn_ex::PNExtraction, mdl::DiscretePNModel, arch::PNArchitecture; updatable=true)
     T = base_type(arch)
@@ -188,15 +178,15 @@ function discretize_extraction(pn_ex::PNExtraction, mdl::DiscretePNModel, arch::
 
     ## ... and extraction
     μϵs = [Vector{T}([extraction_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(mdl)]) for i in 1:number_of_extractions(pn_ex)]
-    μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.even(direction_mdl)) |> arch for i in 1:number_of_extractions(pn_ex)]
+    μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.plus(direction_mdl)) |> arch for i in 1:number_of_extractions(pn_ex)]
 
     if updatable
-        ρ_proj = SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.even(space_mdl))
+        ρ_proj = SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.minus(space_mdl), SM.plus(space_mdl))
         ρs = discretize_mass_concentrations(pn_ex.pn_eq, mdl)
         n_parameters = (number_of_elements(pn_ex.pn_eq), n_basis(mdl).nx.m)
         return [UpdatableRank1DiscretePNVector(Rank1DiscretePNVector(true, mdl, arch, μϵs[i], ρ_proj*@view(ρs[i, :]) |> arch, μΩps[i]), EPMAfem.PNNoAbsorption(mdl, arch, ρ_proj, i), n_parameters) for i in 1:number_of_extractions(pn_ex)]
     else
-        μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.even(space_mdl)) |> arch for i in 1:number_of_extractions(pn_ex)]
+        μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.plus(space_mdl)) |> arch for i in 1:number_of_extractions(pn_ex)]
         return [Rank1DiscretePNVector(true, mdl, arch, μϵs[i], μxps[i], μΩps[i]) for i in 1:number_of_extractions(pn_ex)]
     end
 end
@@ -214,25 +204,7 @@ function discretize_outflux(mdl::DiscretePNModel, arch::PNArchitecture, ϵ_func=
     ## ... and extraction
     μϵ = Vector{T}([ϵ_func(ϵ) for ϵ ∈ energy_model(mdl)])
     n = VectorValue(1.0, 0.0, 0.0)
-    μΩp = SH.assemble_linear(SH.∫S²_hv(Ω -> abs(dot(Ω, n))), direction_mdl, SH.even(direction_mdl)) |> arch
-    μxp = SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> isapprox(x[1], 0.0, atol=1e-12)), space_mdl, SM.even(space_mdl)) |> arch
+    μΩp = SH.assemble_linear(SH.∫S²_hv(Ω -> abs(dot(Ω, n))), direction_mdl, SH.plus(direction_mdl)) |> arch
+    μxp = SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> isapprox(x[1], 0.0, atol=1e-12)), space_mdl, SM.plus(space_mdl)) |> arch
     return Rank1DiscretePNVector(true, mdl, arch, μϵ, μxp, μΩp)
 end
-
-# function discretize_extraction_old(pn_ex::PNExtraction, discrete_model::PNGridapModel, arch::PNArchitecture)
-#     T = base_type(arch)
-
-#     ## instantiate Gridap
-#     SM = EPMAfem.SpaceModels
-#     SH = EPMAfem.SphericalHarmonicsModels
-
-#     space_mdl = space_model(discrete_model)
-#     direction_mdl = direction_model(discrete_model)
-
-#     ## ... and extraction
-#     μϵs = [Vector{T}([extraction_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(discrete_model)]) for i in 1:number_of_extractions(pn_ex)]
-#     μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.even(space_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
-#     μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.even(direction_mdl)) for i in 1:number_of_extractions(pn_ex)] |> arch
-
-#     return VecOfRank1DiscretePNVector{true}(discrete_model, arch, μϵs, μxps, μΩps)
-# end
