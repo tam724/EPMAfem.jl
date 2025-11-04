@@ -20,12 +20,14 @@ equations = LineSourceEquations()
 
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (150, 150)))
 N = 47
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 2)
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 2, :OE)
 model = EPMAfem.DiscretePNModel(space_model, 0:0.01:1.0, direction_model)
-problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cuda(Float64))
+arch = EPMAfem.cuda(Float32)
+problem = EPMAfem.discretize_problem(equations, model, arch)
 
 # source / boundary condition (here: zero)
-source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cuda(Float64), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
+nb = EPMAfem.n_basis(model)
+source = EPMAfem.Rank1DiscretePNVector(false, model, arch, zeros(nb.nϵ), (p=zeros(nb.nx.p), m=zeros(nb.nx.m)) |> arch, (p=zeros(nb.nΩ.p), m=zeros(nb.nΩ.m)) |> arch)
 
 # initial condition
 σ = 0.03
@@ -35,18 +37,18 @@ using EPMAfem.HCubature
 # init_x(x) = 1/(8π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(2*σ^2)) # from (https://doi.org/10.1080/00411450.2014.910226)
 init_x(x) = 1/(4π*σ^2)*exp(-(x[1]*x[1]+x[2]*x[2])/(4*σ^2)) # from (https://doi.org/10.1051/m2an/2022090)
 init_Ω(_) = 1.0
-Mp_cpu = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)))
+Mp_cpu = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)))
 # Mp = Mp_cpu |> EPMAfem.architecture(problem)
-Mm_cpu = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model))) |> EPMAfem.diag_if_diag
+Mm_cpu = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model))) |> EPMAfem.diag_if_diag
 # Mm = Mm_cpu |> EPMAfem.architecture(problem)
 
-bxp = Mp_cpu \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)))
-bxm = Mm_cpu \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)))
-bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
-bΩm = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.odd(EPMAfem.direction_model(model)))
+bxp = Mp_cpu \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)))
+bxm = Mm_cpu \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model)))
+bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.plus(EPMAfem.direction_model(model)))
+bΩm = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.minus(EPMAfem.direction_model(model)))
 
 nb = EPMAfem.n_basis(problem)
-initial_condition = EPMAfem.allocate_vec(EPMAfem.cuda(Float64), nb.nx.p*nb.nΩ.p + nb.nx.m*nb.nΩ.m)
+initial_condition = EPMAfem.allocate_vec(arch, nb.nx.p*nb.nΩ.p + nb.nx.m*nb.nΩ.m)
 ψ0p, ψ0m = EPMAfem.pmview(initial_condition, model)
 copy!(ψ0p, bxp .* bΩp')
 copy!(ψ0m, bxm .* bΩm')
@@ -59,6 +61,38 @@ copy!(ψ0m, bxm .* bΩm')
 #     heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> func(VectorValue(x, y)), aspect_ratio=:equal, cmap=:jet)
 # end
 
+
+# debugging
+probe = EPMAfem.PNProbe(model, arch, Ω=Ω -> 1.0, ϵ=0.0)
+system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
+sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
+func = EPMAfem.interpolable(probe, sol)
+heatmap(-1.5:0.002:1.5, -1.5:0.002:1.5, (x, y) -> func(VectorValue(x, y)))
+
+system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=30, m=30), tolerance=0.01);
+sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition, step_callback = (ϵ, ψ) -> @show ψ.ranks);
+func_lr = EPMAfem.interpolable(probe, sol_lr)
+heatmap(-1.5:0.002:1.5, -1.5:0.002:1.5, (x, y) -> func_lr(VectorValue(x, y)))
+
+system_lr_basis = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=30, m=30), tolerance=0.01, basis_augmentation=:mass);
+sol_lr_basis = EPMAfem.IterableDiscretePNSolution(system_lr_basis, source, initial_solution=initial_condition, step_callback = (ϵ, ψ) -> @show ψ.ranks);
+func_lr_basis = EPMAfem.interpolable(probe, sol_lr_basis)
+heatmap(-1.5:0.002:1.5, -1.5:0.002:1.5, (x, y) -> func_lr_basis(VectorValue(x, y)))
+
+data = compute_sol_and_rank_evolution(sol)
+data_lr_basis = compute_sol_and_rank_evolution(sol_lr_basis)
+
+(_, ψ0), state = iterate(sol_lr_basis)
+(_, ψ1), state = iterate(sol_lr_basis, state)
+(_, ψ2), state = iterate(sol_lr_basis, state)
+
+((Up0, Sp0, Vpt0), (Um0, Sm0, Vmt0)) = EPMAfem.USVt(ψ0)
+((Up1, Sp1, Vpt1), (Um1, Sm1, Vmt1)) = EPMAfem.USVt(ψ1)
+((Up2, Sp2, Vpt2), (Um2, Sm2, Vmt2)) = EPMAfem.USVt(ψ2)
+
+
+
+#end debugging
 using Serialization
 figpath = mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/"))
 mkpath(joinpath(dirname(@__FILE__), "figures/2D_linesource/solutions/$(N)"))
@@ -67,18 +101,16 @@ function compute_sol_and_rank_evolution(sol)
     data = Dict()
     data["ranks"] = (p=zeros(length(sol)), m=zeros(length(sol)))
     data["mass"] = zeros(length(sol))
-    data["outflux"] = zeros(length(sol))
     Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(sol.system.problem.model), Ω -> 1.0) |> EPMAfem.architecture(sol.system.problem)
     xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(sol.system.problem.model), x -> 1.0) |> EPMAfem.architecture(sol.system.problem)
 
-    pbl = sol.system.problem
-    xp_b = unlazy(pbl.space_discretization.∂p[1], vec_size -> EPMAfem.allocate_vec(EPMAfem.architecture(pbl), vec_size))*(EPMAfem.cu(Mp_cpu \ collect(xp)))
-    Ωp_b = vec(Ωp' * pbl.direction_discretization.absΩp[1])
+    # pbl = sol.system.problem
+    # xp_b = unlazy(pbl.space_discretization.∂p[1], vec_size -> EPMAfem.allocate_vec(EPMAfem.architecture(pbl), vec_size))*(EPMAfem.cu(Mp_cpu \ collect(xp)))
+    # Ωp_b = vec(Ωp' * pbl.direction_discretization.absΩp[1])
 
     for (i, (ϵ, ψ)) in enumerate(sol)
         ψp, ψm = EPMAfem.pmview(ψ, sol.system.problem.model)
         data["mass"][i] = dot(xp, ψp*Ωp) + dot(xm, ψm*Ωm)
-        data["outflux"][i] = dot(xp_b, ψp*Ωp_b)
         if hasproperty(ψ, :ranks)
             data["ranks"].p[i], data["ranks"].m[i] = ψ.ranks.p[], ψ.ranks.m[]
         end
@@ -91,31 +123,16 @@ function compute_sol_and_rank_evolution(sol)
     return data
 end
 
-# system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=100, m=100), tolerance=0.05, basis_augmentation=:mass, solver=Krylov.minres);
-# sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition);
-# Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0) |> EPMAfem.cuda(Float64)
-
-# for (ϵ, ψ) in sol_lr
-#     ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = EPMAfem.USVt(ψ)
-#     @show collect(transpose(Up₁) * Up₁ - I) .|> abs |> maximum
-#     @show collect(transpose(Um₁) * Um₁ - I) .|> abs |> maximum
-#     @show collect(Vtp₁ * transpose(Vtp₁) - I) .|> abs |> maximum
-#     @show collect(Vtm₁ * transpose(Vtm₁) - I) .|> abs |> maximum
-
-#     @show collect(transpose(Vtp₁ ) * (Vtp₁ * Ωp) .- Ωp) .|> abs |> maximum
-# end
-# data = compute_sol_and_rank_evolution(sol_lr)
-
 system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
 sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
 serialize(joinpath(figpath, "solutions/$N/full.jls"), compute_sol_and_rank_evolution(sol))
 
-for (i, (rmax, tol)) in collect(enumerate([(100, 0.05), (200, 0.025), (200, 0.0125), (310, 0.00625)]))
-    let
-        system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=rmax, m=rmax), tolerance=tol);
-        sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition);
-        serialize(joinpath(figpath, "solutions/$(N)/lr_$(i).jls"), compute_sol_and_rank_evolution(sol_lr))
-    end
+for (i, (rmax, tol)) in collect(enumerate([(100, 0.05), (200, 0.025), (200, 0.0125), (310, 0.00625)]))[3:end]
+    # let
+    #     system_lr = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=rmax, m=rmax), tolerance=tol);
+    #     sol_lr = EPMAfem.IterableDiscretePNSolution(system_lr, source, initial_solution=initial_condition);
+    #     serialize(joinpath(figpath, "solutions/$(N)/lr_$(i).jls"), compute_sol_and_rank_evolution(sol_lr))
+    # end
     let
         system_lr_cons = EPMAfem.implicit_midpoint_dlr5(problem, max_ranks=(p=rmax, m=rmax), tolerance=tol, basis_augmentation=:mass);
         sol_lr_cons = EPMAfem.IterableDiscretePNSolution(system_lr_cons, source, initial_solution=initial_condition);

@@ -22,46 +22,32 @@ EPMAfem.scattering_kernel(::TransportEquations, e, i) = μ -> 0.0
 
 equations = TransportEquations()
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), (200,)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(47, 1)
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(47, 1, :OE)
 nϵ = 200
 model = EPMAfem.DiscretePNModel(space_model, range(0, 2, length=nϵ), direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 excitation = EPMAfem.pn_excitation([(x=0.0, y=0.0)], [1.7], [VectorValue(-1.0, 0.0, 0.0)], beam_energy_σ=0.08, beam_direction_κ=10.0);
 discrete_rhs = EPMAfem.discretize_rhs(excitation, model, EPMAfem.cpu())[1];
-discrete_rhs.bΩp .*= 2 # this should be fixed in the discretization...
-
-nb = EPMAfem.n_basis(model)
-basis_augmentation = (p=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.p, 0),
-                            V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.p, 1)),
-                        m=(U = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nx.m, 0),
-                            V = EPMAfem.allocate_mat(EPMAfem.cpu(), nb.nΩ.m, 0)))
-
-
-Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->1/(4π)) |> EPMAfem.architecture(problem)
-Ωp_b = vec(Ωp' * problem.direction_discretization.absΩp[1])
-
-copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
-copy!(@view(basis_augmentation.p.V[:, 2]), Ωp_b)
-basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> Matrix
+discrete_rhs.bΩ.p .*= 2 # this should be fixed in the discretization...
 
 system_full = EPMAfem.implicit_midpoint2(problem, Krylov.minres);
 system_lowrank = EPMAfem.implicit_midpoint_dlr5(problem; max_ranks=(p=3, m=3));
-system_lowrank_aug = EPMAfem.implicit_midpoint_dlr5(problem; max_ranks=(p=3, m=3), basis_augmentation=basis_augmentation);
+system_lowrank_aug = EPMAfem.implicit_midpoint_dlr5(problem; max_ranks=(p=3, m=3), basis_augmentation=:mass);
 system_lowrank5 = EPMAfem.implicit_midpoint_dlr5(problem; max_ranks=(p=5, m=5));
-system_lowrank5_aug = EPMAfem.implicit_midpoint_dlr5(problem; max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation);
+system_lowrank5_aug = EPMAfem.implicit_midpoint_dlr5(problem; max_ranks=(p=5, m=5), basis_augmentation=:mass);
 
 direction_model2 = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(7, 1)
 model2 = EPMAfem.DiscretePNModel(space_model, range(0, 2, length=nϵ), direction_model2)
 problem2 = EPMAfem.discretize_problem(equations, model2, EPMAfem.cpu())
 discrete_rhs2 = EPMAfem.discretize_rhs(excitation, model2, EPMAfem.cpu())[1];
-discrete_rhs2.bΩp .*= 2 # this should be fixed in the discretization...
+discrete_rhs2.bΩ.p .*= 2 # this should be fixed in the discretization...
 system_full2 = EPMAfem.implicit_midpoint2(problem2, Krylov.minres);
 
 space_model3 = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1, 0), (600,)))
 model3 = EPMAfem.DiscretePNModel(space_model3, range(0, 2, length=3nϵ), direction_model)
 problem3 = EPMAfem.discretize_problem(equations, model3, EPMAfem.cpu())
 discrete_rhs3 = EPMAfem.discretize_rhs(excitation, model3, EPMAfem.cpu())[1];
-discrete_rhs3.bΩp .*= 2 # this should be fixed in the discretization...
+discrete_rhs3.bΩ.p .*= 2 # this should be fixed in the discretization...
 system_full3 = EPMAfem.implicit_midpoint2(problem3, Krylov.minres);
 
 sol = system_full * discrete_rhs;
@@ -146,13 +132,14 @@ end
 
 energies = zeros(length(sol), 6)
 mass = zeros(length(sol), 6)
-Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)))
-Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)))
+Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)))
+Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model)))
 
-Mp3 = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model3), EPMAfem.SpaceModels.even(EPMAfem.space_model(model3)), EPMAfem.SpaceModels.even(EPMAfem.space_model(model3)))
-Mm3 = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model3), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model3)), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model3)))
+Mp3 = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model3), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model3)), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model3)))
+Mm3 = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model3), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model3)), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model3)))
 
 for (i, ((_, ψfull), (_, ψfull2), (_, ψlr), (_, ψlr_aug), (_, ψlr5), (_, ψlr_aug5),)) in enumerate(zip(sol, sol2, sol_lowrank, sol_lowrank_aug, sol_lowrank5, sol_lowrank5_aug))
+    @show i
     ψfullp, ψfullm = EPMAfem.pmview(ψfull, model)
     ψfull2p, ψfull2m = EPMAfem.pmview(ψfull2, model2)
     ψlrp, ψlrm = EPMAfem.pmview(ψlr, model)
@@ -179,6 +166,7 @@ end
 energies3 = zeros(length(sol3), 1)
 mass3 = zeros(length(sol3), 1)
 for (i, (_, ψfull3)) in enumerate(sol3)
+    @show i
     ψfull3p, ψfull3m = EPMAfem.pmview(ψfull3, model3)
     xp3, xm3 = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model3), x -> 1.0)
     Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0/(4π))
@@ -231,13 +219,10 @@ function cumtrapz(v, Δ)
 end
 
 begin
-    # energy_bound = 4π*EPMAfem.SphericalHarmonicsModels.lebedev_quadrature_max()(Ω -> abs(Ω[1])/(4π)*(EPMAfem.beam_direction_distribution(excitation, 1, Ω))^2)*EPMAfem.hquadrature(ϵ -> (EPMAfem.beam_energy_distribution(excitation, 1, ϵ))^2, 0, 2)[1]
-    energy_bound = dot(discrete_rhs.bΩp, problem.direction_discretization.absΩp[1] \ discrete_rhs.bΩp)/2 * cumtrapz(discrete_rhs.bϵ.^2, step(model.energy_mdl))[end]
-
+    energy_bound = 4π*EPMAfem.SphericalHarmonicsModels.lebedev_quadrature_max()(Ω -> abs(Ω[1])/(4π)*(EPMAfem.beam_direction_distribution(excitation, 1, Ω))^2)*EPMAfem.hquadrature(ϵ -> (EPMAfem.beam_energy_distribution(excitation, 1, ϵ))^2, 0, 2)[1]
 
     t = 2.0 .- EPMAfem.energy_model(model) |> reverse
     t3 = 2.0 .- EPMAfem.energy_model(model3) |> reverse
-    # t4 = 2.0 .- EPMAfem.energy_model(model4) |> reverse
 
     hline([energy_bound /energy_bound], color=:gray, ls=:dash, label=L"\mathcal{E}_{\textrm{max}}")
     xlims!(0, 2)

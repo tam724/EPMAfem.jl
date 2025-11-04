@@ -25,10 +25,10 @@ EPMAfem.scattering_kernel(eq::PlaneSourceEquations{T}, e, i) where T = μ -> exp
 energy_model = 0:0.01:1.0
 
 T = Inf
-N = 1
+N = 3
 equations = PlaneSourceEquations{T}()
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (50)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (300)))
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1, :EO)
 model = EPMAfem.DiscretePNModel(space_model, energy_model, direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 
@@ -36,8 +36,8 @@ problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
 
 # initial condition
-Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)), EPMAfem.SpaceModels.even(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
-Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
+Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
+Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
 
 # system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
 system = EPMAfem.implicit_midpoint2(problem, LinearAlgebra.:\);
@@ -45,15 +45,14 @@ system = EPMAfem.implicit_midpoint2(problem, LinearAlgebra.:\);
 # system_lr20 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=20, m=20));
 
 # σ = 0.03
-σ = 0.08
+σ = 0.03
 using EPMAfem.HCubature
 init_x(x) = 1/(σ*sqrt(2π))*exp(-1/2*(x[1]-0.0)^2/σ^2)
 init_Ω(Ω) = 1.0 # pdf(VonMisesFisher([1, 0, 0], 2.0), [Ω...])
-bxp = collect(Mp) \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model)))
-bxm = collect(Mm) \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.odd(EPMAfem.space_model(model)))
-bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
-bΩm = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.odd(EPMAfem.direction_model(model)))
-# bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(Ω -> 1/4π), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
+bxp = collect(Mp) \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)))
+bxm = collect(Mm) \ EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫R_μv(init_x), EPMAfem.space_model(model), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model)))
+bΩp = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.plus(EPMAfem.direction_model(model)))
+bΩm = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(init_Ω), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.minus(EPMAfem.direction_model(model)))
 initial_condition = EPMAfem.allocate_solution_vector(system)
 ψ0p, ψ0m = EPMAfem.pmview(initial_condition, model)
 copy!(ψ0p, bxp .* bΩp')
@@ -61,30 +60,87 @@ copy!(ψ0m, bxm .* bΩm')
 
 Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->1/(4π)) |> EPMAfem.architecture(problem)
 Ωp_m, Ωm_m = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω->EPMAfem.Dimensions.Ωz(Ω)/(4π)) |> EPMAfem.architecture(problem)
-xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> 1.0) |> EPMAfem.architecture(problem)
+
+@show model.space_mdl.discrete_model.grid.node_coords .|> Base.Fix2(getindex, 1)
+regions = [(-1.5, 1.5), (-0.2, 0.4), (0.2, 0.5)]
+# fix the regions:
+function fix_region(r)
+    node_coords =  model.space_mdl.discrete_model.grid.node_coords .|> Base.Fix2(getindex, 1)
+    rl = node_coords[argmin(abs(r[1] - x) for x in node_coords)]
+    rr = node_coords[argmin(abs(r[2] - x) for x in node_coords)]
+    return (rl, rr)
+end
+regions = fix_region.(regions)
+x_r = []
+x_b_r = []
 
 in_interval(x, (l, r)) = x >= l && x <= r
-xp_local, xm_local = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> in_interval(x[1], (-0.3, 0.3))) |> EPMAfem.architecture(problem)
+for region in regions
+    xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> in_interval(x[1], region)) |> EPMAfem.architecture(problem)
+    push!(x_r, (p=xp, m=xm))
+
+    xp_b1, xm_b1 = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), VectorValue(region[1])) |> EPMAfem.architecture(problem)
+    xp_b2, xm_b2 = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), VectorValue(region[2])) |> EPMAfem.architecture(problem)
+    xp_b = .-xp_b1 .+ xp_b2
+    xm_b = .-xm_b1 .+ xm_b2
+    push!(x_b_r, (p=xp_b, m=xm_b))
+end
 
 sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
 
+mass0 = dot(x_r[1].p, ψ0p, Ωp) + dot(x_r[1].m, ψ0m, Ωm)
+local_masses = [dot(x_r[i].p, ψ0p, Ωp) + dot(x_r[i].m, ψ0m, Ωm) for i in 1:length(regions)]
 mass = zeros(length(sol))
-local_mass = zeros(length(sol))
+net_flux = zeros(length(sol))
+local_mass = zeros(length(sol), length(regions))
+local_net_flux = zeros(length(sol), length(regions))
+
 
 @gif for (i, (ϵ, ψ)) in enumerate(sol)
     @show ϵ
     ψp, ψm = EPMAfem.pmview(ψ, model)
     func = EPMAfem.SpaceModels.interpolable((p=ψp*Ωp, m=ψm*Ωm), EPMAfem.space_model(model))
     plot(-1.5:0.01:1.5, x -> func(VectorValue(x)))
-    mass[i] = dot(xp, ψp, Ωp) + dot(xm, ψm, Ωm)
-    local_mass[i] = dot(xp_local, ψp, Ωp) + dot(xm_local, ψm, Ωm)
+    mass[i] = dot(x_r[1].p, ψp, Ωp) + dot(x_r[1].m, ψm, Ωm)
+    net_flux[i] = dot(x_b_r[1].p, ψp, Ωp_m) + dot(x_b_r[1].m, ψm, Ωm_m)
+    for j in 1:length(regions)
+        local_mass[i, j] = dot(x_r[j].p, ψp, Ωp) + dot(x_r[j].m, ψm, Ωm)
+        local_net_flux[i, j] = dot(x_b_r[j].p, ψp, Ωp_m) + dot(x_b_r[j].m, ψm, Ωm_m)
+        vline!([regions[j]...], color=j)
+    end
 end
 
-plot(mass .- 1.0, yaxis=:log)
+begin
+    p1 = plot(mass, label="total mass", color=1)
+    plot!(mass .+ cumtrapz(net_flux, EPMAfem.energy_model(model).step), label="mass + outflux", ls=:dot, color=1)
+
+    for i in 2:length(regions)
+        plot!(local_mass[:, i], label="local mass $i", color=i)
+        plot!(local_mass[:, i] .+ cumtrapz(local_net_flux[:, i], EPMAfem.energy_model(model).step), label="local mass + local net flux $i", ls=:dot, color=i)
+    end
+
+    # p2 = plot(abs.(mass .- mass0), label="total mass", yaxis=:log)
+    p2 = plot(abs.(mass .+ cumtrapz(net_flux, EPMAfem.energy_model(model).step) .- mass0), label="mass + outflux", yaxis=:log, ls=:dot, color=1)
+
+    for i in 2:length(regions)
+        # plot!(abs.(local_mass[:, i] .- local_masses[i]), label="local mass $i")
+        plot!(abs.(local_mass[:, i] .+ cumtrapz(local_net_flux[:, i], EPMAfem.energy_model(model).step) .- local_masses[i]), color=i, label="local mass + local net flux $i", ls=:dot)
+    end
+    ylims!(1e-17, 1)
+    yticks!([1e-17, 1e-15, 1e-13, 1e-11, 1e-9, 1e-7, 1e-5, 1e-3, 1e-1,])
+    plot(p1, p2, size=(800, 300))
+end
+
+
+plot(abs.(mass .- mass0), yaxis=:log, ylims=(1e-17, 1))
+plot!(abs.(mass .+ cumtrapz(net_flux, EPMAfem.energy_model(model).step).- mass0), yaxis=:log, ylims=(1e-17, 1))
 ylims!(1e-15, 1.0)
 
-# Ωp_b2 = EPMAfem.SphericalHarmonicsModels.assemble_linear(EPMAfem.SphericalHarmonicsModels.∫S²_hv(Ω -> abs(Ω[1])/(4π)), EPMAfem.direction_model(model), EPMAfem.SphericalHarmonicsModels.even(EPMAfem.direction_model(model)))
-# xp_b2 = EPMAfem.SpaceModels.assemble_linear(EPMAfem.SpaceModels.∫∂R_ngv{EPMAfem.Dimensions.Z}(x -> 1.0), EPMAfem.space_model(model), EPMAfem.SpaceModels.even(EPMAfem.space_model(model))) .|> abs
+plot(abs.(local_mass .- mass0))
+plot!(abs.(local_mass .+ cumtrapz(local_net_flux, EPMAfem.energy_model(model).step) .- mass0))
+plot!(yaxis=:log)
+ylims!(1e-15, 1)
+
 
 # this avoids numerical errors in the quadrature (for xp_b)
 xp_b = vec((Mp \ xp)' * problem.space_discretization.∂p[1])
