@@ -17,10 +17,10 @@ end
     _args
 end
 
-function GeneralSpaceModel(discrete_model::DiscreteModel{ND, ND}; plus=(order=1, conformity=:H1), minus=(order=0, conformity=:L2)) where ND
-    reffe1 = ReferenceFE(lagrangian, Float64, plus.order)
+function GeneralSpaceModel(discrete_model::DiscreteModel{ND, ND}; plus=(name=lagrangian, order=1, conformity=:H1), minus=(name=lagrangian, order=0, conformity=:L2)) where ND
+    reffe1 = ReferenceFE(plus.name, Float64, plus.order)
     plus_fe_space = TestFESpace(discrete_model, reffe1, conformity=plus.conformity)
-    reffe0 = ReferenceFE(lagrangian, Float64, minus.order)
+    reffe0 = ReferenceFE(minus.name, Float64, minus.order)
     minus_fe_space = TestFESpace(discrete_model, reffe0, conformity=minus.conformity)
     return GeneralSpaceModel{ND}(discrete_model, plus_fe_space, minus_fe_space, get_args_(discrete_model))
 end
@@ -29,16 +29,16 @@ function GridapSpaceModel(discrete_model::DiscreteModel; plus=(order=1, conformi
    return GeneralSpaceModel(discrete_model, plus=plus, minus=minus)
 end
 
-function GridapSpaceModel(discrete_model::CartesianDiscreteModel{ND}; plus=(order=1, conformity=:H1), minus=(order=0, conformity=:L2)) where ND
+function GridapSpaceModel(discrete_model::CartesianDiscreteModel{ND}; plus=(name=lagrangian, order=1, conformity=:H1), minus=(name=lagrangian, order=0, conformity=:L2)) where ND
     c_descr = Gridap.Geometry.get_cartesian_descriptor(discrete_model)
     c_descrs = Gridap.Geometry.CartesianDescriptor.(VectorValue.(c_descr.origin.data), tuple.(c_descr.sizes), c_descr.partition)
     discrete_models = CartesianDiscreteModel.(c_descrs)
 
-    plus_reffe = ReferenceFE(lagrangian, Float64, plus.order)
+    plus_reffe = ReferenceFE(plus.name, Float64, plus.order)
     plus_fe_space = TestFESpace(discrete_model, plus_reffe, conformity=plus.conformity)
     plus_fe_spaces = TestFESpace.(discrete_models, Ref(plus_reffe), conformity=plus.conformity)
     
-    minus_reffe = ReferenceFE(lagrangian, Float64, minus.order)
+    minus_reffe = ReferenceFE(minus.name, Float64, minus.order)
     minus_fe_space = TestFESpace(discrete_model, minus_reffe, conformity=minus.conformity)
     minus_fe_spaces = TestFESpace.(discrete_models, Ref(minus_reffe), conformity=minus.conformity)
 

@@ -7,7 +7,7 @@ function epma_model(eq::EPMAEquations, space_extents, num_cells, PN_N)
     space_extents_dimless = dimless.(space_extents, eq.dim_basis)
     space_model = SpaceModels.GridapSpaceModel(CartesianDiscreteModel(space_extents_dimless, num_cells))
     energy_model = eq.energy_model_dimless
-    direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(PN_N, EPMAfem.Dimensions.dimensionality(space_model))
+    direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(PN_N, EPMAfem.Dimensions.dimensionality(space_model), :OE)
     model = EPMAfem.DiscretePNModel(space_model, energy_model, direction_model)
     return model
 end
