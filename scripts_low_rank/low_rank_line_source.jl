@@ -150,10 +150,10 @@ for N in [47]
         for t in [-1, 2, 3, 4]
             if t == -1
                 data = deserialize(path(N, -1, Val(:def)))
-                plot!(-1.5:0.005:1.5, x -> data["final"](VectorValue(x, 0.0))/4π, label=L"P_{47}", color=:black)
+                plot!(range(-1.5, 1.5, 150), x -> data["final"](VectorValue(x, 0.0))/4π, label=L"P_{47}", color=:black)
             else
                 data = deserialize(path(N, t, cons))
-                plot!(-1.5:0.005:1.5, x -> data["final"](VectorValue(x, 0.0))/4π, label=tol(t), color=t-1)
+                plot!(range(-1.5, 1.5, 150), x -> data["final"](VectorValue(x, 0.0))/4π, label=tol(t), color=t-1)
             end
         end
         plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000)

@@ -27,13 +27,13 @@ energy_model = 0:0.01:1.0
 T = Inf
 N = 3
 equations = PlaneSourceEquations{T}()
-space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (300)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1, :EO)
+space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (300)), plus=(name=lagrangian, order=1, conformity=:H1), minus=(name=lagrangian, order=0, conformity=:L2))
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1, :OE)
 model = EPMAfem.DiscretePNModel(space_model, energy_model, direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 
 # source / boundary condition (here: zero)
-source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
+source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), zeros(EPMAfem.n_basis(model).nϵ), (p=zeros(EPMAfem.n_basis(model).nx.p), m=zeros(EPMAfem.n_basis(model).nx.m)), (p=zeros(EPMAfem.n_basis(model).nΩ.p), m=zeros(EPMAfem.n_basis(model).nΩ.p)))
 
 # initial condition
 Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
@@ -94,7 +94,6 @@ mass = zeros(length(sol))
 net_flux = zeros(length(sol))
 local_mass = zeros(length(sol), length(regions))
 local_net_flux = zeros(length(sol), length(regions))
-
 
 @gif for (i, (ϵ, ψ)) in enumerate(sol)
     @show ϵ
