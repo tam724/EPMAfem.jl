@@ -112,11 +112,13 @@ end
     element_index
 end
 
-function update_bxp!(bxp, updater::PNNoAbsorption, ρs)
-    bxp .= updater.ρ_proj*@view(ρs[updater.element_index, :]) |> updater.arch
+function update_bxp!(bx, updater::PNNoAbsorption, ρs)
+    # bx.p .= updater.ρ_proj*@view(ρs[updater.element_index, :]) |> updater.arch
+    bx.m .= @view(ρs[updater.element_index, :]) |> updater.arch
 end
 
 function update_bxp_adjoint!(ρ_adjoint, updater::PNNoAbsorption, bxp_adjoint, ρs)
+    error("todo")
     @show bxp_adjoint |> size, updater.ρ_proj |> size, ρ_adjoint |> size
 
     @show transpose(updater.ρ_proj) * (bxp_adjoint |> collect) |> size
@@ -134,8 +136,10 @@ end
     element_index
 end
 
-function update_bxp!(bxp, updater::PNAbsorption, ρs)
-    bxp .= updater.ρ_proj*(@view(ρs[updater.element_index, :]) .* exp.(.-updater.line_contribs*transpose(ρs)*updater.MAC)) |> updater.arch
+function update_bxp!(bx, updater::PNAbsorption, ρs)
+    error("todo")
+    bx.p .= updater.ρ_proj*(@view(ρs[updater.element_index, :]) .* exp.(.-updater.line_contribs*transpose(ρs)*updater.MAC)) |> updater.arch
+    bx.m .= updater.ρ_proj*(@view(ρs[updater.element_index, :]) .* exp.(.-updater.line_contribs*transpose(ρs)*updater.MAC)) |> updater.arch
 end
 
 function update_bxp_adjoint!(ρs_adjoint, updater::PNAbsorption, bxp_adjoint, ρs)

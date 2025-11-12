@@ -93,8 +93,8 @@ function ideal_index_order(b_arr::Array{<:Rank1DiscretePNVector})
 end
 
 function initialize_integration(b::Array{<:Rank1DiscretePNVector})
-    (_, (_, _), (nΩp, _)) = n_basis(first(b).model)
-    buf = allocate_vec(first(b).arch, nΩp)
+    (_, (_, _), (nΩp, nΩm)) = n_basis(first(b).model)
+    buf = (p=allocate_vec(first(b).arch, nΩp), m=allocate_vec(first(b).arch, nΩm))
     idx_order = ideal_index_order(b)
     cache = (integral = zeros(size(b)), idx_order = idx_order, buf = buf)
     return PNVectorIntegrator(b, cache)
@@ -114,8 +114,7 @@ function ((; b, cache)::PNVectorIntegrator{<:Array{<:Rank1DiscretePNVector}})(id
         mul!(cache.buf.p, transpose(ψp), b[x_base].bx.p)
         mul!(cache.buf.m, transpose(ψm), b[x_base].bx.m)
         for (Ω_base, Ωx_rem) in x_rem
-            bufbuf = (p=dot(b[Ω_base].bΩ.p, cache.buf.p),
-                    m=dot(b[Ω_base].bΩ.m, cache.buf.m))
+            bufbuf = (p=dot(b[Ω_base].bΩ.p, cache.buf.p), m=dot(b[Ω_base].bΩ.m, cache.buf.m))
             for (ϵ_base, ϵΩx_rem) in Ωx_rem
                 if idx.adjoint
                     @assert !_is_adjoint_vector(b[ϵ_base])
@@ -204,7 +203,7 @@ Base.show(io::IO, ::MIME"text/plain", v::UpdatableRank1DiscretePNVector) = show(
 
 function update_vector!(upd_vector::UpdatableRank1DiscretePNVector, ρs)
     @assert size(ρs) == n_parameters(upd_vector)
-    update_bxp!(upd_vector.vector.bxp, upd_vector.bxp_updater, ρs)
+    update_bxp!(upd_vector.vector.bx, upd_vector.bxp_updater, ρs)
 end
 
 

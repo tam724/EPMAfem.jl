@@ -43,7 +43,7 @@ function init_basis_augmentation(pbl, aug::Symbol)
         Ωpz, Ωmz = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω -> Ω[1])
         Ωpx, Ωmx = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω -> Ω[2])
 
-        @show norm(Ωmz), norm(Ωmx)
+        # @show norm(Ωmz), norm(Ωmx)
 
         basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, 2), ),
                               m=(V = allocate_mat(architecture(pbl), nb.nΩ.m, 1), ))
@@ -195,8 +195,8 @@ function implicit_midpoint_dlr5(pbl::DiscretePNProblem; solver=Krylov.minres, ma
 
     tmp = (
         tmp1 = allocate_vec(arch, max(nb.nx.p*max_aug_ranks.p, max_aug_ranks.p*nb.nΩ.p, max_aug_ranks.p*max_aug_ranks.p) + max(nb.nx.m*max_aug_ranks.m, max_aug_ranks.m*nb.nΩ.m, max_aug_ranks.m*max_aug_ranks.m)),
-        tmp2 = allocate_vec(arch, nb.nx.m*nb.nΩ.m),
-        tmp3 = allocate_vec(arch, nb.nx.m*nb.nΩ.m),
+        # tmp2 = allocate_vec(arch, nb.nx.m*nb.nΩ.m),
+        # tmp3 = allocate_vec(arch, nb.nx.m*nb.nΩ.m),
     )
 
     return DiscreteDLRPNSystem5(
@@ -240,7 +240,7 @@ end
 function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, _Sp, _Sm)
     Sp = collect(_Sp)
     Sm = collect(_Sm)
-    @show Sp, Sm
+    # @show Sp, Sm
     norm_S² = sum(Sp.^2) + sum(Sm.^2)
     return (
         p = _compute_new_rank(Sp, system.tolerance^2*norm_S², system.max_ranks.p),
@@ -273,6 +273,8 @@ function _step!(x, system::DiscreteDLRPNSystem5{<:Any, Nothing}, rhs_ass::PNVect
 
     ((Up₀, Sp₀, Vtp₀), (Um₀, Sm₀, Vtm₀)) = USVt(x)
     ranks = (p=x.ranks.p[], m=x.ranks.m[])
+
+    @show idx
 
     CUDA.NVTX.@range "L-step prep" begin
         PNLazyMatrices.set!(system.mats.Up, vec(Up₀), size(Up₀))
@@ -426,7 +428,7 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Vphat = _orthonormalize(architecture(system.problem), system.basis_augmentation.p.V, transpose(Vtp₀), transpose(Ltp₁))
         Vmhat = _orthonormalize(architecture(system.problem), system.basis_augmentation.m.V, transpose(Vtm₀), transpose(Ltm₁))
 
-        @show size(Vphat), size(Vmhat)
+        # @show size(Vphat), size(Vmhat)
         Np = transpose(Vphat)*transpose(Vtp₀)
         Nm = transpose(Vmhat)*transpose(Vtm₀)
         aug_ranks_v = (p=size(Vphat, 2), m=size(Vmhat, 2))

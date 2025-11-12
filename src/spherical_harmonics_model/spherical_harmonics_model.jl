@@ -47,6 +47,8 @@ plus(model::EOSphericalHarmonicsModel{ND, :OE}) where ND = model.moments.odd
 minus(model::EOSphericalHarmonicsModel{ND, :EO}) where ND = model.moments.odd
 minus(model::EOSphericalHarmonicsModel{ND, :OE}) where ND = model.moments.even
 
+eo(::EOSphericalHarmonicsModel{ND, EO}) where {ND, EO} = EO
+
 function get_basis_harmonics(model::EOSphericalHarmonicsModel{ND}) where ND
     return model.moments
 end

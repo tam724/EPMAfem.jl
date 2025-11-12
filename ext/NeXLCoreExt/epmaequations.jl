@@ -169,10 +169,13 @@ function discretize_detectors(eq::EPMAEquations, mdl::EPMAfem.DiscretePNModel, a
 
     μϵs = [Vector{T}([EPMAfem.extraction_energy_distribution(eq, i, ϵ) for ϵ ∈ EPMAfem.energy_model(mdl)]) for i in 1:EPMAfem.number_of_extractions(eq)]
     # isotropic in direction
-    μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> 1.0), direction_mdl, SH.even(direction_mdl)) |> arch for i in 1:EPMAfem.number_of_extractions(eq)]
+    nb = EPMAfem.n_basis(mdl)
+    @assert SphericalHarmonicsModels.eo(direction_mdl) == :OE
+    μΩp = zeros(nb.nΩ.p) |> arch
+    μΩm = SH.assemble_linear(SH.∫S²_hv(Ω -> 1.0), direction_mdl, SH.minus(direction_mdl)) |> arch
 
     ρs = EPMAfem.discretize_mass_concentrations(eq, mdl)
-    ρ_proj = SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.even(space_mdl))
+    ρ_proj = nothing #SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.odd(space_mdl), SM.even(space_mdl))
     n_parameters = (EPMAfem.number_of_elements(eq), EPMAfem.n_basis(mdl).nx.m)
 
     # only compute the line_contribs for unique takeoff directions
@@ -185,7 +188,7 @@ function discretize_detectors(eq::EPMAEquations, mdl::EPMAfem.DiscretePNModel, a
         absorptions = [EPMAfem.PNNoAbsorption(mdl, arch, ρ_proj, element_index(eq, eq.detectors[i].k_ratio)) for i in 1:EPMAfem.number_of_extractions(eq)]
     end
 
-    vecs = [EPMAfem.UpdatableRank1DiscretePNVector(EPMAfem.Rank1DiscretePNVector(true, mdl, arch, μϵs[i], EPMAfem.allocate_vec(arch, EPMAfem.n_basis(mdl).nx.p), μΩps[i]), absorptions[i], n_parameters) for i in 1:EPMAfem.number_of_extractions(eq)]
+    vecs = [EPMAfem.UpdatableRank1DiscretePNVector(EPMAfem.Rank1DiscretePNVector(true, mdl, arch, μϵs[i], (p=EPMAfem.allocate_vec(arch, EPMAfem.n_basis(mdl).nx.p), m=EPMAfem.allocate_vec(arch, EPMAfem.n_basis(mdl).nx.m)), (p=μΩp, m=μΩm)), absorptions[i], n_parameters) for i in 1:EPMAfem.number_of_extractions(eq)]
     for vec in vecs
         EPMAfem.update_vector!(vec, ρs)
     end

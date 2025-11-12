@@ -58,7 +58,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovMinresMatrix{T}, x
         solver = Krylov.MinresSolver(A_, x) # this allocates!
     end
     CUDA.NVTX.@range "minres solve" begin
-        Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
+        Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=eps(T))
     end
     CUDA.NVTX.@range "minres copy" begin
         y .= α .* solver.x .+ β .* y
@@ -71,7 +71,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KrylovMi
         solver = Krylov.MinresSolver(A_, x) # this allocates!
     end
     CUDA.NVTX.@range "minres solve" begin
-        Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
+        Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=eps(T))
     end
     CUDA.NVTX.@range "minres copy" begin
         y .= α .* solver.x .+ β .* y
@@ -111,6 +111,36 @@ function required_workspace(::typeof(mul_with!), K::KrylovGmresMatrix, n, cache_
     @assert n == 1
     return required_workspace(mul_with!, A(K), n, cache_notifier)
 end
+
+# krylov cg
+const KrylovCGMatrix{T} = LazyOpMatrix{T, typeof(Krylov.cg), <:Tuple{<:AbstractMatrix{T}}}
+A(K::KrylovCGMatrix) = K.args[1]
+
+Base.size(K::KrylovCGMatrix) = size(A(K))
+max_size(K::KrylovCGMatrix) = max_size(A(K))
+isdiagonal(K::KrylovCGMatrix) = isdiagonal(A(K))
+
+lazy_getindex(K::KrylovCGMatrix, i::Int, j::Int) = error("Cannot getindex")
+
+function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovCGMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
+    A_ = NotSoLazy{T}(A(K), ws)
+    solver = Krylov.CGSolver(A_, x) # this allocates!
+    Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
+    y .= α .* solver.x .+ β .* y
+end
+
+function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KrylovCGMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+    A_ = NotSoLazy{T}(A(parent(Kt)), ws)
+    solver = Krylov.CGSolver(A_, x) # this allocates!
+    Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
+    y .= α .* solver.x .+ β .* y
+end
+
+function required_workspace(::typeof(mul_with!), K::KrylovCGMatrix, n, cache_notifier)
+    @assert n == 1
+    return required_workspace(mul_with!, A(K), n, cache_notifier)
+end
+
 
 function schur_complement() end
 
