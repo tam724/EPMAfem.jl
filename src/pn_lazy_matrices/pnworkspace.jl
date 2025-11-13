@@ -1,5 +1,5 @@
 function create_workspace(::typeof(mul_with!), L::AbstractLazyMatrixOrTranspose, allocate)
-    ws_size = required_workspace(mul_with!, L, ())
+    ws_size = required_workspace(mul_with!, L, 1, ())
     return create_workspace(ws_size, allocate)
 end
 function create_workspace(::typeof(materialize_with), L::AbstractLazyMatrixOrTranspose, allocate)

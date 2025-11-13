@@ -1942,13 +1942,13 @@ end
 
 # stich KronMatrix and BlockMatrix together
 @testset "KronMatrix + BlockMatrix" begin
-    KA = EPMAfem.lazy(EPMAfem.kron_AXB, lazy(rand_mat(10, 10)), lazy(rand_mat(11, 11)))
+    KA = EPMAfem.kron_AXB(lazy(rand_mat(10, 10)), lazy(rand_mat(11, 11)))
     KA_ref = do_materialize(KA)
 
-    KB = EPMAfem.lazy(EPMAfem.kron_AXB, lazy(rand_mat(10, 9)), lazy(rand_mat(12, 11)))
+    KB = EPMAfem.kron_AXB(lazy(rand_mat(10, 9)), lazy(rand_mat(12, 11)))
     KB_ref = do_materialize(KB)
 
-    KC = EPMAfem.lazy(EPMAfem.kron_AXB, lazy(rand_mat(9, 9)), lazy(rand_mat(12, 12)))
+    KC = EPMAfem.kron_AXB(lazy(rand_mat(9, 9)), lazy(rand_mat(12, 12)))
     KC_ref = do_materialize(KC)
 
     B = EPMAfem.blockmatrix(KA, KB, transpose(KB), KC)
@@ -2062,7 +2062,7 @@ end
     A1 = rand_mat(10, 11)
     A2 = rand_mat(10, 11)
     A3 = rand_mat(10, 11)
-    S = PNLazyMatrices.LazyOpMatrix{eltype(A1)}(+, [lazy(A1), lazy(A2), lazy(A3)])
+    S = EPMAfem.lazy(+, [lazy(A1), lazy(A2), lazy(A3)])
     S_tuple = EPMAfem.lazy(+, lazy(A1), lazy(A2), lazy(A3))
 
     S_ref = A1 .+ A2 .+ A3

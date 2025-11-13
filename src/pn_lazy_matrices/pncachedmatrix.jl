@@ -77,7 +77,7 @@ function materialize_with(ws::Workspace, M::XMaterializedMatrix, skeleton::Abstr
     if mM < nM
         x_i, rem_ = take_ws(ws, size(A(M), 1))
         y, rem_ = take_ws(rem_, size(A(M), 2))
-        _fillzero!(x_i)
+        fill!(x_i, zero(eltype(x_i)))
         for i in 1:size(A(M), 1)
             x_i[i:i] .= one(eltype(A(M)))
             mul_with!(rem_, y, transpose(A(M)), x_i, true, false)
@@ -86,7 +86,7 @@ function materialize_with(ws::Workspace, M::XMaterializedMatrix, skeleton::Abstr
         end
     else #mM >= nM
         x_i, rem_ = take_ws(ws, size(A(M), 2))
-        _fillzero!(x_i)
+        fill!(x_i, zero(eltype(x_i)))
         for i in 1:size(A(M), 2)
             x_i[i:i] .= one(eltype(A(M)))
             mul_with!(rem_, @view(skeleton[:, i]), A(M), x_i, true, false)
@@ -101,7 +101,7 @@ function materialize_with(ws::Workspace, M::XMaterializedMatrix, skeleton::Abstr
     if mM < nM
         x_i, rem_ = take_ws(ws, size(A(M), 1))
         y, rem_ = take_ws(rem_, size(A(M), 2))
-        _fillzero!(x_i)
+        fill!(x_i, zero(eltype(x_i)))
         for i in 1:size(A(M), 1)
             x_i[i:i] .= one(eltype(A(M)))
             mul_with!(rem_, y, transpose(A(M)), x_i, true, false)
@@ -110,7 +110,7 @@ function materialize_with(ws::Workspace, M::XMaterializedMatrix, skeleton::Abstr
         end
     else #mM >= nM
         x_i, rem_ = take_ws(ws, size(A(M), 2))
-        _fillzero!(x_i)
+        fill!(x_i, zero(eltype(x_i)))
         for i in 1:size(A(M), 2)
             x_i[i:i] .= one(eltype(A(M)))
             mul_with!(rem_, @view(skeleton[:, i]), A(M), x_i, α, β)
@@ -173,7 +173,8 @@ function required_workspace(::typeof(materialize_with), C::CachedMatrix, cache_n
 end
 
 # transpose simplification
-
+materialize(At::Transpose{T, <:AbstractLazyMatrix}) where T = transpose(materialize(parent(At)))
+cache(At::Transpose{T, <:AbstractLazyMatrix}) where T = transpose(cache(parent(At)))
 
 # broadcast materialize logic
 # generally opt out of broadcasting materialize..

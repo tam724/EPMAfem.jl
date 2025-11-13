@@ -1,51 +1,82 @@
-
 # some pruning
 
-lazy(::typeof(+), A::SumMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(+, A.args..., B)
-lazy(::typeof(+), A::AbstractLazyMatrixOrTranspose, B::SumMatrix) = lazy(+, A, B.args...)
-lazy(::typeof(+), A::SumMatrix, B::SumMatrix) = lazy(+, A.args..., B.args...)
+# lazy(::typeof(+), A::SumMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(+, A.args..., B)
+# lazy(::typeof(+), A::AbstractLazyMatrixOrTranspose, B::SumMatrix) = lazy(+, A, B.args...)
+# lazy(::typeof(+), A::SumMatrix, B::SumMatrix) = lazy(+, A.args, B.args)
 
-lazy(::typeof(*), A::ProdMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(*, A.args..., B)
-lazy(::typeof(*), A::AbstractLazyMatrixOrTranspose, B::ProdMatrix) = lazy(*, A, B.args...)
-lazy(::typeof(*), A::ProdMatrix, B::ProdMatrix) = lazy(*, A.args..., B.args...)
-
-lazy(::typeof(kron), A::KronMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(kron, A.args..., B)
-lazy(::typeof(kron), A::AbstractLazyMatrixOrTranspose, B::KronMatrix) = lazy(kron, A, B.args...)
-lazy(::typeof(kron), A::KronMatrix, B::KronMatrix) = lazy(kron, A.args, B.args)
-
+# lazy(::typeof(kron), A::KronMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(kron, A.args..., B)
+# lazy(::typeof(kron), A::AbstractLazyMatrixOrTranspose, B::KronMatrix) = lazy(kron, A, B.args...)
+# lazy(::typeof(kron), A::KronMatrix, B::KronMatrix) = lazy(kron, A.args, B.args)
 
 lazy(a::Number) = LazyScalar(a)
 lazy(A::AbstractMatrix{T}) where T = LazyMatrix{T, typeof(A)}(A)
 lazy(L::AbstractLazyMatrixOrTranspose) = L
 
-Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::Number) where T = lazy(*, L, LazyScalar(T(α)))
-Base.:*(α::Number, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, LazyScalar(T(α)), L)
+Base.:*(a::Number, L::AbstractLazyMatrixOrTranspose{T}) where T = LazyScalar(T(a)) * L
+Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::Number) where T = LazyScalar(T(a)) * L
 
-Base.:*(L::AbstractLazyMatrixOrTranspose{T}, α::LazyScalar{T}) where T = lazy(*, L, α)
-Base.:*(α::LazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, α, L)
+Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy_simplify(*, a, L)
+Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = lazy_simplify(*, a, L)
+Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy_simplify(*, A, B)
 
-Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(*, A, B)
-Base.:*(As::Vararg{<:AbstractLazyMatrixOrTranspose}) = lazy(*, As...)
+# Base.:*(α::AbstractLazyScalar{T}, L::SumMatrix{T}) where T = sum(α*A for A in As(L))
+# function Base.:*(α::AbstractLazyScalar{T}, L::BlockMatrix{T}) where T
+#     return [α*A(L) α*B(L)
+#             α*C(L) α*D(L)]
+# end
+# function Base.:*(α::AbstractLazyScalar{T}, L::BlockDiagMatrix{T}) where T
+#     return [α*A(L) nothing
+#             nothing α*B(L)]
+# end
 
-Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy(+, L1, (L2))
-Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy(+, L1, lazy(-, L2))
-Base.:-(L::AbstractLazyMatrixOrTranspose) = lazy(-, L)
+function Base.:+(Ls::Vararg{AbstractLazyMatrix})
+    unique = Dict()
+    for L in Ls
+        L isa ScaleMatrix
+    end
+end
+function Base.:+(L1::ScaleMatrix, L2::ScaleMatrix)
+    if lazy_objectid(A(L1)) == lazy_objectid(A(L2))
+        return lazy_simplify(*, _a(L1) + _a(L2), A(L1))
+    else
+        return lazy_simplify(+, L1, L2)
+    end
+end
+function Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::ScaleMatrix{T}) where T
+    if lazy_objectid(L1) == lazy_objectid(A(L2))
+        return lazy_simplify(*, lazy(one(T)) + _a(L2), L1)
+    else
+        return lazy_simplify(+, L1, L2)
+    end
+end
+
+function  Base.:+(L1::ScaleMatrix{T}, L2::AbstractLazyMatrixOrTranspose) where T
+    if lazy_objectid(A(L1)) == lazy_objectid(L2)
+        return lazy_simplify(*, _a(L1) + lazy(one(T)), L2)
+    else
+        return lazy_simplify(+, L1, L2)
+    end
+end
+
+Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = L1 + (-L2)
+Base.:-(L::AbstractLazyMatrixOrTranspose{T}) where T = -one(T)*L
 
 LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose) = A
-LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron, A, B)
-LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, Bs::Vararg{<:AbstractLazyMatrixOrTranspose}) = lazy(kron, A, Bs...)
+LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy_simplify(kron, A, B)
+
 # damn I implemented a weird version of kron...
-kron_AXB(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron, transpose(B), A)
+kron_AXB(A::AbstractMatrix, B::AbstractMatrix) = kron(transpose(B), A)
+kron_AXB(A::AbstractMatrix, B::AbstractVector) = kron(transpose(B), A)
 
 # materialize and cache logic
 broadcast_materialize(A::AbstractLazyMatrixOrTranspose) = lazy(broadcast_materialize, A)
 mat_with_materialize(A::AbstractLazyMatrixOrTranspose) = lazy(mat_with_materialize, A)
 mul_materialize(A::AbstractLazyMatrixOrTranspose) = lazy(mul_materialize, A)
 
-cache(A::AbstractLazyMatrixOrTranspose) = lazy(cache, materialize(A))
+cache(A::AbstractLazyMatrix) = lazy(cache, materialize(A))
 cache(M::MaterializedMatrix) = lazy(cache, M)
 
-function decide_materialize_strategy(A::AbstractLazyMatrixOrTranspose)
+function decide_materialize_strategy(A::AbstractLazyMatrix)
     if should_broadcast_materialize(A) return :broadcast end
     return :mat_with
     # return :mat # TODO: still unsure about this one..
@@ -60,7 +91,7 @@ function decide_materialize_strategy(A::AbstractLazyMatrixOrTranspose)
     end
 end
 
-function materialize(A::AbstractLazyMatrixOrTranspose; forced=false)
+function materialize(A::AbstractLazyMatrix; forced=false)
     strategy = decide_materialize_strategy(A)
     if strategy == :broadcast
         return lazy(broadcast_materialize, A)
@@ -73,9 +104,9 @@ end
 
 # simplify materialize and cache for LazyMatrix
 materialize(L::LazyMatrix) = L
-materialize(L::Transpose{T, <:LazyMatrix{T}}) where T = L
+materialize(Lt::Transpose{T, <:LazyMatrix{T}}) where T = Lt
 cache(L::LazyMatrix) = L
-cache(L::Transpose{T, <:LazyMatrix{T}}) where T = L
+cache(Lt::Transpose{T, <:LazyMatrix{T}}) where T = Lt
 
 function materialize(A::AbstractMatrix)
     if A isa AbstractLazyMatrixOrTranspose
@@ -98,12 +129,25 @@ LinearAlgebra.inv!(A::MaterializedMatrix) = lazy(LinearAlgebra.inv!, A)
 LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(LinearAlgebra.inv!, materialize(A; forced=true))
 
 blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose, D::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C, D)
+blockmatrix(A::AbstractLazyMatrixOrTranspose, ::Nothing, ::Nothing, B::AbstractLazyMatrixOrTranspose) = lazy(blockdiagmatrix, A, B)
 function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, Ms::Vararg{<:AbstractLazyMatrixOrTranspose, 4})
     @assert sizes[1] == 2
     @assert sizes[2] == 2
     A, B, C, D = Ms
     return blockmatrix(A, B, C, D)
 end
+function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, A::AbstractLazyMatrixOrTranspose, ::Nothing, ::Nothing, B::AbstractLazyMatrixOrTranspose)
+    @assert sizes[1] == 2
+    @assert sizes[2] == 2
+    return blockmatrix(A, nothing, nothing, B)
+end
+
+# blockdiagmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(blockdiagmatrix, A, B)
+# function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, A::AbstractLazyMatrixOrTranspose, ::Nothing, ::Nothing, B::AbstractLazyMatrixOrTranspose)
+#     @assert sizes[1] == 2
+#     @assert sizes[2] == 2
+#     return blockdiagmatrix(A, B)
+# end
 
 Krylov.minres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.minres, A)
 Krylov.gmres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.gmres, A)
@@ -137,12 +181,12 @@ end
 
 _recursive_required_workspace_mul(A::AbstractLazyMatrix) = required_workspace(mul_with!, A, ())
 _recursive_required_workspace_mul(At::Transpose{T, <:AbstractLazyMatrix}) where T = required_workspace(mul_with!, parent(At), ())
-_recursive_required_workspace_mul(a::LazyScalar) = 0
+_recursive_required_workspace_mul(a::AbstractLazyScalar) = 0
 _recursive_required_workspace_mul(coll) = mapreduce(_recursive_required_workspace_mul, max, coll)
 
 _recursive_notsolazy(A::AbstractLazyMatrix{T}, ws::Workspace) where T = NotSoLazy{T}(A, ws)
 _recursive_notsolazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws::Workspace) where T = NotSoLazy{T}(At, ws)
-_recursive_notsolazy(a::LazyScalar{T}, ws::Workspace) where T = NotSoLazyScalar{T}(a, ws)
+_recursive_notsolazy(a::AbstractLazyScalar{T}, ws::Workspace) where T = NotSoLazyScalar{T}(a, ws)
 _recursive_notsolazy(coll, ws::Workspace) = map(t -> _recursive_notsolazy(t, ws), coll)
 
 function unlazy(coll, ws_alloc=zeros)

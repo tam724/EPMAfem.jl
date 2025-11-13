@@ -1,8 +1,6 @@
-const TransposeMatrix{T} = Transpose{T, <:AbstractLazyMatrix}
-
 # Transpose implements almost everything for us..
 lazy_getindex(Lt::Transpose{T, <:AbstractLazyMatrix{<:T}}, i::Int, j::Int) where T = CUDA.@allowscalar lazy_getindex(parent(Lt), j, i)
-lazy_objectid(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = lazy_objectid(parent(Lt)) # transpose gets the same as the parent
+lazy_objectid(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = objectid(Lt)
 max_size(At::Transpose{T, <:AbstractLazyMatrix}) where T = reverse(max_size(parent(At)))
 function max_size(At::Transpose{T, <:AbstractLazyMatrix}, n::Integer) where T
     if n == 1

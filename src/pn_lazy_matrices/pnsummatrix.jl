@@ -1,33 +1,15 @@
-const TSumMatrix{T} = LazyOpMatrix{T, typeof(+), <:Tuple{Vararg{<:AbstractMatrix{T}}}}
-const VSumMatrix{T} = LazyOpMatrix{T, typeof(+), <:AbstractVector{<:AbstractMatrix{T}}}
-const SumMatrix{T} = Union{TSumMatrix{T}, VSumMatrix{T}}
+const SumMatrix{T} = LazyOpMatrix{T, typeof(+), <:Tuple{Vararg{<:AbstractMatrix{T}}}}
 @inline As(S::SumMatrix) = S.args
 Base.size(S::SumMatrix) = only_unique(size(A) for A in As(S))
 max_size(S::SumMatrix) = only_unique(max_size(A) for A in As(S))
 lazy_getindex(S::SumMatrix, idx::Vararg{<:Integer}) = +(getindex.(As(S), idx...)...)
 isdiagonal(S::SumMatrix) = all(isdiagonal, As(S))
+LinearAlgebra.transpose(S::SumMatrix) = lazy(+, transpose.(As(S))...)
 
-
-function mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::VSumMatrix, X::AbstractVecOrMat, α::Number, β::Number)
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::SumMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     CUDA.NVTX.@range "mul_with! SumMatrix" begin
         for A in As(S)
             mul_with!(ws, Y, A, X, α, β)
-            β = true
-        end
-    end
-end
-# TODO: worth doing for all mul_with!(⋅) ?
-mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::TSumMatrix, X::AbstractVecOrMat, α::Number, β::Number) = CUDA.NVTX.@range "mul_with! SumMatrix" begin _sum_mul_with!(ws, Y, As(S), X, α, β) end
-function _sum_mul_with!(ws::Workspace, Y::AbstractVecOrMat, (A, Ss...)::Tuple{<:AbstractMatrix, Vararg{<:AbstractMatrix}}, X::AbstractVecOrMat, α::Number, β::Number)
-    _sum_mul_with!(ws, Y, Ss, X, α, β)
-    mul_with!(ws, Y, A, X, α, true)
-end
-_sum_mul_with!(ws::Workspace, Y::AbstractVecOrMat, A::Tuple{<:AbstractMatrix}, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, only(A), X, α, β)
-
-function mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:SumMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
-    CUDA.NVTX.@range "mul_with! SumMatrix" begin
-        for A in parent(St).args
-            mul_with!(ws, Y, transpose(A), X, α, β)
             β = true
         end
     end
@@ -41,18 +23,8 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::SumMa
         end
     end
 end
-function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:SumMatrix{T}}, α::Number, β::Number) where T
-    CUDA.NVTX.@range "mul_with! SumMatrix" begin
-        for A in parent(St).args
-            mul_with!(ws, Y, X, transpose(A), α, β)
-            β = true
-        end
-    end
-end
-required_workspace(::typeof(mul_with!), S::SumMatrix, n, cache_notifier) = maximum(required_workspace(mul_with!, A, n, cache_notifier) for A in As(S))
 
-_fillzero!(A::AbstractArray) = fill!(A, zero(eltype(A)))
-_fillzero!(D::Diagonal) = fill!(D.diag, zero(eltype(D)))
+required_workspace(::typeof(mul_with!), S::SumMatrix, n, cache_notifier) = maximum(required_workspace(mul_with!, A, n, cache_notifier) for A in As(S))
 
 materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix) = materialize_with(ws, S, skeleton, true, false)
 function materialize_with(ws::Workspace, S::SumMatrix, skeleton::AbstractMatrix, α::Number, β::Number)

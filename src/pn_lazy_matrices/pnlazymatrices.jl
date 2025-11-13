@@ -21,9 +21,11 @@ include("pninversematrix.jl")
 
 include("pnworkspace.jl")
 include("pnmatrixinterface.jl")
+include("pnmatrixsimplify.jl")
 include("adapt.jl")
+include("pnmatrixio.jl")
 
-export AbstractLazyMatrix, AbstractLazyMatrixOrTranspose, LazyScalar
+export AbstractLazyMatrix, AbstractLazyMatrixOrTranspose, LazyScalar, LazyMatrix
 export lazy, blockmatrix, kron_AXB, materialize, cache, create_workspace, required_workspace, mul_with!, materialize_with, unlazy
 export schur_complement
 

@@ -1,16 +1,8 @@
-const ScaleMatrixL{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:LazyScalar{T}, <:AbstractMatrix{T}}}
-const ScaleMatrixR{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:LazyScalar{T}}}
-const UnaryMinusMatrix{T} = LazyOpMatrix{T, typeof(-), <:Tuple{<:AbstractMatrix{T}}}
-const ScaleMatrix{T} = Union{ScaleMatrixL{T}, ScaleMatrixR{T}, UnaryMinusMatrix{T}}
+const ScaleMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractLazyScalar{T}, <:AbstractMatrix{T}}}
 
-@inline a(S::ScaleMatrixL) = S.args[1][]
-@inline _a(S::ScaleMatrixL) = S.args[1]
-@inline A(S::ScaleMatrixL) = S.args[2]
-@inline a(S::ScaleMatrixR) = S.args[2][]
-@inline _a(S::ScaleMatrixR) = S.args[2]
-@inline A(S::ScaleMatrixR) = S.args[1]
-@inline a(::UnaryMinusMatrix{T}) where T = T(-1)
-@inline A(S::UnaryMinusMatrix) = only(S.args)
+@inline a(S::ScaleMatrix) = S.args[1][]
+@inline _a(S::ScaleMatrix) = S.args[1]
+@inline A(S::ScaleMatrix) = S.args[2]
 Base.size(S::ScaleMatrix) = size(A(S))
 max_size(S::ScaleMatrix) = max_size(A(S))
 lazy_getindex(S::ScaleMatrix, idx::Vararg{<:Integer}) = *(a(S), getindex(A(S), idx...))
@@ -23,9 +15,9 @@ mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, 
 function required_workspace(::typeof(mul_with!), S::ScaleMatrix, n, cache_notifier)
     return register_cache_notifier(_a(S), cache_notifier) + required_workspace(mul_with!, A(S), n, cache_notifier)
 end
-function required_workspace(::typeof(mul_with!), S::UnaryMinusMatrix, n, cache_notifier)
-    return required_workspace(mul_with!, A(S), n, cache_notifier)
-end
+# function required_workspace(::typeof(mul_with!), S::UnaryMinusMatrix, n, cache_notifier)
+#     return required_workspace(mul_with!, A(S), n, cache_notifier)
+# end
 
 materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix) = materialize_with(ws, S, skeleton, true, false)
 function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
@@ -36,9 +28,9 @@ end
 function required_workspace(::typeof(materialize_with), S::ScaleMatrix, cache_notifier)
     return register_cache_notifier(_a(S), cache_notifier) + required_workspace(materialize_with, A(S), cache_notifier)
 end
-function required_workspace(::typeof(materialize_with), S::UnaryMinusMatrix, cache_notifier)
-    return required_workspace(materialize_with, A(S), cache_notifier)
-end
+# function required_workspace(::typeof(materialize_with), S::UnaryMinusMatrix, cache_notifier)
+#     return required_workspace(materialize_with, A(S), cache_notifier)
+# end
 
 # it seems as if now the fun starts :D this can be heavily optimized (matrix product chain, etc..) well only go for some simple heuristics here
 # let's start implementing this with only A*B (the general case follows later..)
