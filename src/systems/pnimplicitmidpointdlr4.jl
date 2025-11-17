@@ -325,14 +325,17 @@ function initialize!(current_solution::LowwRankSolution, system, initial_solutio
         Pp, Sp, Qp = svd(ψ0p_tilde)
         Pm, Sm, Qm = svd(ψ0m_tilde)
 
-        ranks = _compute_new_ranks(system, Sp, Sm)
+        ψ0p_Kp = ψ0p*system.basis_augmentation.p.V
+        ψ0m_Km = ψ0m*system.basis_augmentation.m.V
+
+        ranks = _compute_new_ranks(system, Sp, Sm, norm(ψ0p_Kp)^2 + norm(ψ0m_Km)^2)
         n_aug_p, n_aug_m = size(system.basis_augmentation.p.V, 2), size(system.basis_augmentation.m.V, 2)
         ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_p), m=min(ranks.m, ranks.m+n_aug_m))
         current_solution.ranks.p[], current_solution.ranks.m[] = ranks.p, ranks.m
         ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(current_solution)
 
-        URp = qr([ψ0p*system.basis_augmentation.p.V Pp[:, 1:ranks.p-n_aug_p]])
-        URm = qr([ψ0m*system.basis_augmentation.m.V Pm[:, 1:ranks.m-n_aug_m]])
+        URp = qr([ψ0p_Kp Pp[:, 1:ranks.p-n_aug_p]])
+        URm = qr([ψ0m_Km Pm[:, 1:ranks.m-n_aug_m]])
 
         m_type = mat_type(architecture(system.problem))
         Up₁ .= m_type(URp.Q)

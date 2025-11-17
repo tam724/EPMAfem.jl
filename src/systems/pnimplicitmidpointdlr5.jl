@@ -38,17 +38,18 @@ function init_basis_augmentation(pbl, aug::Symbol)
         return (size(basis_augmentation.p.V, 2), size(basis_augmentation.m.V, 2)), basis_augmentation
     elseif aug == :mass_momentum
         nb = n_basis(pbl)
+        ns = n_sums(pbl)
         Ωp, Ωm = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), one)
         @warn "assumes OE!!"
-        Ωpz, Ωmz = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω -> Ω[1])
-        Ωpx, Ωmx = SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω -> Ω[2])
+        Ω1 = [SphericalHarmonicsModels.eval_basis(direction_model(pbl.model), Ω -> Ω[i]) for i in 1:ns.nd]
 
         # @show norm(Ωmz), norm(Ωmx)
 
-        basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, 2), ),
+        basis_augmentation = (p=(V = allocate_mat(architecture(pbl), nb.nΩ.p, ns.nd), ),
                               m=(V = allocate_mat(architecture(pbl), nb.nΩ.m, 1), ))
-        copy!(@view(basis_augmentation.p.V[:, 1]), Ωpz)
-        copy!(@view(basis_augmentation.p.V[:, 2]), Ωpx)
+        for i in 1:ns.nd
+            copy!(@view(basis_augmentation.p.V[:, i]), Ω1[i][1])
+        end
         copy!(@view(basis_augmentation.m.V[:, 1]), Ωm)
 
         basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> mat_type(architecture(pbl))
@@ -227,28 +228,28 @@ function step_adjoint!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembl
     _step!(x, system, rhs_ass, plus½(idx), Δϵ)
 end
 
-function _compute_new_rank(S, abs_tol, r_max)
+function _compute_new_rank(S, abs_tol, r_max, r_min=2)
     Σσ² = 0.0
     r = length(S)
-    while ((Σσ² + S[r]^2 < abs_tol) || (sqrt(Σσ² + S[r]^2) < 1e-14)) && r > 1
+    while ((Σσ² + S[r]^2 < abs_tol) || (sqrt(Σσ² + S[r]^2) < 1e-14)) && r > r_min
         Σσ² += S[r]^2
         r = r - 1
     end
     return min(r_max, r)
 end
 
-function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, _Sp, _Sm)
+function _compute_new_ranks(system::DiscreteDLRPNSystem5{<:Real}, _Sp, _Sm, norm2_add=zero(eltype(_Sp)))
     Sp = collect(_Sp)
     Sm = collect(_Sm)
-    # @show Sp, Sm
-    norm_S² = sum(Sp.^2) + sum(Sm.^2)
+    norm_S² = sum(Sp.^2) + sum(Sm.^2) + norm2_add
+    @show norm_S²
     return (
         p = _compute_new_rank(Sp, system.tolerance^2*norm_S², system.max_ranks.p),
         m = _compute_new_rank(Sm, system.tolerance^2*norm_S², system.max_ranks.m)
     )
 end
 
-_compute_new_ranks(system::DiscreteDLRPNSystem5{<:Nothing}, _, _) = system.max_ranks
+_compute_new_ranks(system::DiscreteDLRPNSystem5{<:Nothing}, _Sp, _Sm, norm2_add=0) = system.max_ranks
 
 function _orthonormalize(arch, bases...; tol=1e-15)
     return qr(hcat(bases...)).Q |> mat_type(arch)
@@ -471,14 +472,19 @@ function _step!(x, system::DiscreteDLRPNSystem5, rhs_ass::PNVectorAssembler, idx
         Pp, Sp, Qp = svd(Kp₁*transpose(VRptilde.R))
         Pm, Sm, Qm = svd(Km₁*transpose(VRmtilde.R))
 
-        ranks = _compute_new_ranks(system, Sp, Sm)
+        Kp₁_Wphat = Kp₁*Wphat
+        Km₁_Wmhat = Km₁*Wmhat
+
+        # @show norm(Kp₁_Wphat)^2, norm(Km₁_Wmhat)^2
+        # @show sum(Sp.^2), sum(Sp.^2)
+        ranks = _compute_new_ranks(system, Sp, Sm, norm(Kp₁_Wphat)^2 + norm(Km₁_Wmhat)^2)
         n_aug_p, n_aug_m = size(system.basis_augmentation.p.V, 2), size(system.basis_augmentation.m.V, 2)
-        ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_p), m=min(ranks.m, ranks.m+n_aug_m))
+        ranks = (p=min(system.max_ranks.p, ranks.p+n_aug_p), m=min(system.max_ranks.m, ranks.m+n_aug_m))
         x.ranks.p[], x.ranks.m[] = ranks.p, ranks.m
         ((Up₁, Sp₁, Vtp₁), (Um₁, Sm₁, Vtm₁)) = USVt(x)
 
-        URp = qr([Kp₁*Wphat Pp[:, 1:ranks.p-n_aug_p]])
-        URm = qr([Km₁*Wmhat Pm[:, 1:ranks.m-n_aug_m]])
+        URp = qr([Kp₁_Wphat Pp[:, 1:ranks.p-n_aug_p]])
+        URm = qr([Km₁_Wmhat Pm[:, 1:ranks.m-n_aug_m]])
 
         m_type = mat_type(architecture(system.problem))
         Up₁ .= m_type(URp.Q)
