@@ -43,7 +43,7 @@ Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.
 Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
 
 # system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
-system = EPMAfem.implicit_midpoint2(problem, LinearAlgebra.:/);
+system = EPMAfem.implicit_midpoint2(problem, LinearAlgebra.:\);
 # system_lr3 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=3, m=3));
 # system_lr20 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=20, m=20));
 
@@ -87,10 +87,10 @@ copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
 
 basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> Matrix
 
-system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:/, max_ranks=(p=5, m=5));
-system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:/, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation);
-system_lr14_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:/, max_ranks=(p=7, m=7), basis_augmentation=basis_augmentation);
-system_lr18_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:/, max_ranks=(p=9, m=9), basis_augmentation=basis_augmentation);
+system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5));
+system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation);
+system_lr14_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=7, m=7), basis_augmentation=basis_augmentation);
+system_lr18_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=9, m=9), basis_augmentation=basis_augmentation);
 
 sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
 sol_lr10 = EPMAfem.IterableDiscretePNSolution(system_lr10, source, initial_solution=initial_condition);
