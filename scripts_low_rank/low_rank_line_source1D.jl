@@ -30,21 +30,21 @@ T = Inf
 N = 23
 equations = PlaneSourceEquations{T}()
 space_model = EPMAfem.SpaceModels.GridapSpaceModel(CartesianDiscreteModel((-1.5, 1.5), (200)))
-direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1)
+direction_model = EPMAfem.SphericalHarmonicsModels.EOSphericalHarmonicsModel(N, 1, :OE)
 model = EPMAfem.DiscretePNModel(space_model, energy_model, direction_model)
 problem = EPMAfem.discretize_problem(equations, model, EPMAfem.cpu())
 
 @show N, EPMAfem.n_basis(problem)
 
 # source / boundary condition (here: zero)
-source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), zeros(EPMAfem.n_basis(model).nϵ), zeros(EPMAfem.n_basis(model).nx.p), zeros(EPMAfem.n_basis(model).nΩ.p))
+source = EPMAfem.Rank1DiscretePNVector(false, model, EPMAfem.cpu(), zeros(EPMAfem.n_basis(model).nϵ), (p=zeros(EPMAfem.n_basis(model).nx.p), m=zeros(EPMAfem.n_basis(model).nx.m)), (p=zeros(EPMAfem.n_basis(model).nΩ.p), m=zeros(EPMAfem.n_basis(model).nΩ.m)))
 
 # initial condition
 Mp = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.plus(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
 Mm = EPMAfem.SpaceModels.assemble_bilinear(EPMAfem.SpaceModels.∫R_uv, EPMAfem.space_model(model), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model)), EPMAfem.SpaceModels.minus(EPMAfem.space_model(model))) |> EPMAfem.architecture(problem)
 
 # system = EPMAfem.implicit_midpoint2(problem, A -> PNLazyMatrices.schur_complement(A, Krylov.minres, PNLazyMatrices.cache ∘ LinearAlgebra.inv!));
-system = EPMAfem.implicit_midpoint2(problem, LinearAlgebra.:\);
+system = EPMAfem.implicit_midpoint2(problem, LinearAlgebra.:/);
 # system_lr3 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=3, m=3));
 # system_lr20 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=20, m=20));
 
@@ -88,10 +88,10 @@ copy!(@view(basis_augmentation.p.V[:, 1]), Ωp)
 
 basis_augmentation.p.V .= qr(basis_augmentation.p.V).Q |> Matrix
 
-system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5));
-system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation);
-system_lr14_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=7, m=7), basis_augmentation=basis_augmentation);
-system_lr18_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:\, max_ranks=(p=9, m=9), basis_augmentation=basis_augmentation);
+system_lr10 = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:/, max_ranks=(p=5, m=5));
+system_lr10_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:/, max_ranks=(p=5, m=5), basis_augmentation=basis_augmentation);
+system_lr14_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:/, max_ranks=(p=7, m=7), basis_augmentation=basis_augmentation);
+system_lr18_aug = EPMAfem.implicit_midpoint_dlr5(problem, solver=LinearAlgebra.:/, max_ranks=(p=9, m=9), basis_augmentation=basis_augmentation);
 
 sol = EPMAfem.IterableDiscretePNSolution(system, source, initial_solution=initial_condition);
 sol_lr10 = EPMAfem.IterableDiscretePNSolution(system_lr10, source, initial_solution=initial_condition);
@@ -109,7 +109,7 @@ energies = zeros(length(sol), 5)
 outflux = zeros(length(sol), 5)
 @gif for (i, ((ϵ, ψ), (ϵ1, ψ1), (ϵ2, ψ2), (ϵ3, ψ3), (ϵ4, ψ4))) in enumerate(zip(sol, sol_lr10, sol_lr10_aug, sol_lr14_aug, sol_lr18_aug))
     ψp, ψm = EPMAfem.pmview(ψ, model)
-    @show dot(ψp, ψp) + dot(ψm, ψm), dot(ψp, ψp), dot(ψm, ψm)
+    @show i
     ψp1, ψm1 = EPMAfem.pmview(ψ1, model)
     ψp2, ψm2 = EPMAfem.pmview(ψ2, model)
     ψp3, ψm3 = EPMAfem.pmview(ψ3, model)
@@ -154,11 +154,14 @@ end
 
 (func, func1, func2, func3, func4) = deserialize(joinpath(figpath, "final_solutions.jls"))
 
-plot(-1.5:0.01:1.5, x -> func(VectorValue(x)), label=L"P_{%$(N)}", color=:black)
-plot!(-1.5:0.01:1.5, x -> func1(VectorValue(x)), label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
-plot!(-1.5:0.01:1.5, x -> func2(VectorValue(x)), label=L"P_{%$(N)} \textrm{(5, mass\, conservative)}", color=2)
-plot!(-1.5:0.01:1.5, x -> func3(VectorValue(x)), label=L"P_{%$(N)} \textrm{(7, mass\, conservative)}", color=3)
-plot!(-1.5:0.01:1.5, x -> func4(VectorValue(x)), label=L"P_{%$(N)} \textrm{(9, mass\, conservative)}", ls=:dash, color=4)
+x = getindex.(func.interp.trian.grid.node_coords, 1)
+x = (x[1:end-1] + x[2:end])/2
+
+plot(x, func.interp.args[2].free_values, label=L"P_{%$(N)}", color=:black)
+plot!(x, func1.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
+plot!(x, func2.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(5, mass\, cons.)}", color=2)
+plot!(x, func3.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(7, mass\, cons.)}", color=3)
+plot!(x, func4.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(9, mass\, cons.)}", ls=:dash, color=4)
 plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000, legend=:bottom)
 xlabel!(L"x")
 ylabel!(L"\langle \psi \rangle")
@@ -172,9 +175,9 @@ begin
     t = energy_model
     plot(t, 100*energies[:, 1]./energy0, label=L"P_{%$(N)}", color=:black)
     plot!(t, 100*energies[:, 2]./energy0, label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
-    plot!(t, 100*energies[:, 3]./energy0, label=L"P_{%$(N)} \textrm{(5, mass\, conservative)}", color=2)
-    plot!(t, 100*energies[:, 4]./energy0, label=L"P_{%$(N)} \textrm{(7, mass\, conservative)}", color=3)
-    plot!(t, 100*energies[:, 5]./energy0, label=L"P_{%$(N)} \textrm{(9, mass\, conservative)}", color=4)
+    plot!(t, 100*energies[:, 3]./energy0, label=L"P_{%$(N)} \textrm{(5, mass\, cons.)}", color=2)
+    plot!(t, 100*energies[:, 4]./energy0, label=L"P_{%$(N)} \textrm{(7, mass\, cons.)}", color=3)
+    plot!(t, 100*energies[:, 5]./energy0, label=L"P_{%$(N)} \textrm{(9, mass\, cons.)}", color=4)
     # plot!(t, energies[:, 4], label=L"P_{%$(N)} \textrm{(mass + bc)}")
 
     zoom_range = 20:1:55
@@ -200,9 +203,9 @@ begin
     t = energy_model
     plot(t, abs.(energies[:, 1] .- energy0), label=L"P_{%$(N)}", color=:black, yaxis=:log)
     plot!(t, abs.(energies[:, 2] .- energy0), label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
-    plot!(t, abs.(energies[:, 3] .- energy0), label=L"P_{%$(N)} \textrm{(5, mass\, conservative)}", color=2)
-    plot!(t, abs.(energies[:, 4] .- energy0), label=L"P_{%$(N)} \textrm{(7, mass\, conservative)}", color=3)
-    plot!(t, abs.(energies[:, 5] .- energy0), label=L"P_{%$(N)} \textrm{(9, mass\, conservative)}", color=4)
+    plot!(t, abs.(energies[:, 3] .- energy0), label=L"P_{%$(N)} \textrm{(5, mass\, cons.)}", color=2)
+    plot!(t, abs.(energies[:, 4] .- energy0), label=L"P_{%$(N)} \textrm{(7, mass\, cons.)}", color=3)
+    plot!(t, abs.(energies[:, 5] .- energy0), label=L"P_{%$(N)} \textrm{(9, mass\, cons.)}", color=4)
     # plot!(t, energies[:, 4], label=L"P_{%$(N)} \textrm{(mass + bc)}")
 
     # zoom_range = 20:1:55
@@ -241,9 +244,9 @@ begin
 
     plot(t, abs.(masses[:, 1] .- 1.0), yaxis=:log, label=L"P_{%$(N)}", color=:black)
     plot!(t, abs.(masses[:, 2] .- 1.0), label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
-    plot!(t, abs.(masses[:, 3] .- 1.0), label=L"P_{%$(N)} \textrm{(5, mass\, conservative)}", color=2)
-    plot!(t, abs.(masses[:, 4] .- 1.0), label=L"P_{%$(N)} \textrm{(7, mass\, conservative)}", color=3)
-    plot!(t, abs.(masses[:, 5] .- 1.0), label=L"P_{%$(N)} \textrm{(9, mass\, conservative)}", color=4)
+    plot!(t, abs.(masses[:, 3] .- 1.0), label=L"P_{%$(N)} \textrm{(5, mass\, cons.)}", color=2)
+    plot!(t, abs.(masses[:, 4] .- 1.0), label=L"P_{%$(N)} \textrm{(7, mass\, cons.)}", color=3)
+    plot!(t, abs.(masses[:, 5] .- 1.0), label=L"P_{%$(N)} \textrm{(9, mass\, cons.)}", color=4)
     # plot!(t, abs.(masses[:, 4] .- 1.0), label=L"P_{%$(N)} \textrm{(mass + bc)}")
 
     plot!(t, abs.(masses[:, 1] .+ cumtrapz(outflux[:, 1], step(energy_model)) .- 1.0), yaxis=:log, color=:black, ls=:dash, label=nothing)

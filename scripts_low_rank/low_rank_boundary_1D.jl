@@ -154,6 +154,7 @@ for (i, ((_, ψfull), (_, ψfull2), (_, ψlr), (_, ψlr_aug), (_, ψlr5), (_, ψ
     energies[i, 6] = dot(ψlr5_augp, Mp*ψlr5_augp) + dot(ψlr5_augm, Mm*ψlr5_augm)
 
     xp, xm = EPMAfem.SpaceModels.eval_basis(EPMAfem.space_model(model), x -> 1.0)
+    Ωp, Ωm = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model), Ω -> 1.0/(4π))
     Ωp2, Ωm2 = EPMAfem.SphericalHarmonicsModels.eval_basis(EPMAfem.direction_model(model2), Ω -> 1.0/(4π))
     mass[i, 1] = dot(xp, ψfullp, Ωp) + dot(xm, ψfullm, Ωm)
     mass[i, 2] = dot(xp, ψfull2p, Ωp2) + dot(xm, ψfull2m, Ωm2)
