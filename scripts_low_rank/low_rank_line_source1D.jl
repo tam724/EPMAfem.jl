@@ -6,7 +6,6 @@ using EPMAfem.Krylov
 using EPMAfem.Gridap
 using LinearAlgebra
 using Plots
-using Distributions
 using EPMAfem.HCubature
 using LaTeXStrings
 
