@@ -10,6 +10,7 @@ using EPMAfem.HCubature
 using LaTeXStrings
 
 figpath = mkpath(joinpath(dirname(@__FILE__), "figures/1D_vacuum_linesource"))
+mkpath(joinpath(dirname(@__FILE__), "figures/1D_vacuum_linesource/snapshots"))
 
 struct PlaneSourceEquations{S} <: EPMAfem.AbstractPNEquations end
 EPMAfem.number_of_elements(::PlaneSourceEquations) = 1
