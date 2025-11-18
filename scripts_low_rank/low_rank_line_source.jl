@@ -127,7 +127,7 @@ for N in [47]
     for t in ts
         if t == -1
             data = deserialize(path(N, t, Val(:def)))
-            heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> data["final"](VectorValue(x, y))/4π, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
+            heatmap(range(-1.5, 1.5, 150), range(-1.5, 1.5, 150), (x, y) -> data["final"](VectorValue(x, y))/4π, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
             plot!(size=(300, 288), fontfamily="Computer Modern", margin=2Plots.mm, dpi=1000)
             xlabel!(L"x")
             ylabel!(L"y")
@@ -135,7 +135,7 @@ for N in [47]
         else
             for cons in [Val(:def), Val(:cons)]
                 data = deserialize(path(N, t, cons))
-                heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> data["final"](VectorValue(x, y))/4π, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
+                heatmap(range(-1.5, 1.5, 150), range(-1.5, 1.5, 150), (x, y) -> data["final"](VectorValue(x, y))/4π, aspect_ratio=:equal, cmap=:viridis, clims=(0, 0.4))
                 plot!(size=(300, 288), fontfamily="Computer Modern", margin=2Plots.mm, dpi=1000)
                 xlabel!(L"x")
                 ylabel!(L"y")
