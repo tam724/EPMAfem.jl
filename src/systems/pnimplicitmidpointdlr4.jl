@@ -292,6 +292,12 @@ function pmview(sol::LowwRankSolution, model::DiscretePNModel)
 end
 
 function fillzero!(sol::LowwRankSolution, system)
+    if !isnothing(system.basis_augmentation)
+        # adjust the ranks
+        sol.ranks.p[] = max(sol.ranks.p[], size(system.basis_augmentation.p.V, 2))
+        sol.ranks.m[] = max(sol.ranks.m[], size(system.basis_augmentation.m.V, 2))
+    end
+
     ((Up, Sp, Vtp), (Um, Sm, Vtm)) = USVt(sol)
 
     if !isnothing(system.basis_augmentation)
