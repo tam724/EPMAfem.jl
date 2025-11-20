@@ -6,12 +6,11 @@ using EPMAfem.Krylov
 using EPMAfem.Gridap
 using LinearAlgebra
 using Plots
-using LaTeXStrings
-using BenchmarkTools
+# using LaTeXStrings
+# using BenchmarkTools
 # include("plot_overloads.jl")
 using NeXLCore
-using Unitful
-using Plots
+using NeXLCore.Unitful
 using Serialization
 NExt = Base.get_extension(EPMAfem, :NeXLCoreExt)
 
