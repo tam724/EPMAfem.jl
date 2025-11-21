@@ -24,7 +24,7 @@ meas = Dict()
 Ns = [1, 5, 9, 13, 17, 21, 27]
 
 for N in Ns
-    model = NExt.epma_model(equations, (-2000u"nm", 0.0u"nm"), (10), N)
+    model = NExt.epma_model(equations, (-2000u"nm", 0.0u"nm"), (200), N)
 
     arch = EPMAfem.cpu(Float64)
     problem = EPMAfem.discretize_problem(equations, model, arch, updatable=true)
