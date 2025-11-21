@@ -21,6 +21,7 @@ equations = NExt.epma_equations(
     range(50u"eV", 20u"keV", length=100), 27)
 
 meas = Dict()
+m_ranks = Dict()
 Ns = [1, 5, 9, 13, 17, 21, 27]
 
 for N in Ns
@@ -66,16 +67,24 @@ for N in Ns
     if N != 1 && N != 3
         for tol in [0.025, 0.0125, 0.00625, 0.003125]
             system_lr = EPMAfem.implicit_midpoint_dlr5(problem.problem, solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=tol);
-            sol1_lr = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr), discrete_ext[1].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ)
+            ranks = (p=[], m=[])
+            sol1_lr = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr), discrete_ext[1].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ, push!(ranks.p, ψ.ranks.p[]), push!(ranks.m, ψ.ranks.m[]))
             meas[(1, N, :lr, tol)] = (sol1_lr * discrete_rhs)[1]
-            sol2_lr = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr), discrete_ext[2].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ)
+            m_ranks[(1, N, :lr, tol)] = ranks
+            ranks = (p=[], m=[])
+            sol2_lr = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr), discrete_ext[2].vector, step_callback=(ϵ, ψ) -> @show "2", N, ϵ, push!(ranks.p, ψ.ranks.p[]), push!(ranks.m, ψ.ranks.m[]))
             meas[(2, N, :lr, tol)] = (sol2_lr * discrete_rhs)[1]
+            m_ranks[(2, N, :lr, tol)] = ranks
 
             system_lr_aug = EPMAfem.implicit_midpoint_dlr5(problem.problem, solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=tol, basis_augmentation=:mass);
-            sol1_lr_aug = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug), discrete_ext[1].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ)
+            ranks = (p=[], m=[])
+            sol1_lr_aug = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug), discrete_ext[1].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ, push!(ranks.p, ψ.ranks.p[]), push!(ranks.m, ψ.ranks.m[]))
             meas[(1, N, :lr_aug, tol)] = (sol1_lr_aug * discrete_rhs)[1]
-            sol2_lr_aug = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug), discrete_ext[2].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ)
+            m_ranks[(1, N, :lr_aug, tol)] = ranks
+            ranks = (p=[], m=[])
+            sol2_lr_aug = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug), discrete_ext[2].vector, step_callback=(ϵ, ψ) -> @show "2", N, ϵ, push!(ranks.p, ψ.ranks.p[]), push!(ranks.m, ψ.ranks.m[]))
             meas[(2, N, :lr_aug, tol)] = (sol2_lr_aug * discrete_rhs)[1]
+            m_ranks[(2, N, :lr_aug, tol)] = ranks
 
             nb = EPMAfem.n_basis(model)
             basis_augmentation = (  p=(V = EPMAfem.allocate_mat(EPMAfem.architecture(problem.problem), nb.nΩ.p, 1), ),
@@ -85,10 +94,14 @@ for N in Ns
             basis_augmentation.p.V[:, 1] .= collect(discrete_rhs[1].bΩ.p) |> normalize |> arch
 
             system_lr_aug2 = EPMAfem.implicit_midpoint_dlr5(problem.problem, solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=tol, basis_augmentation=basis_augmentation);
-            sol1_lr_aug2 = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug2), discrete_ext[1].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ, ψ.ranks.p[], ψ.ranks.m[])
+            ranks = (p=[], m=[])
+            sol1_lr_aug2 = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug2), discrete_ext[1].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ, ψ.ranks.p[], ψ.ranks.m[], push!(ranks.p, ψ.ranks.p[]), push!(ranks.m, ψ.ranks.m[]))
             meas[(1, N, :lr_aug2, tol)] = (sol1_lr_aug2 * discrete_rhs)[1]
-            sol2_lr_aug2 = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug2), discrete_ext[2].vector, step_callback=(ϵ, ψ) -> @show "2", N, ϵ, ψ.ranks.p[], ψ.ranks.m[])
+            m_ranks[(1, N, :lr_aug2, tol)] = ranks
+            ranks = (p=[], m=[])
+            sol2_lr_aug2 = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug2), discrete_ext[2].vector, step_callback=(ϵ, ψ) -> @show "2", N, ϵ, ψ.ranks.p[], ψ.ranks.m[], push!(ranks.p, ψ.ranks.p[]), push!(ranks.m, ψ.ranks.m[]))
             meas[(2, N, :lr_aug2, tol)] = (sol2_lr_aug2 * discrete_rhs)[1]
+            m_ranks[(2, N, :lr_aug2, tol)] = ranks
 
             basis_augmentation = (  p=(V = EPMAfem.allocate_mat(EPMAfem.architecture(problem.problem), nb.nΩ.p, 2), ),
                                     m=(V = EPMAfem.allocate_mat(EPMAfem.architecture(problem.problem), nb.nΩ.m, 2), ))
@@ -101,16 +114,20 @@ for N in Ns
             basis_augmentation.m.V .= qr(basis_augmentation.m.V).Q |> EPMAfem.mat_type(arch)
 
             system_lr_aug3 = EPMAfem.implicit_midpoint_dlr5(problem.problem, solver=Krylov.minres, max_ranks=(p=20, m=20), tolerance=tol, basis_augmentation=basis_augmentation);
-            sol1_lr_aug3 = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug3), discrete_ext[1].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ, ψ.ranks.p[], ψ.ranks.m[])
+            ranks = (p=[], m=[])
+            sol1_lr_aug3 = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug3), discrete_ext[1].vector, step_callback=(ϵ, ψ) -> @show "1", N, ϵ, ψ.ranks.p[], ψ.ranks.m[], push!(ranks.p, ψ.ranks.p[]), push!(ranks.m, ψ.ranks.m[]))
             meas[(1, N, :lr_aug3, tol)] = (sol1_lr_aug3 * discrete_rhs)[1]
-            sol2_lr_aug3 = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug3), discrete_ext[2].vector, step_callback=(ϵ, ψ) -> @show "2", N, ϵ, ψ.ranks.p[], ψ.ranks.m[])
+            m_ranks[(1, N, :lr_aug3, tol)] = ranks
+            ranks = (p=[], m=[])
+            sol2_lr_aug3 = EPMAfem.IterableDiscretePNSolution(adjoint(system_lr_aug3), discrete_ext[2].vector, step_callback=(ϵ, ψ) -> @show "2", N, ϵ, ψ.ranks.p[], ψ.ranks.m[], push!(ranks.p, ψ.ranks.p[]), push!(ranks.m, ψ.ranks.m[]))
             meas[(2, N, :lr_aug3, tol)] = (sol2_lr_aug3 * discrete_rhs)[1]
-            serialize("meas_data.jls", meas)
+            m_ranks[(2, N, :lr_aug3, tol)] = ranks
+            serialize("meas_data.jls", (meas, m_ranks))
         end
     end
 end
 
-serialize("meas_data.jls", meas)
+serialize("meas_data.jls", (meas, m_ranks))
 
 
 begin
