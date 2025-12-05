@@ -1,16 +1,17 @@
 
-# should come in julia 1.12: copied from https://github.com/JuliaLang/LinearAlgebra.jl/blob/b7fd6967c60b8408445d03442e04586bce0645d7/src/adjtrans.jl#L404-L413
- # these make eachrow(A') produce simpler views
-@inline Base.unsafe_view(A::Transpose{<:Number, <:AbstractMatrix}, i::Integer, j::AbstractArray) =
-    Base.unsafe_view(parent(A), j, i)
-@inline Base.unsafe_view(A::Transpose{<:Number, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
-    Base.unsafe_view(parent(A), j, i)
+if VERSION <= v"1.12"
+    # should come in julia 1.12: copied from https://github.com/JuliaLang/LinearAlgebra.jl/blob/b7fd6967c60b8408445d03442e04586bce0645d7/src/adjtrans.jl#L404-L413
+    # these make eachrow(A') produce simpler views
+    @inline Base.unsafe_view(A::Transpose{<:Number, <:AbstractMatrix}, i::Integer, j::AbstractArray) =
+        Base.unsafe_view(parent(A), j, i)
+    @inline Base.unsafe_view(A::Transpose{<:Number, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
+        Base.unsafe_view(parent(A), j, i)
 
-@inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::Integer, j::AbstractArray) =
-    Base.unsafe_view(parent(A), j, i)
-@inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
-    Base.unsafe_view(parent(A), j, i)
-    
+    @inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::Integer, j::AbstractArray) =
+        Base.unsafe_view(parent(A), j, i)
+    @inline Base.unsafe_view(A::Adjoint{<:Real, <:AbstractMatrix}, i::AbstractArray, j::Integer) =
+        Base.unsafe_view(parent(A), j, i)
+end
 
 function LinearAlgebra.kron!(z::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T}, α::Number, β::Number) where T
     @assert length(z) == length(x) * length(y)

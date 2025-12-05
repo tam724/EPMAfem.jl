@@ -22,7 +22,7 @@ struct SphericalHarmonic{T<:Integer, C}
             @warn "For fast evaluations of spherical harmonics, also pass a cache to the constructor"
         else
             #check cache validity
-            cache.lmax >= deg || error("cache lmax $cache.lmax < degree $deg")
+            cache.P.lmax >= deg || error("cache lmax $(cache.P.lmax) < degree $deg")
         end
         return new{typeof(deg), typeof(cache)}(deg, ord, cache)
     end
@@ -47,6 +47,19 @@ end
 function eval_cache!(cache, θ, ϕ)
     SphericalHarmonics.computePlmcostheta!(cache, θ)
     SphericalHarmonics.computeYlm!(cache, θ, ϕ)
+end
+
+function eval_naive(sh::SphericalHarmonic, Ω::VectorValue)
+    # see diss (for testing the function definitions with the library implementation)
+    l, m = degree(sh), order(sh)
+    θ, ϕ = unitsphere_cartesian_to_spherical(VectorValue(Ωz(Ω), -Ωx(Ω), -Ωy(Ω)))
+    if m < 0
+        return sqrt((2*l+1)/(2π) * factorial(l-abs(m))/factorial(l+abs(m)))*LegendrePolynomials.Plm(cos(θ), l, abs(m))*sin(abs(m)*ϕ)
+    elseif m == 0
+        return sqrt((2*l+1)/(4π)) * LegendrePolynomials.Plm(cos(θ), l, 0)
+    else
+        return sqrt((2*l+1)/(2π) * factorial(l-abs(m))/factorial(l+abs(m)))*LegendrePolynomials.Plm(cos(θ), l, abs(m))*cos(abs(m)*ϕ)
+    end
 end
 
 function (sh::SphericalHarmonic)(Ω::VectorValue)

@@ -41,6 +41,9 @@ function EOSphericalHarmonicsModel(N, ND, eo=:EO)
     return EOSphericalHarmonicsModel{Dimensions.dimensionality_int(ND), eo}(N, moments)
 end
 
+even(model::EOSphericalHarmonicsModel) = model.moments.even
+odd(model::EOSphericalHarmonicsModel) = model.moments.odd
+
 plus(model::EOSphericalHarmonicsModel{ND, :EO}) where ND = model.moments.even
 plus(model::EOSphericalHarmonicsModel{ND, :OE}) where ND = model.moments.odd
 

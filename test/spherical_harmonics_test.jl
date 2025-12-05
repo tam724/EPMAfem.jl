@@ -126,4 +126,29 @@ end
 
 test_scattering_kernel_integration()
 
+function test_real_spherical_harmonics_function_definition()
+    moms = SH.get_all_viable_harmonics_up_to(5, SH.Dimensions._3D())
+    for mom in moms
+        for _ in 1:50 # test 50 random directions ∈ S^2
+            Ω = randn(3) |> normalize
+            Ylm_Ω = SH.eval_naive(mom, SH.VectorValue(Ω...))
+            Ylm_Ω2 = mom(SH.VectorValue(Ω...))
+            @assert Ylm_Ω ≈ Ylm_Ω2
+            Ylm_mΩ = SH.eval_naive(mom, -SH.VectorValue(Ω...))
+            Ylm_mΩ2 = mom(-SH.VectorValue(Ω...))
+            if SH.is_even(mom)
+                @assert Ylm_Ω ≈ Ylm_mΩ
+                @assert Ylm_Ω2 ≈ Ylm_mΩ2
+            else
+                @assert SH.is_odd(mom)
+                @assert Ylm_Ω ≈ -Ylm_mΩ
+                @assert Ylm_Ω2 ≈ -Ylm_mΩ2
+            end
+        end
+    end
+end
+
+test_real_spherical_harmonics_function_definition()
+
+
 end

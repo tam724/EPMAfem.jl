@@ -78,12 +78,33 @@ for N in Ns
     end
 end
 
+timings_noschur = []
+for N in Ns
+    model = get_model(N)
+    problem = EPMAfem.discretize_problem(equations, model, arch, updatable=true)
+    discrete_rhs = EPMAfem.discretize_rhs(excitation, model, arch)[1]
+    ρs = EPMAfem.discretize_mass_concentrations([x -> mass_concentrations(e, x) for e in 1:EPMAfem.number_of_elements(equations)], model)
+    EPMAfem.update_problem!(problem, ρs)
+
+    probe = EPMAfem.PNProbe(model, arch, Ω=Ω -> 1.0, ϵ=ϵ -> 1.0)
+    system_full_noschur = EPMAfem.implicit_midpoint2(problem.problem, Krylov.minres)
+    sol_full = EPMAfem.IterableDiscretePNSolution(system_full_noschur, discrete_rhs, step_callback=step_callback)
+    # run first 2 iterations (warmup)
+    iterate(sol_full, iterate(sol_full)[2])
+    # run the full simulation
+    time_full = @elapsed EPMAfem.interpolable(probe, sol_full)
+    @show time_full
+    push!(timings_noschur, ((N, Inf), time_full))
+end
+
 using Serialization
 serialize(joinpath(figpath, "plotdata.jls"), plotdata)
 serialize(joinpath(figpath, "timings.jls"), timings)
+serialize(joinpath(figpath, "timings_noschur.jls"), timings_noschur)
 
 plotdata = deserialize(joinpath(figpath, "plotdata.jls"))
 timings = deserialize(joinpath(figpath, "timings.jls"))
+timings_noschur = deserialize(joinpath(figpath, "timings_noschur.jls"))
 
 neg_to_nan(x) = x < 0 ? NaN : x
 for N in Ns
@@ -152,6 +173,7 @@ end
 
 timings2 = Dict()
 for (x, t) in timings timings2[x] = t end
+for ((N, _), t) in timings_noschur timings2[(N, -1)] = t end
 
 L1_norm = Dict()
 Linf_norm = Dict()
@@ -172,6 +194,9 @@ begin
     for (i, n) in enumerate(Ns)
         if !(n == 27)
             scatter!([timings2[(n, Inf)]], [L2_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2) ? L"P_N" : nothing), text= Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
+            if !(n==21)
+                scatter!([timings2[(n, -1)]], [L2_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2)-1 ? L"P_N (noschur)" : nothing), text= Plots.text(L"P_{%$(n)}", 4), alpha=0.3)
+            end
         end
         if haskey(timings2, (n, 3))
             scatter!([get(timings2, (n, 3), NaN)], [get(L2_norm, (n, 3), NaN)], markersize=[m_size(n)], color=2, label=(i==length(Ns2) ? L"r=3" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
@@ -188,8 +213,8 @@ begin
     end
     xlabel!("Runtime (s)", xaxis=:log)
     ylabel!(L"L_2 \textrm{\, error\, (rel.)} ", yaxis=:log)
-    plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000)
-    savefig(joinpath(figpath, "L2_error.png"))
+    plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000, legend=:bottomleft)
+    # savefig(joinpath(figpath, "L2_error.png"))
 end
 
 begin
