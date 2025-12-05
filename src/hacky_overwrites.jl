@@ -228,31 +228,33 @@ function LinearAlgebra.transpose!(B::GPUArrays.AbstractGPUArray, A::GPUArrays.An
     return B
 end
 
-# empty triu!/tril!
-function LinearAlgebra.tril!(A::AbstractGPUMatrix{T}, d::Integer = 0) where T
-    if iszero(length(A)) return A end
-    @kernel function tril_kernel!(_A, _d)
-        I = @index(Global, Cartesian)
-        i, j = Tuple(I)
-        if i < j - _d
-            @inbounds _A[i, j] = zero(T)
+if GPUArrays.VERSION < v"11.3.1" # https://github.com/JuliaGPU/GPUArrays.jl/pull/642
+    # empty triu!/tril!
+    function LinearAlgebra.tril!(A::AbstractGPUMatrix{T}, d::Integer = 0) where T
+        if iszero(length(A)) return A end
+        @kernel function tril_kernel!(_A, _d)
+            I = @index(Global, Cartesian)
+            i, j = Tuple(I)
+            if i < j - _d
+                @inbounds _A[i, j] = zero(T)
+            end
         end
+        tril_kernel!(get_backend(A))(A, d; ndrange = size(A))
+        return A
     end
-    tril_kernel!(get_backend(A))(A, d; ndrange = size(A))
-    return A
-end
 
-function LinearAlgebra.triu!(A::AbstractGPUMatrix{T}, d::Integer = 0) where T
-    if iszero(length(A)) return A end
-    @kernel function triu_kernel!(_A, _d)
-        I = @index(Global, Cartesian)
-        i, j = Tuple(I)
-        if j < i + _d
-            @inbounds _A[i, j] = zero(T)
+    function LinearAlgebra.triu!(A::AbstractGPUMatrix{T}, d::Integer = 0) where T
+        if iszero(length(A)) return A end
+        @kernel function triu_kernel!(_A, _d)
+            I = @index(Global, Cartesian)
+            i, j = Tuple(I)
+            if j < i + _d
+                @inbounds _A[i, j] = zero(T)
+            end
         end
+        triu_kernel!(get_backend(A))(A, d; ndrange = size(A))
+        return A
     end
-    triu_kernel!(get_backend(A))(A, d; ndrange = size(A))
-    return A
 end
 
 function (T::Type{<: AnyGPUArray{U}})(s::UniformScaling, dims::Dims{2}) where {U}
@@ -264,18 +266,20 @@ function (T::Type{<: AnyGPUArray{U}})(s::UniformScaling, dims::Dims{2}) where {U
     return res
 end
 
-function LinearAlgebra.rmul!(A::CuArray{<:Union{Float32, Float64, ComplexF64, ComplexF32}}, val::Bool)
-    if iszero(val) 
-        return fill!(A, zero(eltype(A)))
-    else
-        return A
+if CUDA.VERSION < v"5.9.5" # https://github.com/JuliaGPU/CUDA.jl/pull/2958
+    function LinearAlgebra.rmul!(A::CuArray{<:Union{Float32, Float64, ComplexF64, ComplexF32}}, val::Bool)
+        if iszero(val) 
+            return fill!(A, zero(eltype(A)))
+        else
+            return A
+        end
     end
-end
 
-function LinearAlgebra.rmul!(A::CuArray{<:Union{Float32, Float64, ComplexF64, ComplexF32}}, val::Int)
-    if iszero(val)
-        return fill!(A, zero(eltype(A)))
-    else
-        return rmul!(A, eltype(A)(val))
+    function LinearAlgebra.rmul!(A::CuArray{<:Union{Float32, Float64, ComplexF64, ComplexF32}}, val::Int)
+        if iszero(val)
+            return fill!(A, zero(eltype(A)))
+        else
+            return rmul!(A, eltype(A)(val))
+        end
     end
 end

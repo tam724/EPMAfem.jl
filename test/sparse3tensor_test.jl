@@ -124,7 +124,7 @@ function test_sparse3tensor_gridap_assembly()
     ga(u, v, w) = ∫(u*v*w)gdx
     a(u, v, (dims, dx, ∂R, dΓ, n)) = ∫(u*v)dx
 
-    tensor = SM.assemble_trilinear(a, model, SM.even(model), SM.even(model))
+    tensor = SM.assemble_trilinear(a, model, SM.plus(model), SM.plus(model))
 
     reffe = ReferenceFE(lagrangian, Float64, 1)
     reffe0 = ReferenceFE(lagrangian, Float64, 0)

@@ -71,20 +71,20 @@ function EPMAfem.discretize_problem(eq::OnlyEnergyEquations, mdl::EPMAfem.Discre
     τ = Matrix{T}([absorption_coefficient(eq, e, ϵ) for e in 1:n_elem, ϵ ∈ ϵs])
     σ = Array{T}([scattering_coefficient(eq, e, i, ϵ) for e in 1:n_elem, i in 1:n_scat, ϵ ∈ ϵs])
 
-    ρp = [mass_concentrations(eq, e)*ones(1, 1) for e in 1:n_elem] |> arch
-    ρm = [Diagonal(mass_concentrations(eq, e)*ones(1)) for e in 1:n_elem] |> arch
+    ρp = [mass_concentrations(eq, e)*ones(1, 1) |> arch for e in 1:n_elem]
+    ρm = [Diagonal(mass_concentrations(eq, e)*ones(1))  |> arch for e in 1:n_elem]
 
-    ∂p = [zeros(1, 1) for _ in 1:1] |> arch
-    ∇pm = [zeros(1, 1) for _ in 1:1] |> arch 
+    ∂p = [zeros(1, 1)|> arch for _ in 1:1] 
+    ∇pm = [zeros(1, 1)|> arch  for _ in 1:1] 
 
-    kp = [[Diagonal(ones(1))*scattering_coefficient2(eq, e, i) for i in 1:n_scat] for e in 1:n_elem] |> arch
-    km = [[Diagonal(ones(1))*scattering_coefficient2(eq, e, i) for i in 1:n_scat] for e in 1:n_elem] |> arch
+    kp = [[Diagonal(ones(1))*scattering_coefficient2(eq, e, i) |> arch for i in 1:n_scat] for e in 1:n_elem]
+    km = [[Diagonal(ones(1))*scattering_coefficient2(eq, e, i) |> arch for i in 1:n_scat] for e in 1:n_elem]
 
     Ip = Diagonal(ones(1)) |> arch
     Im = Diagonal(ones(1)) |> arch
 
-    absΩp = [zeros(1, 1) for _ in 1:1] |> arch
-    Ωpm = [zeros(1, 1) for _ in 1:1] |> arch
+    absΩp = [zeros(1, 1) |> arch for _ in 1:1]
+    Ωpm = [zeros(1, 1) |> arch for _ in 1:1]
 
     space_discretization = EPMAfem.SpaceDiscretization(EPMAfem.space_model(mdl), arch, ρp, ρm, ∂p, ∇pm)
     direction_discretization = EPMAfem.DirectionDiscretization(EPMAfem.direction_model(mdl), arch, Ip, Im, kp, km, absΩp, Ωpm)
@@ -100,8 +100,10 @@ function EPMAfem.discretize_rhs(eq::OnlyEnergyEquations, mdl, arch::EPMAfem.PNAr
     ## assemble excitation 
     gϵ = Vector{T}([source(eq, ϵ) for ϵ ∈ ϵs])
     gxp = ones(1, 1) |> arch
+    gxm = zeros(1, 1) |> arch
     gΩp = ones(1, 1) |> arch
-    return Rank1DiscretePNVector(false, mdl, arch, gϵ, gxp, gΩp)
+    gΩm = zeros(1, 1) |> arch
+    return Rank1DiscretePNVector(false, mdl, arch, gϵ, (p=gxp, m=gxm), (p=gΩp, m=gΩm))
 end
 
 function discretize_adjoint_rhs(eq::OnlyEnergyEquations, mdl, arch::EPMAfem.PNArchitecture)
@@ -112,8 +114,10 @@ function discretize_adjoint_rhs(eq::OnlyEnergyEquations, mdl, arch::EPMAfem.PNAr
     ## assemble excitation 
     gϵ = Vector{T}([source(eq, ϵ) for ϵ ∈ ϵs])
     gxp = ones(1, 1) |> arch
+    gxm = zeros(1, 1) |> arch
     gΩp = ones(1, 1) |> arch
-    return Rank1DiscretePNVector(true, mdl, arch, gϵ, gxp, gΩp)
+    gΩm = zeros(1, 1) |> arch
+    return Rank1DiscretePNVector(true, mdl, arch, gϵ, (p=gxp, m=gxm), (p=gΩp, m=gΩm))
 end
 
 ## some exact solutions (computed via mathematica)
