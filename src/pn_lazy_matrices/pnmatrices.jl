@@ -78,14 +78,18 @@ max_size(A::AbstractLazyMatrix, n::Integer) = max_size(A)[n]
 LinearAlgebra.transpose(A::AbstractLazyMatrix) = isdiagonal(A) ? A : Transpose(A)
 required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix, cache_notifier) = required_workspace(mul_with!, L, 1, cache_notifier) # TODO: remove usage, deprecated
 
-@concrete terse struct LazyOpMatrix{T, OP} <: AbstractLazyMatrix{T}
+struct LazyOpMatrix{T, OP, ARGS} <: AbstractLazyMatrix{T}
     op::OP
-    args
+    args::ARGS
+end
+
+function Base.show(io::IO, T::Type{<:LazyOpMatrix{_T, _OP, _ARGS}}) where {_T, _OP, _ARGS}
+    print(io, "LazyOpMatrix{$_T, $_OP, (...)}")
 end
 
 function lazy(op, args...)
 	T = promote_type(eltype.(args)...)
-	return LazyOpMatrix{T}(op, args)
+	return LazyOpMatrix{T, typeof(op), typeof(args)}(op, args)
 end
 
 lazy(op, arg::AbstractVector) = lazy(op, arg...)

@@ -1,17 +1,10 @@
 # some pruning
 
-# lazy(::typeof(+), A::SumMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(+, A.args..., B)
-# lazy(::typeof(+), A::AbstractLazyMatrixOrTranspose, B::SumMatrix) = lazy(+, A, B.args...)
-# lazy(::typeof(+), A::SumMatrix, B::SumMatrix) = lazy(+, A.args, B.args)
-
-# lazy(::typeof(kron), A::KronMatrix, B::AbstractLazyMatrixOrTranspose) = lazy(kron, A.args..., B)
-# lazy(::typeof(kron), A::AbstractLazyMatrixOrTranspose, B::KronMatrix) = lazy(kron, A, B.args...)
-# lazy(::typeof(kron), A::KronMatrix, B::KronMatrix) = lazy(kron, A.args, B.args)
-
 lazy(a::Number) = LazyScalar(a)
 lazy(A::AbstractMatrix{T}) where T = LazyMatrix{T, typeof(A)}(A)
 lazy(L::AbstractLazyMatrixOrTranspose) = L
 
+# deprecate ? (better call lazy before)
 Base.:*(a::Number, L::AbstractLazyMatrixOrTranspose{T}) where T = LazyScalar(T(a)) * L
 Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::Number) where T = LazyScalar(T(a)) * L
 
@@ -19,45 +12,7 @@ Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T =
 Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = lazy_simplify(*, a, L)
 Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy_simplify(*, A, B)
 
-# Base.:*(α::AbstractLazyScalar{T}, L::SumMatrix{T}) where T = sum(α*A for A in As(L))
-# function Base.:*(α::AbstractLazyScalar{T}, L::BlockMatrix{T}) where T
-#     return [α*A(L) α*B(L)
-#             α*C(L) α*D(L)]
-# end
-# function Base.:*(α::AbstractLazyScalar{T}, L::BlockDiagMatrix{T}) where T
-#     return [α*A(L) nothing
-#             nothing α*B(L)]
-# end
-
-function Base.:+(Ls::Vararg{AbstractLazyMatrix})
-    unique = Dict()
-    for L in Ls
-        L isa ScaleMatrix
-    end
-end
-function Base.:+(L1::ScaleMatrix, L2::ScaleMatrix)
-    if lazy_objectid(A(L1)) == lazy_objectid(A(L2))
-        return lazy_simplify(*, _a(L1) + _a(L2), A(L1))
-    else
-        return lazy_simplify(+, L1, L2)
-    end
-end
-function Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::ScaleMatrix{T}) where T
-    if lazy_objectid(L1) == lazy_objectid(A(L2))
-        return lazy_simplify(*, lazy(one(T)) + _a(L2), L1)
-    else
-        return lazy_simplify(+, L1, L2)
-    end
-end
-
-function  Base.:+(L1::ScaleMatrix{T}, L2::AbstractLazyMatrixOrTranspose) where T
-    if lazy_objectid(A(L1)) == lazy_objectid(L2)
-        return lazy_simplify(*, _a(L1) + lazy(one(T)), L2)
-    else
-        return lazy_simplify(+, L1, L2)
-    end
-end
-
+Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy_simplify(+, L1, L2)
 Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = L1 + (-L2)
 Base.:-(L::AbstractLazyMatrixOrTranspose{T}) where T = -one(T)*L
 
@@ -167,14 +122,14 @@ end
 
 function unlazy(A::AbstractLazyMatrix{T}, ws_alloc=zeros; n=1) where T
     ws_size = required_workspace(mul_with!, A, n, ())
-    @info "allocating workspace of size $(ws_size)."
+    isinteractive() && @info "allocating workspace of size $(ws_size)."
     ws = create_workspace(ws_size, ws_alloc)
     return NotSoLazy{T}(A, ws)
 end
 
 function unlazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws_alloc=zeros; n=1) where T
     ws_size = required_workspace(mul_with!, parent(At), n, ())
-    @info "allocating workspace of size $(ws_size)."
+    isinteractive() && @info "allocating workspace of size $(ws_size)."
     ws = create_workspace(ws_size, ws_alloc)
     return NotSoLazy{T}(At, ws)
 end

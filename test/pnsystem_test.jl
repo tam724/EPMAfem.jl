@@ -11,64 +11,6 @@ using EPMAfem.Krylov
 
 const PNLazyMatrices = EPMAfem.PNLazyMatrices
 
-# ### CUDA TESTING
-# begin
-#     rand_mat(m, n) = rand(m, n) |> cu
-#     rand_spmat(m, n, d) = sprand(m, n, d) |> cu
-#     rand_vec(n) = rand(n) |> cu
-#     ones_vec(n) = ones(n) |> cu
-#     rand_scal() = rand(Float32)
-#     scal(v) = Float32(v)
-#     # switches off getindex tests
-#     cpu = false
-
-#     function LinearAlgebra.mul!(y::AbstractVector, A::EPMAfem.AbstractLazyMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
-#         ws = EPAMfem.create_workspace(EPMAfem.mul_with!, A, cu ∘ zeros)
-#         if ws_size > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(ws_size))!") end
-#         EPMAfem.mul_with!(ws, y, A, x, α, β)
-#         return y
-#     end
-
-#     function LinearAlgebra.mul!(Y::AbstractMatrix, A::EPMAfem.AbstractLazyMatrix{T}, X::AbstractMatrix, α::Number, β::Number) where T
-#         @warn "Not build for this, but we try anyways..."
-#         ws = EPAMfem.create_workspace(EPMAfem.mul_with!, A, cu ∘ zeros)
-#         if ws_size > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(ws_size))!") end
-#         EPMAfem.mul_with!(ws, Y, A, X, α, β)
-#         return Y
-#     end
-
-#     function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, A::EPMAfem.AbstractLazyMatrix{T}, α::Number, β::Number) where T
-#         @warn "Not build for this, but we try anyways..."
-#         ws = EPAMfem.create_workspace(EPMAfem.mul_with!, A, cu ∘ zeros)
-#         if ws_size > 0 @warn("mul!(::$(typeof(A))) allocates zeros($(T), $(ws_size))!") end
-#         EPMAfem.mul_with!(ws, Y, X, A, α, β)
-#         return Y
-#     end
-
-#     function LinearAlgebra.mul!(y::AbstractVector, At::Transpose{T, <:EPMAfem.AbstractLazyMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
-#         ws = EPAMfem.create_workspace(EPMAfem.mul_with!, At, cu ∘ zeros)
-#         if ws_size > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(ws_size))!") end
-#         EPMAfem.mul_with!(ws, y, At, x, α, β)
-#         return y
-#     end
-
-#     function LinearAlgebra.mul!(Y::AbstractMatrix, At::Transpose{T, <:EPMAfem.AbstractLazyMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
-#         @warn "Not build for this, but we try anyways..."
-#         ws = EPAMfem.create_workspace(EPMAfem.mul_with!, At, cu ∘ zeros)
-#         if ws_size > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(ws_size))!") end
-#         EPMAfem.mul_with!(ws, Y, At, X, α, β)
-#         return Y
-#     end
-
-#     function LinearAlgebra.mul!(Y::AbstractMatrix, X::AbstractMatrix, At::Transpose{T, <:EPMAfem.AbstractLazyMatrix{T}}, α::Number, β::Number) where T
-#         @warn "Not build for this, but we try anyways..."
-#         ws = EPAMfem.create_workspace(EPMAfem.mul_with!, At, cu ∘ zeros)
-#         if ws_size > 0 @warn("mul!(::$(typeof(At))) allocates zeros($(T), $(ws_size))!") end
-#         EPMAfem.mul_with!(ws, Y, X, At, α, β)
-#         return Y
-#     end
-# end
-
 lazy(A) = EPMAfem.lazy(A)
 unlazy(A; kwargs...) = EPMAfem.unlazy(A, zeros; kwargs...)
 
