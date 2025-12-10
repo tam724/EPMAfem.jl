@@ -38,26 +38,37 @@ function lazy_simplify(::typeof(+), L1::AbstractLazyMatrixOrTranspose, L2::Scale
     end
 end
 
-_lazy_simplify_sum(accum, M::AbstractLazyMatrixOrTranspose, ::Tuple{}) = lazy(+, accum..., M)
-function _lazy_simplify_sum(accum, M::AbstractLazyMatrixOrTranspose, (A, tail...))
-    A_ = lazy_simplify(+, A, M)
-    if A_ isa SumMatrix
-        return _lazy_simplify_sum((accum..., A), M, tail) # recurse
-    else
-        return lazy(+, accum..., A_, tail...) # found simplification, stop
+function _lazy_simplify_sum(accum, A::AbstractLazyMatrixOrTranspose)
+    for (i, T) in enumerate(accum)
+        R = lazy_simplify(+, A, T)
+        if !(R isa SumMatrix)
+            return lazy(+, Base.setindex(accum, R, i)...)
+        end
     end
+    return lazy(+, accum..., A)
+end
+function _lazy_simplify_sum(accum, (A, As...)::Vararg{AbstractLazyMatrixOrTranspose})
+    for (i, T) in enumerate(accum)
+        R = lazy_simplify(+, A, T)
+        if !(R isa SumMatrix)
+            return _lazy_simplify_sum(Base.setindex(accum, R, i), As...)
+        end
+    end
+    return _lazy_simplify_sum((accum..., A), As...)
 end
 
 # (A + B) + C = A + B + C
-lazy_simplify(::typeof(+), A::AbstractLazyMatrixOrTranspose, S::SumMatrix) = _lazy_simplify_sum((), A, As(S))
-lazy_simplify(::typeof(+), S::SumMatrix, A::AbstractLazyMatrixOrTranspose) = _lazy_simplify_sum((), A, As(S))
+lazy_simplify(::typeof(+), A::AbstractLazyMatrixOrTranspose, S::SumMatrix) = _lazy_simplify_sum((), A, As(S)...)
+lazy_simplify(::typeof(+), S::SumMatrix, A::AbstractLazyMatrixOrTranspose) = _lazy_simplify_sum((), A, As(S)...)
 # fix ambiguity
-lazy_simplify(::typeof(+), A::ScaleMatrix, S::SumMatrix) = _lazy_simplify_sum((), A, As(S))
-lazy_simplify(::typeof(+), S::SumMatrix, A::ScaleMatrix) = _lazy_simplify_sum((), A, As(S))
+lazy_simplify(::typeof(+), A::ScaleMatrix, S::SumMatrix) = _lazy_simplify_sum((), A, As(S)...)
+lazy_simplify(::typeof(+), S::SumMatrix, A::ScaleMatrix) = _lazy_simplify_sum((), A, As(S)...)
 
 # (A + B) + (C + D) = A + B + C + D
-lazy_simplify(::typeof(+), S1::SumMatrix, S2::SumMatrix) = +(As(S1)..., As(S2)...)
-
+function lazy_simplify(::typeof(+), S1::SumMatrix, S2::SumMatrix)
+    A, As1... = As(S1)
+    return _lazy_simplify_sum((), As(S1)..., As(S2)...)
+end
 
 # [A B] + [C D] = [A+C B+D]
 function lazy_simplify(::typeof(+), L1::BlockMatrix{T}, L2::BlockMatrix{T}) where T
@@ -81,81 +92,78 @@ function lazy_simplify(::typeof(+), L1::BlockDiagMatrix{T}, L2::BlockDiagMatrix{
     return lazy(blockdiagmatrix, A1 + A2, B1 + B2)
 end
 
-function split_common_prefix(A1, A2)
+function split_common_prefix_suffix(A1, A2)
     n = min(length(A1), length(A2))
-    k = findfirst(i -> lazy_objectid(A1[i]) != lazy_objectid(A2[i]), 1:n)
-    len = isnothing(k) ? n : k - 1
-    return A1[1:len], A1[len+1:end], A2[len+1:end]
-end
-
-function split_common_suffix(A1, A2)
-    n = min(length(A1), length(A2))
-    k = findfirst(i -> lazy_objectid(A1[end-i+1]) != lazy_objectid(A2[end-i+1]), 1:n)
-    len = isnothing(k) ? n : k - 1
-    return A1[end-len+1:end], A1[1:end-len], A2[1:end-len]
+    k1 = findfirst(i -> lazy_objectid(A1[i]) != lazy_objectid(A2[i]), 1:n)
+    isnothing(k1) && error("A1 == A2")
+    len1 = k1 - 1
+    k2 = findfirst(i -> lazy_objectid(A1[end-i+1]) != lazy_objectid(A2[end-i+1]), 1:n)
+    isnothing(k2) && error("A1 == A2") # impossible
+    len2 = k2 - 1
+    return A1[1:len1], A1[end-len2+1:end], (A1[len1+1:end-len2], A2[len1+1:end-len2])
 end
 
 function lazy_simplify(::typeof(+), L1::KronMatrix, L2::KronMatrix)
-    A1, A2 = As(L1), As(L2)
-    pref, r1p, r2p = split_common_prefix(A1, A2)
-    suff, r1s, r2s = split_common_suffix(A1, A2)
-
-    @show pref, r1p, r2p
-    @show suff, r1s, r2s
-
-    if length(pref) > length(suff)
-        return lazy(kron, pref..., +(kron(r1p...), kron(r2p...)))
-    elseif length(suff) > 0
-        return lazy(kron, +(kron(r1s...), kron(r2s...)), suff...)
+    if lazy_objectid(L1) == lazy_objectid(L2)
+        T1, T2 = eltype(L1), eltype(L2)
+        return (lazy(one(T1)) + lazy(one(T2)))*L1
     else
-        return lazy(+, L1, L2)
+        pref, suff, (r1p, r2p) = split_common_prefix_suffix(As(L1), As(L2))
+
+        if length(pref) > 0 || length(suff) > 0
+            return lazy(kron, pref..., +(kron(r1p...), kron(r2p...)), suff...)
+        else
+            return lazy(+, L1, L2)
+        end
     end
 end
 
 const ScaleKronMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractLazyScalar{T}, KronMatrix{T}}}
 
 function lazy_simplify(::typeof(+), L1::ScaleKronMatrix, L2::ScaleKronMatrix)
-    A1, A2 = As(A(L1)), As(A(L2))
     a1, a2 = _a(L1), _a(L2)
-
-    pref, r1p, r2p = split_common_prefix(A1, A2)
-    suff, r1s, r2s = split_common_suffix(A1, A2)
-    if length(pref) > length(suff)
-        return lazy(kron, pref..., +(a1*kron(r1p...), a2*kron(r2p...)))
-    elseif length(suff) > 0
-        return lazy(kron, +(a1*kron(r1s...), a2*kron(r2s...)), suff...)
+    if lazy_objectid(A(L1)) == lazy_objectid(A(L2))
+        return (a1 + a2)*A(L1)
     else
-        return lazy(+, L1, L2)
+        pref, suff, (r1p, r2p) = split_common_prefix_suffix(As(A(L1)), As(A(L2)))
+
+        if length(pref) > 0 || length(suff) > 0
+            return lazy(kron, pref..., +(a1*kron(r1p...), a2*kron(r2p...)), suff...)
+        else
+            return lazy(+, L1, L2)
+        end
     end
 end
 
 function lazy_simplify(::typeof(+), L1::ScaleKronMatrix, L2::KronMatrix)
-    A1, A2 = As(A(L1)), As(L2)
     a1 = _a(L1)
-
-    pref, r1p, r2p = split_common_prefix(A1, A2)
-    suff, r1s, r2s = split_common_suffix(A1, A2)
-    if length(pref) > length(suff)
-        return lazy(kron, pref..., +(a1*kron(r1p...), kron(r2p...)))
-    elseif length(suff) > 0
-        return lazy(kron, +(a1*kron(r1s...), kron(r2s...)), suff...)
+    if lazy_objectid(A(L1)) == lazy_objectid(L2)
+        T2 = eltype(L2)
+        return (a1 + lazy(one(T2)))*A(L1)
     else
-        return lazy(+, L1, L2)
+        pref, suff, (r1p, r2p) = split_common_prefix_suffix(As(A(L1)), As(L2))
+
+        if length(pref) > 0 || length(suff) > 0
+            return lazy(kron, pref..., +(a1*kron(r1p...), kron(r2p...)), suff...)
+        else
+            return lazy(+, L1, L2)
+        end
     end
 end
 
 function lazy_simplify(::typeof(+), L1::KronMatrix, L2::ScaleKronMatrix)
-    A1, A2 = As(L1), As(A(L2))
     a2 = _a(L2)
-
-    pref, r1p, r2p = split_common_prefix(A1, A2)
-    suff, r1s, r2s = split_common_suffix(A1, A2)
-    if length(pref) > length(suff)
-        return lazy(kron, pref..., +(kron(r1p...), a2*kron(r2p...)))
-    elseif length(suff) > 0
-        return lazy(kron, +(kron(r1s...), a2*kron(r2s...)), suff...)
+    if lazy_objectid(L1) == lazy_objectid(A(L2))
+        T1 = eltype(L1)
+        return (lazy(one(T1)) + a2)*A(L2)
     else
-        return lazy(+, L1, L2)
+        pref, suff, (r1p, r2p) = split_common_prefix_suffix(As(L1), As(A(L2)))
+
+        if length(pref) > 0 || length(suff) > 0
+            return lazy(kron, pref..., +(kron(r1p...), a2*kron(r2p...)), suff...)
+        else
+            return lazy(+, L1, L2)
+        end
     end
 end
 
@@ -215,3 +223,30 @@ lazy_simplify(::typeof(kron), L1::ScaleMatrix, L2::KronMatrix) = lazy(*, _a(L1),
 
 # ((A ⊗ B) ⊗ (a*C)) = a*(A ⊗ B ⊗ C)
 lazy_simplify(::typeof(kron), L1::KronMatrix, L2::ScaleMatrix) = lazy(*, _a(L2), kron(As(L1)..., A(L2)))
+
+
+## EXPAND
+lazy_expand(S::AbstractLazyMatrixOrTranspose) = S
+
+_lazy_expand_sums(A::AbstractLazyMatrixOrTranspose) = (A, )
+_lazy_expand_sums(A::SumMatrix) = A.args
+
+_lazy_expand_sum(accum, A::AbstractLazyMatrixOrTranspose) = (accum..., _lazy_expand_sums(lazy_expand(A))...)
+_lazy_expand_sum(accum, (A, As...)::Vararg{AbstractLazyMatrixOrTranspose}) = _lazy_expand_sum((accum..., _lazy_expand_sums(lazy_expand(A))...), As...)
+lazy_expand(S::SumMatrix) = lazy(+, _lazy_expand_sum((), S.args...)...)
+
+# Cartesian product of two tuples (a and b)
+combine(a, b) = (a, b)
+combine(a::Tuple, b) = (a..., b)
+combine(a, b::Tuple) = (a, b...)
+combine(a::Tuple, b::Tuple) = (a..., b...)
+tuple_product((a, )::Tuple{Any}, (b, )::Tuple{Any}) = (combine(a, b), )
+tuple_product((a, )::Tuple{Any}, (b, bs...)::Tuple) = (combine(a, b), tuple_product((a, ), bs)...)
+tuple_product((a, as...)::Tuple, (b, )::Tuple{Any}) = (combine(a, b), tuple_product(as, (b, ))...)
+tuple_product((a, as...)::Tuple, (b, bs...)::Tuple) = (combine(a, b), tuple_product((a, ), bs)..., tuple_product(as, (b, ))..., tuple_product(as, bs)...)
+tuple_product((a, b, c...)::Vararg{Tuple}) = (tuple_product(tuple_product(a, b), c...)) ## take that, compiler! (crazy that this runs)
+
+function lazy_expand(K::KronMatrix)
+    factors = map(A -> _lazy_expand_sums(lazy_expand(A)), As(K))
+    return lazy(+, map(args -> kron(args...), tuple_product(factors...))...)
+end

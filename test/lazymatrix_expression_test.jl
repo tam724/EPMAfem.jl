@@ -3,6 +3,7 @@ using EPMAfem.PNLazyMatrices
 using Test
 using LinearAlgebra
 using CUDA
+using SparseArrays
 
 function build_matrices(vars, expr)
     lazy_vars = Dict(key=>lazy(val) for (key, val) in vars)
@@ -16,11 +17,11 @@ function build_matrices(vars, expr)
 end
 
 function test_random_multiplication(AT, M, lazy_M, N = 5)
-    unlazy_M = unlazy(lazy_M, size->similar(AT, size))
-    y, lazy_y = similar(M, size(M, 1)), similar(M, size(M, 1))
+    unlazy_M = unlazy(lazy_M, size->similar(dense_array_type(AT), size))
+    y, lazy_y = similar(dense_array_type(AT), size(M, 1)), similar(dense_array_type(AT), size(M, 1))
     fill!(y, zero(eltype(M))); 
     fill!(lazy_y, zero(eltype(M)));
-    x = similar(M, size(M, 2))
+    x = similar(dense_array_type(AT), size(M, 2))
     for _ in 1:N
         x .= rand(size(x))
         mul!(y, M, x)
@@ -30,11 +31,11 @@ function test_random_multiplication(AT, M, lazy_M, N = 5)
 end
 
 function test_random_multiplication_mat(AT, M, lazy_M, N = 5, n=5)
-    unlazy_M = unlazy(lazy_M, size->similar(AT, size); n=n)
-    Y, lazy_Y = similar(AT, size(M, 1), n), similar(AT, size(M, 1), n)
+    unlazy_M = unlazy(lazy_M, size->similar(dense_array_type(AT), size); n=n)
+    Y, lazy_Y = similar(dense_array_type(AT), size(M, 1), n), similar(dense_array_type(AT), size(M, 1), n)
     fill!(Y, zero(eltype(M))); 
     fill!(lazy_Y, zero(eltype(M)));
-    X = similar(AT, size(M, 2), n)
+    X = similar(dense_array_type(AT), size(M, 2), n)
     for _ in 1:N
         X .= rand(size(X))
         mul!(Y, M, X)
@@ -64,9 +65,15 @@ function test_expression(AT, vars, expr)
     end
 end
 
+dense_array_type(::Type{Array{T}}) where T = Array{T}
+dense_array_type(::Type{SparseMatrixCSC{T}})  where T = Array{T}
+dense_array_type(::Type{CuArray{T}})  where T = CuArray{T}
+dense_array_type(::Type{CUDA.CUSPARSE.CuSparseMatrixCSC{T}}) where T = CuArray{T}
+
+CUDA.CUSPARSE.CuSparseMatrixCSC{T}(M::Matrix) where T = CUDA.CUSPARSE.CuSparseMatrixCSC{T, Int32}(sparse(M))
 
 let
-    @testset "$AT{$ST}" for (AT, ST) in [(Array, Float64), (CuArray, Float32)]
+    @testset "$AT{$ST}" for (AT, ST) in [(Array, Float64), (SparseMatrixCSC, Float64), (CuArray, Float32), (CUDA.CUSPARSE.CuSparseMatrixCSC, Float32)]
         @testset "A + B" begin
             vars = Dict(
                 :A => rand(2, 2) |> AT{ST},
@@ -155,17 +162,17 @@ let
             test_expression(AT{ST}, vars, expr)
         end
 
-        # @testset "kron(A, a*B) + kron(A, a*B) + kron(c*A, C)" begin
-        #     vars = Dict(
-        #         :A => rand(2, 2) |> AT{ST},
-        #         :B => rand(2, 2) |> AT{ST},
-        #         :C => rand(2, 2) |> AT{ST},
-        #         :a => rand() |> ST,
-        #         :b => rand() |> ST,
-        #         :c => rand() |> ST)
-        #     expr = :(kron(A, a*B) + kron(A, a*B) + kron(c*A, C))
-        #     test_expression(AT{ST}, vars, expr)
-        # end
+        @testset "kron(A, a*B) + kron(A, a*B) + kron(c*A, C)" begin
+            vars = Dict(
+                :A => rand(2, 2) |> AT{ST},
+                :B => rand(2, 2) |> AT{ST},
+                :C => rand(2, 2) |> AT{ST},
+                :a => rand() |> ST,
+                :b => rand() |> ST,
+                :c => rand() |> ST)
+            expr = :(kron(A, a*B) + kron(A, a*B) + kron(c*A, C))
+            test_expression(AT{ST}, vars, expr)
+        end
 
          @testset "transpose(A) + B" begin
             vars = Dict(
@@ -183,14 +190,16 @@ let
             test_expression(AT{ST}, vars, expr)
         end
 
-        @testset "a*transpose(A) + b*B" begin
-            vars = Dict(
-                :A => rand(2, 3) |> AT{ST},
-                :B => rand(3, 2) |> AT{ST},
-                :a => rand() |> ST,
-                :b => rand() |> ST)
-            expr = :(a*transpose(A) + b*B)
-            test_expression(AT{ST}, vars, expr)
+        if !(AT <: CUDA.CUSPARSE.CuSparseMatrixCSC)
+            @testset "a*transpose(A) + b*B" begin
+                vars = Dict(
+                    :A => rand(2, 3) |> AT{ST},
+                    :B => rand(3, 2) |> AT{ST},
+                    :a => rand() |> ST,
+                    :b => rand() |> ST)
+                expr = :(a*transpose(A) + b*B)
+                test_expression(AT{ST}, vars, expr)
+            end
         end
 
         @testset "A * B * C" begin
@@ -217,6 +226,28 @@ let
                 :A => rand(2, 2) |> AT{ST},
                 :B => rand(2, 2) |> AT{ST})
             expr = :(kron(A, B) + kron(B, A))
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "kron(A, B, C) + kron(A, D, C)" begin
+            vars = Dict(
+                :A => rand(2, 2) |> AT{ST},
+                :B => rand(2, 2) |> AT{ST},
+                :C => rand(2, 2) |> AT{ST},
+                :D => rand(2, 2) |> AT{ST},
+                :a => rand() |> ST,
+                :b => rand() |> ST,
+                :c => rand() |> ST)
+            expr = :(kron(A, B, C) + kron(A, D, C))
+            test_expression(AT{ST}, vars, expr)
+
+            expr = :(kron(A, a*B, C) + kron(A, b*D, C))
+            test_expression(AT{ST}, vars, expr)
+
+            expr = :(kron(A, B, C) + kron(A, b*D, C))
+            test_expression(AT{ST}, vars, expr)
+
+            expr = :(kron(A, a*B, C) + kron(A, D, C))
             test_expression(AT{ST}, vars, expr)
         end
 
@@ -248,15 +279,17 @@ let
             test_expression(AT{ST}, vars, expr)
         end
 
-        @testset "a*transpose(A * B) + b*C" begin
-            vars = Dict(
-                :A => rand(2, 3) |> AT{ST},
-                :B => rand(3, 2) |> AT{ST},
-                :C => rand(2, 2) |> AT{ST},
-                :a => rand() |> ST,
-                :b => rand() |> ST)
-            expr = :(a*transpose(A * B) + b*C)
-            test_expression(AT{ST}, vars, expr)
+        if !(AT <: CUDA.CUSPARSE.CuSparseMatrixCSC)
+            @testset "a*transpose(A * B) + b*C" begin
+                vars = Dict(
+                    :A => rand(2, 3) |> AT{ST},
+                    :B => rand(3, 2) |> AT{ST},
+                    :C => rand(2, 2) |> AT{ST},
+                    :a => rand() |> ST,
+                    :b => rand() |> ST)
+                expr = :(a*transpose(A * B) + b*C)
+                test_expression(AT{ST}, vars, expr)
+            end
         end
 
         @testset "A * B + C * D" begin
@@ -287,13 +320,13 @@ let
             test_expression(AT{ST}, vars, expr)
         end
 
-        # @testset "kron(A, B) + kron(A, B)" begin
-        #     vars = Dict(
-        #     :A => rand(2, 2) |> AT{ST},
-        #     :B => rand(2, 2) |> AT{ST})
-        #     expr = :(kron(A, B) + kron(A, B))
-        #     test_expression(AT{ST}, vars, expr)
-        # end
+        @testset "kron(A, B) + kron(A, B)" begin
+            vars = Dict(
+            :A => rand(2, 2) |> AT{ST},
+            :B => rand(2, 2) |> AT{ST})
+            expr = :(kron(A, B) + kron(A, B))
+            test_expression(AT{ST}, vars, expr)
+        end
 
         @testset "a*kron(A, B) + b*kron(C, D)" begin
             vars = Dict(

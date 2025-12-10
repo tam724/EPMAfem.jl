@@ -125,8 +125,7 @@ function system_matrix(problem::DiscretePNProblem)
     A = sum(kron_AXB(ρp[i], coeffs.τ[i]*Ip - sum(coeffs.σ[i, j]*kp[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne) + sum(kron_AXB(∂p[i], absΩp[i]) for i in 1:ns.nd)
     C = sum(kron_AXB(ρm[i], coeffs.τ[i]*Im - sum(coeffs.σ[i, j]*km[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
     B = sum(kron_AXB(∇pm[i], Ωpm[i]) for i in 1:ns.nd)
-
-    @show typeof(A)
+    
     return [A B
     -transpose(B) C], coeffs
 end

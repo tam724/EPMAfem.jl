@@ -93,3 +93,7 @@ function lazy(op, args...)
 end
 
 lazy(op, arg::AbstractVector) = lazy(op, arg...)
+
+lazy(::typeof(+), A::AbstractLazyMatrixOrTranspose) = A
+lazy(::typeof(*), A::AbstractLazyMatrixOrTranspose) = A
+

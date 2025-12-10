@@ -12,7 +12,7 @@ Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T =
 Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = lazy_simplify(*, a, L)
 Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy_simplify(*, A, B)
 
-Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy_simplify(+, L1, L2)
+Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy_simplify(+, lazy_expand(L1), lazy_expand(L2))
 Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = L1 + (-L2)
 Base.:-(L::AbstractLazyMatrixOrTranspose{T}) where T = -one(T)*L
 
