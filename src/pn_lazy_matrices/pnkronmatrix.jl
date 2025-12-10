@@ -1,4 +1,4 @@
-const KronMatrix{T} = LazyOpMatrix{T, typeof(kron), <:Tuple{Vararg{<:AbstractMatrix{T}}}}
+const KronMatrix{T} = LazyOpMatrix{T, typeof(kron), <:Tuple{Vararg{AbstractMatrix{T}}}}
 @inline As(K::KronMatrix) = K.args
 # @inline As(Kt::Transpose{T, <:KronMatrix{T}}) where T = map(transpose, parent(Kt).args)
 Base.size(K::KronMatrix) = (prod(A -> size(A, 1), As(K)), prod(A -> size(A, 2), As(K)))

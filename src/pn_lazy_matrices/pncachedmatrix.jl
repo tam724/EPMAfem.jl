@@ -17,8 +17,8 @@ const MaterializedOrCachedMatrix{T} = Union{MaterializedMatrix{T}, CachedMatrix{
 
 Base.size(M::MaterializedOrCachedMatrix) = size(A(M))
 max_size(M::MaterializedOrCachedMatrix) = max_size(A(M))
-lazy_getindex(M::MaterializedMatrix{T}, idx::Vararg{<:Integer}) where T = lazy_getindex(A(M), idx...)
-lazy_getindex(C::CachedMatrix{T}, idx::Vararg{<:Integer}) where T = lazy_getindex(M(C), idx...)
+lazy_getindex(M::MaterializedMatrix{T}, idx::Vararg{Integer}) where T = lazy_getindex(A(M), idx...)
+lazy_getindex(C::CachedMatrix{T}, idx::Vararg{Integer}) where T = lazy_getindex(M(C), idx...)
 @inline isdiagonal(M::MaterializedOrCachedMatrix) = isdiagonal(A(M))
 lazy_objectid(M::MaterializedOrCachedMatrix) = lazy_objectid(A(M))
 

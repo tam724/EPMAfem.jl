@@ -85,7 +85,7 @@ LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(LinearAlgebra.inv!, 
 
 blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose, D::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C, D)
 blockmatrix(A::AbstractLazyMatrixOrTranspose, ::Nothing, ::Nothing, B::AbstractLazyMatrixOrTranspose) = lazy(blockdiagmatrix, A, B)
-function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, Ms::Vararg{<:AbstractLazyMatrixOrTranspose, 4})
+function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, Ms::Vararg{AbstractLazyMatrixOrTranspose, 4})
     @assert sizes[1] == 2
     @assert sizes[2] == 2
     A, B, C, D = Ms

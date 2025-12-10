@@ -1,8 +1,8 @@
-const SumMatrix{T} = LazyOpMatrix{T, typeof(+), <:Tuple{Vararg{<:AbstractMatrix{T}}}}
+const SumMatrix{T} = LazyOpMatrix{T, typeof(+), <:Tuple{Vararg{AbstractMatrix{T}}}}
 @inline As(S::SumMatrix) = S.args
 Base.size(S::SumMatrix) = only_unique(size(A) for A in As(S))
 max_size(S::SumMatrix) = only_unique(max_size(A) for A in As(S))
-lazy_getindex(S::SumMatrix, idx::Vararg{<:Integer}) = +(getindex.(As(S), idx...)...)
+lazy_getindex(S::SumMatrix, idx::Vararg{Integer}) = +(getindex.(As(S), idx...)...)
 isdiagonal(S::SumMatrix) = all(isdiagonal, As(S))
 LinearAlgebra.transpose(S::SumMatrix) = lazy(+, transpose.(As(S))...)
 

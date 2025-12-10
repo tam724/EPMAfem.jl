@@ -348,5 +348,169 @@ let
             expr = :(A * transpose(B) + C)
             test_expression(AT{ST}, vars, expr)
         end
+
+        @testset "transpose(A) * transpose(B) + C" begin
+            vars = Dict(
+            :A => rand(3, 2) |> AT{ST},
+            :B => rand(2, 3) |> AT{ST},
+            :C => rand(2, 2) |> AT{ST})
+            expr = :(transpose(A) * transpose(B) + C)
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "a*kron(A, B) * C + b*D" begin
+            vars = Dict(
+            :A => rand(2, 2) |> AT{ST},
+            :B => rand(2, 2) |> AT{ST},
+            :C => rand(4, 3) |> AT{ST},
+            :D => rand(4, 3) |> AT{ST},
+            :a => rand() |> ST,
+            :b => rand() |> ST)
+            expr = :(a*kron(A, B) * C + b*D)
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "kron(A * B, C * D)" begin
+            vars = Dict(
+            :A => rand(2, 2) |> AT{ST},
+            :B => rand(2, 2) |> AT{ST},
+            :C => rand(2, 2) |> AT{ST},
+            :D => rand(2, 2) |> AT{ST})
+            expr = :(kron(A * B, C * D))
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "a*kron(A, B) + b*kron(C, D) + c*kron(E, F)" begin
+            vars = Dict(
+            :A => rand(2, 2) |> AT{ST},
+            :B => rand(2, 2) |> AT{ST},
+            :C => rand(2, 2) |> AT{ST},
+            :D => rand(2, 2) |> AT{ST},
+            :E => rand(2, 2) |> AT{ST},
+            :F => rand(2, 2) |> AT{ST},
+            :a => rand() |> ST,
+            :b => rand() |> ST,
+            :c => rand() |> ST)
+            expr = :(a*kron(A, B) + b*kron(C, D) + c*kron(E, F))
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "A * B * transpose(C) + D" begin
+            vars = Dict(
+            :A => rand(2, 3) |> AT{ST},
+            :B => rand(3, 4) |> AT{ST},
+            :C => rand(2, 4) |> AT{ST},
+            :D => rand(2, 2) |> AT{ST})
+            expr = :(A * B * transpose(C) + D)
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "kron(A, B) + kron(A, C) + kron(A, D)" begin
+            vars = Dict(
+            :A => rand(2, 2) |> AT{ST},
+            :B => rand(2, 2) |> AT{ST},
+            :C => rand(2, 2) |> AT{ST},
+            :D => rand(2, 2) |> AT{ST})
+            expr = :(kron(A, B) + kron(A, C) + kron(A, D))
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "a*A * B + b*transpose(C) * D" begin
+            vars = Dict(
+            :A => rand(2, 3) |> AT{ST},
+            :B => rand(3, 2) |> AT{ST},
+            :C => rand(4, 2) |> AT{ST},
+            :D => rand(4, 2) |> AT{ST},
+            :a => rand() |> ST,
+            :b => rand() |> ST)
+            expr = :(a*A * B + b*transpose(C) * D)
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "a*kron(A, B) * C + b*kron(D, E) * F + c*G" begin
+            vars = Dict(
+            :A => rand(2, 2) |> AT{ST},
+            :B => rand(2, 2) |> AT{ST},
+            :C => rand(4, 3) |> AT{ST},
+            :D => rand(2, 2) |> AT{ST},
+            :E => rand(2, 2) |> AT{ST},
+            :F => rand(4, 3) |> AT{ST},
+            :G => rand(4, 3) |> AT{ST},
+            :a => rand() |> ST,
+            :b => rand() |> ST,
+            :c => rand() |> ST)
+            expr = :(a*kron(A, B) * C + b*kron(D, E) * F + c*G)
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "a*(A * B + C) * D + b*transpose(E) * F" begin
+            vars = Dict(
+            :A => rand(2, 3) |> AT{ST},
+            :B => rand(3, 2) |> AT{ST},
+            :C => rand(2, 2) |> AT{ST},
+            :D => rand(2, 3) |> AT{ST},
+            :E => rand(3, 2) |> AT{ST},
+            :F => rand(3, 3) |> AT{ST},
+            :a => rand() |> ST,
+            :b => rand() |> ST)
+            expr = :(a*(A * B + C) * D + b*transpose(E) * F)
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "kron(A * B, C) + kron(D, E * F) + G" begin
+            vars = Dict(
+            :A => rand(2, 2) |> AT{ST},
+            :B => rand(2, 2) |> AT{ST},
+            :C => rand(2, 2) |> AT{ST},
+            :D => rand(2, 2) |> AT{ST},
+            :E => rand(2, 2) |> AT{ST},
+            :F => rand(2, 2) |> AT{ST},
+            :G => rand(4, 4) |> AT{ST})
+            expr = :(kron(A * B, C) + kron(D, E * F) + G)
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "a*kron(A + B, C * D) + transpose(kron(E, F))" begin
+            vars = Dict(
+            :A => rand(2, 2) |> AT{ST},
+            :B => rand(2, 2) |> AT{ST},
+            :C => rand(2, 2) |> AT{ST},
+            :D => rand(2, 2) |> AT{ST},
+            :E => rand(2, 2) |> AT{ST},
+            :F => rand(2, 2) |> AT{ST},
+            :a => rand() |> ST,
+            :b => rand() |> ST)
+            expr = :(a*kron(A + B, C * D) + transpose(kron(E, F)))
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "A * B * C + transpose(D) * E * F + kron(G, H)" begin
+            vars = Dict(
+            :A => rand(2, 3) |> AT{ST},
+            :B => rand(3, 4) |> AT{ST},
+            :C => rand(4, 2) |> AT{ST},
+            :D => rand(3, 2) |> AT{ST},
+            :E => rand(3, 4) |> AT{ST},
+            :F => rand(4, 2) |> AT{ST},
+            :G => rand(2, 2) |> AT{ST},
+            :H => rand(1, 1) |> AT{ST})
+            expr = :(A * B * C + transpose(D) * E * F + kron(G, H))
+            test_expression(AT{ST}, vars, expr)
+        end
+
+        @testset "a*(A * transpose(B) + C * D) + b*kron(E, F * transpose(G))" begin
+            vars = Dict(
+            :A => rand(2, 3) |> AT{ST},
+            :B => rand(2, 3) |> AT{ST},
+            :C => rand(2, 3) |> AT{ST},
+            :D => rand(3, 2) |> AT{ST},
+            :E => rand(1, 1) |> AT{ST},
+            :F => rand(2, 2) |> AT{ST},
+            :G => rand(2, 2) |> AT{ST},
+            :a => rand() |> ST,
+            :b => rand() |> ST)
+            expr = :(a*(A * transpose(B) + C * D) + b*kron(E, F * transpose(G)))
+            test_expression(AT{ST}, vars, expr)
+        end
     end
 end

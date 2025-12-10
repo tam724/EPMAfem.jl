@@ -228,7 +228,7 @@ function LinearAlgebra.transpose!(B::GPUArrays.AbstractGPUArray, A::GPUArrays.An
     return B
 end
 
-if GPUArrays.VERSION < v"11.3.1" # https://github.com/JuliaGPU/GPUArrays.jl/pull/642
+if pkgversion(GPUArrays) < v"11.3.1" # https://github.com/JuliaGPU/GPUArrays.jl/pull/642
     # empty triu!/tril!
     function LinearAlgebra.tril!(A::AbstractGPUMatrix{T}, d::Integer = 0) where T
         if iszero(length(A)) return A end
@@ -255,18 +255,18 @@ if GPUArrays.VERSION < v"11.3.1" # https://github.com/JuliaGPU/GPUArrays.jl/pull
         triu_kernel!(get_backend(A))(A, d; ndrange = size(A))
         return A
     end
+
+    function (T::Type{<: AnyGPUArray{U}})(s::UniformScaling, dims::Dims{2}) where {U}
+        res = similar(T, dims)
+        fill!(res, zero(U))
+        if iszero(minimum(dims)) return res end
+        kernel = GPUArrays.identity_kernel(get_backend(res))
+        kernel(res, size(res, 1), s.λ; ndrange=minimum(dims))
+        return res
+    end
 end
 
-function (T::Type{<: AnyGPUArray{U}})(s::UniformScaling, dims::Dims{2}) where {U}
-    res = similar(T, dims)
-    fill!(res, zero(U))
-    if iszero(minimum(dims)) return res end
-    kernel = GPUArrays.identity_kernel(get_backend(res))
-    kernel(res, size(res, 1), s.λ; ndrange=minimum(dims))
-    return res
-end
-
-if CUDA.VERSION < v"5.9.5" # https://github.com/JuliaGPU/CUDA.jl/pull/2958
+if pkgversion(CUDA) < v"5.9.5" # https://github.com/JuliaGPU/CUDA.jl/pull/2958
     function LinearAlgebra.rmul!(A::CuArray{<:Union{Float32, Float64, ComplexF64, ComplexF32}}, val::Bool)
         if iszero(val) 
             return fill!(A, zero(eltype(A)))

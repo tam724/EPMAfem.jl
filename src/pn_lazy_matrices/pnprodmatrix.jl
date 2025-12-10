@@ -5,7 +5,7 @@ const ScaleMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractLazyScalar{T
 @inline A(S::ScaleMatrix) = S.args[2]
 Base.size(S::ScaleMatrix) = size(A(S))
 max_size(S::ScaleMatrix) = max_size(A(S))
-lazy_getindex(S::ScaleMatrix, idx::Vararg{<:Integer}) = *(a(S), getindex(A(S), idx...))
+lazy_getindex(S::ScaleMatrix, idx::Vararg{Integer}) = *(a(S), getindex(A(S), idx...))
 @inline isdiagonal(S::ScaleMatrix) = isdiagonal(A(S))
 
 mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
@@ -108,7 +108,7 @@ function required_workspace(::typeof(materialize_with), M::TwoProdMatrix, cache_
 end
 
 # ProdMatrix
-const ProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{Vararg{<:AbstractMatrix{T}}}}
+const ProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{Vararg{AbstractMatrix{T}}}}
 @inline As(M::ProdMatrix) = M.args
 function Base.size(M::ProdMatrix)
     size(first(As(M)), 1), _product_matrix_size(size, As(M)...)
@@ -117,12 +117,12 @@ function max_size(M::ProdMatrix)
     max_size(first(As(M)), 1), _product_matrix_size(max_size, As(M)...)
 end
 
-function _product_matrix_size(size_op::Function, (a, b, rest...)::Vararg{<:AbstractMatrix})
+function _product_matrix_size(size_op::Function, (a, b, rest...)::Vararg{AbstractMatrix})
     if size_op(a, 2) != size_op(b, 1) error("size mismatch") end
     return _product_matrix_size(size_op, b, rest...)
 end
 
-function _product_matrix_size(size_op::Function, (a, b)::Vararg{<:AbstractMatrix, 2})
+function _product_matrix_size(size_op::Function, (a, b)::Vararg{AbstractMatrix, 2})
     if size_op(a, 2) != size_op(b, 1) error("size mismatch") end
     return size_op(b, 2)
 end

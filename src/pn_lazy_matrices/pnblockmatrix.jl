@@ -191,7 +191,7 @@ const InplaceInverseMatrix{T} = LazyOpMatrix{T, typeof(LinearAlgebra.inv!), <:Tu
 @inline A(I::InplaceInverseMatrix) = A(M(I))
 Base.size(I::InplaceInverseMatrix) = size(A(I))
 max_size(I::InplaceInverseMatrix) = max_size(A(I))
-lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{<:Integer}) = error("Cannot getindex")
+lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{Integer}) = error("Cannot getindex")
 @inline isdiagonal(I::InplaceInverseMatrix) = isdiagonal(A(I))
 
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, I::InplaceInverseMatrix, α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(I), transpose(X), α, β)

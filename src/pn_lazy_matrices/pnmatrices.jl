@@ -56,10 +56,14 @@ const AbstractLazyMatrixOrTranspose{T} = Union{<:AbstractLazyMatrix{T}, Transpos
 function mul_with!() end
 function materialize_with() end
 
+# indirection to catch mul!(::Transpose, ...)
+_mul!(C::Transpose, A, B, α, β) = mul!(parent(C), transpose(B), transpose(A), α, β)
+_mul!(C, A, B, α, β) = mul!(C, A, B, α, β)
+
 function mul_with!(::Nothing, Y::AbstractVecOrMat, A::AbstractMatrix, X::AbstractVecOrMat, α::Number, β::Number)
     # CUDA.NVTX.@range "mul!(.., :$(typeof(A)), $(typeof(X)))" begin
     try
-        mul!(Y, A, X, α, β)
+        _mul!(Y, A, X, α, β)
     catch e
         @show "mul! error with $(typeof(Y)), $(typeof(A)), $(typeof(X))"
         throw(e)

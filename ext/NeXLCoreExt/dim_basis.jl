@@ -14,7 +14,7 @@ function DimBasis(basis_vectors::SVector{N, <:Quantity}) where {N}
     return DimBasis{basis_vectors.data}()
 end
 
-function DimBasis(basis_vectors::Vararg{<:Quantity, N}) where N
+function DimBasis(basis_vectors::Vararg{Quantity, N}) where N
     return DimBasis(SVector{N}(basis_vectors))
 end
 
