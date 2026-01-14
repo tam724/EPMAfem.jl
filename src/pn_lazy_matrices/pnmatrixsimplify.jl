@@ -176,7 +176,7 @@ lazy_simplify(::typeof(*), A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatr
 lazy_simplify(::typeof(*), a::AbstractLazyScalar, L::ScaleMatrix) = lazy_simplify(*, a*_a(L), A(L))
 
 # a*(A + B) = a*A + a*B
-lazy_simplify(::typeof(*), a::AbstractLazyScalar, L::SumMatrix) = lazy_simplify(+, (a*A for A in As(L))...)
+lazy_simplify(::typeof(*), a::AbstractLazyScalar, L::SumMatrix) = +((a*A for A in As(L))...)
 
 # A*(B*C) = A*B*C
 lazy_simplify(::typeof(*), A::AbstractLazyMatrixOrTranspose, P::ProdMatrix) = lazy(*, A, As(P)...)

@@ -112,7 +112,8 @@ function (problem::DiscretePNProblem)(ψ::AbstractDiscretePNSolution, ϕ::Abstra
     return a
 end
 
-function system_matrix(problem::DiscretePNProblem)
+
+function system_matrix_blocks(problem::DiscretePNProblem)
     ns = EPMAfem.n_sums(problem)
     ρp, ρm, ∂p, ∇pm = lazy_space_matrices(problem)
     Ip, Im, kp, km, absΩp, Ωpm = lazy_direction_matrices(problem)
@@ -122,17 +123,22 @@ function system_matrix(problem::DiscretePNProblem)
         σ = [LazyScalar(zero(base_type(architecture(problem)))) for _ in 1:ns.ne, _ in 1:ns.nσ]
     )
 
-    A = sum(kron_AXB(ρp[i], coeffs.τ[i]*Ip - sum(coeffs.σ[i, j]*kp[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne) + sum(kron_AXB(∂p[i], absΩp[i]) for i in 1:ns.nd)
-    C = sum(kron_AXB(ρm[i], coeffs.τ[i]*Im - sum(coeffs.σ[i, j]*km[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
-    B = sum(kron_AXB(∇pm[i], Ωpm[i]) for i in 1:ns.nd)
-    
-    return [A B
-    -transpose(B) C], coeffs
+    A⁺⁺ = sum(kron_AXB(ρp[i], coeffs.τ[i]*Ip - sum(coeffs.σ[i, j]*kp[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne) + sum(kron_AXB(∂p[i], absΩp[i]) for i in 1:ns.nd)
+    A⁻⁻ = sum(kron_AXB(ρm[i], coeffs.τ[i]*Im - sum(coeffs.σ[i, j]*km[i][j] for j in 1:ns.nσ)) for i in 1:ns.ne)
+    A⁺⁻ = sum(kron_AXB(∇pm[i], Ωpm[i]) for i in 1:ns.nd)
+    A⁻⁺ = -transpose(A⁺⁻)
+    return (A⁺⁺, A⁺⁻, A⁻⁺, A⁻⁻), coeffs
 end
 
-function mass_matrix(problem::DiscretePNProblem)
+function system_matrix(problem::DiscretePNProblem)
+    (A⁺⁺, A⁺⁻, A⁻⁺, A⁻⁻), coeffs = system_matrix_blocks(problem)
+    A = [A⁺⁺ A⁺⁻
+         A⁻⁺ A⁻⁻]
+    return A, coeffs
+end
+
+function mass_matrix_blocks(problem::DiscretePNProblem)
     ns = EPMAfem.n_sums(problem)
-    nb = EPMAfem.n_basis(problem)
     ρp, ρm, _, _ = lazy_space_matrices(problem)
     Ip, Im, _, _, _, _ = lazy_direction_matrices(problem)
 
@@ -140,12 +146,19 @@ function mass_matrix(problem::DiscretePNProblem)
         s = [LazyScalar(zero(base_type(architecture(problem)))) for _ in 1:ns.ne],
     )
 
-    A = sum(kron_AXB(ρp[i], coeffs.s[i]*Ip) for i in 1:ns.ne)
-    C = sum(kron_AXB(ρm[i], coeffs.s[i]*Im) for i in 1:ns.ne)
-    return [A nothing
-    nothing C], coeffs
+    M⁺⁺ = sum(kron_AXB(ρp[i], coeffs.s[i]*Ip) for i in 1:ns.ne)
+    M⁻⁻ = sum(kron_AXB(ρm[i], coeffs.s[i]*Im) for i in 1:ns.ne)
+    return (M⁺⁺, M⁻⁻), coeffs
 end
 
+function mass_matrix(problem::DiscretePNProblem)
+    (M⁺⁺, M⁻⁻), coeffs = mass_matrix_blocks(problem)
+    M = [
+        M⁺⁺ nothing
+        nothing M⁻⁻
+    ]
+    return M, coeffs
+end
 
 function system_matrix(problem::DiscretePNProblem, ϵ_idx)
     ns = EPMAfem.n_sums(problem)
