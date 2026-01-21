@@ -101,8 +101,17 @@ using Serialization
 serialize(joinpath(figpath, "plotdata.jls"), plotdata)
 serialize(joinpath(figpath, "timings.jls"), timings)
 serialize(joinpath(figpath, "timings_noschur.jls"), timings_noschur)
+plotdata2 = Dict(key => val.interp for (key, val) in plotdata)
+serialize(joinpath(figpath, "plotdata2.jls"), plotdata2)
 
-plotdata = deserialize(joinpath(figpath, "plotdata.jls"))
+plotdata = deserialize(joinpath(figpath, "plotdata.jls")) # cannot deserialize anonymous functions .. 
+plotdata2 = deserialize(joinpath(figpath, "plotdata2.jls"))
+function reconstruct_interpolable(interp)
+    rand_point = EPMAfem.SpaceModels.cartesian_unit_vector(EPMAfem.Dimensions.Z(), EPMAfem.Dimensions._2D())
+    cache = Gridap.Arrays.return_cache(interp, rand_point)
+    return x -> Gridap.Arrays.evaluate!(cache, interp, x)
+end
+plotdata = Dict(key => reconstruct_interpolable(val) for (key, val) in plotdata2)
 timings = deserialize(joinpath(figpath, "timings.jls"))
 timings_noschur = deserialize(joinpath(figpath, "timings_noschur.jls"))
 
@@ -194,9 +203,7 @@ begin
     for (i, n) in enumerate(Ns)
         if !(n == 27)
             scatter!([timings2[(n, Inf)]], [L2_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2) ? L"P_N" : nothing), text= Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
-            if !(n==21)
-                scatter!([timings2[(n, -1)]], [L2_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2)-1 ? L"P_N (noschur)" : nothing), text= Plots.text(L"P_{%$(n)}", 4), alpha=0.3)
-            end
+            !(n == 21) && scatter!([timings2[(n, -1)]], [L2_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=nothing, text= Plots.text(L"P_{%$(n)}", 4), alpha=0.3)
         end
         if haskey(timings2, (n, 3))
             scatter!([get(timings2, (n, 3), NaN)], [get(L2_norm, (n, 3), NaN)], markersize=[m_size(n)], color=2, label=(i==length(Ns2) ? L"r=3" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
@@ -214,7 +221,7 @@ begin
     xlabel!("Runtime (s)", xaxis=:log)
     ylabel!(L"L_2 \textrm{\, error\, (rel.)} ", yaxis=:log)
     plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000, legend=:bottomleft)
-    # savefig(joinpath(figpath, "L2_error.png"))
+    savefig(joinpath(figpath, "L2_error.png"))
 end
 
 begin
@@ -247,6 +254,7 @@ begin
     for (i, n) in enumerate(Ns)
         if !(n == 27)
             scatter!([timings2[(n, Inf)]], [L1_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2) ? L"P_N" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
+            !(n==21) && scatter!([timings2[(n, -1)]], [L1_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2) ? L"P_N" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.3)
         end
         if haskey(timings2, (n, 3))
             scatter!([get(timings2, (n, 3), NaN)], [get(L1_norm, (n, 3), NaN)], markersize=[m_size(n)], color=2, label=(i==length(Ns2) ? L"r=3" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
@@ -297,6 +305,7 @@ begin
     for (i, n) in enumerate(Ns)
         if !(n==27)
             scatter!([timings2[(n, Inf)]], [Linf_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2) ? L"P_N" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
+            !(n==21) && scatter!([timings2[(n, -1)]], [Linf_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2) ? L"P_N" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.3)
         end
         if haskey(timings2, (n, 3))
             scatter!([get(timings2, (n, 3), NaN)], [get(Linf_norm, (n, 3), NaN)], markersize=[m_size(n)], color=2, label=(i==length(Ns2) ? L"r=3" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
@@ -312,7 +321,7 @@ begin
         end
     end
     xlabel!("Runtime (s)", xaxis=:log)
-    ylabel!(L"L_\infty \textrm{\, error\, (rel.)} ", yaxis=:log)
+    ylabel!(L"L_\infty \textrm{\, error\, (rel.)} ", yaxis=:log, legend=:bottomleft)
     plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000)
     savefig(joinpath(figpath, "Linf_error.png"))
 end
@@ -347,6 +356,7 @@ begin
     for (i, n) in enumerate(Ns)
         if !(n==27)
             scatter!([timings2[(n, Inf)]], [M_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2) ? L"P_N" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
+            !(n==21) && scatter!([timings2[(n, -1)]], [M_norm[(n, Inf)]], markersize=[m_size(n)], color=1, label=(i==length(Ns2) ? L"P_N" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.3)
         end
         if haskey(timings2, (n, 3))
             scatter!([get(timings2, (n, 3), NaN)], [get(M_norm, (n, 3), NaN)], markersize=[m_size(n)], color=2, label=(i==length(Ns2) ? L"r=3" : nothing), text=Plots.text(L"P_{%$(n)}", 4), alpha=0.8)
@@ -392,14 +402,17 @@ begin
     savefig(joinpath(figpath, "M_error_memory.png"))
 end
 
-time_map = zeros(Union{Float64,Missing}, 5, length(Ns))
+time_map = zeros(Union{Float64,Missing}, 6, length(Ns))
 for (i, N) in enumerate(Ns)
-    for (j, r) in enumerate([Inf, 15, 10, 5, 3])
+    for (j, r) in enumerate([-1, Inf, 15, 10, 5, 3])
         idx = findfirst((((N_, r_), _),) -> (N_ == N && r_ == r), timings)
         if !isnothing(idx)
             time_map[j, i] = timings[idx][2]
         else
             time_map[j, i] = missing
+        end
+        if r == -1
+            time_map[j, i] = timings2[(N, -1)]
         end
     end
 end
@@ -407,17 +420,17 @@ end
 begin
     heatmap(log.(10, time_map), yflip=true, colorbar=false, cmap=cgrad([:green, :white, :red]))
     for (i, N) in enumerate(Ns)
-        for (j, r) in enumerate([Inf, 15, 10, 5, 3])
+        for (j, r) in enumerate([-1, Inf, 15, 10, 5, 3])
             if !ismissing(time_map[j, i])
                 annotate!(i, j, Plots.text("$(round(time_map[j, i], digits=2))s", "Computer Modern", 5), :black)
             end
         end
     end
     plot!(xticks=(1:length(Ns), [L"P_{%$(i)}" for i in Ns]))
-    plot!(yticks=(1:5, [L"r=\infty", L"r=15", L"r=10", L"r=5", L"r=3"]))
+    plot!(yticks=(1:6, [L"r=\infty", L"r=\infty_2", L"r=15", L"r=10", L"r=5", L"r=3"]))
     plot!(size=(400, 100), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm)
 
-    savefig(joinpath(figpath, "timings_2d.png"))
+    savefig(joinpath(figpath, "timings_2d2.png"))
 end
 
 begin
