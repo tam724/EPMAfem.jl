@@ -158,3 +158,19 @@ function required_workspace(::typeof(materialize_with), K::KronMatrix, cache_not
     B_ = materialize(kron(Bs...))
     return required_workspace(materialize_with, A_, cache_notifier) + required_workspace(materialize_with, B_, cache_notifier)
 end
+
+
+function materialize_diag_with(ws::Workspace, K::KronMatrix, skeleton::Diagonal, α::Number, β::Number)
+    A, Bs... = As(K)
+
+    @assert size(A, 1) == size(A, 2)
+    a_, rem = take_ws(ws, size(A, 1))
+    A_diag, _ = materialize_diag_with(rem, A, Diagonal(a_), true, false)
+    B = kron(Bs...)
+    b_, rem = take_ws(rem, size(B, 1))
+    B_diag, _ = materialize_diag_with(rem, B, Diagonal(b_), true, false)
+
+    kron!(skeleton, A_diag, B_diag, α, β)
+    return skeleton, ws
+end
+

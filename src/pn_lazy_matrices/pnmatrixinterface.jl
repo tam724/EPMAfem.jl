@@ -8,16 +8,27 @@ lazy(L::AbstractLazyMatrixOrTranspose) = L
 Base.:*(a::Number, L::AbstractLazyMatrixOrTranspose{T}) where T = LazyScalar(T(a)) * L
 Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::Number) where T = LazyScalar(T(a)) * L
 
-Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy_simplify(*, a, L)
-Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = lazy_simplify(*, a, L)
-Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy_simplify(*, A, B)
+const PNLAZYMATRICES_SIMPLIFY = false
+if PNLAZYMATRICES_SIMPLIFY
+    Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = _lazy_simplify(*, a, L)
+    Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = _lazy_simplify(*, a, L)
+    Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = _lazy_simplify(*, A, B)
 
-Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy_simplify(+, lazy_expand(L1), lazy_expand(L2))
+    Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = _lazy_simplify(+, lazy_expand(L1), lazy_expand(L2))
+    LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = _lazy_simplify(kron, A, B)
+else
+    Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, a, L)
+    Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = lazy(*, a, L)
+    Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(*, A, B)
+
+    Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy(+, L1, L2)
+    LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(kron, A, B)
+end
+
+LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose) = A
 Base.:-(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = L1 + (-L2)
 Base.:-(L::AbstractLazyMatrixOrTranspose{T}) where T = -one(T)*L
 
-LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose) = A
-LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy_simplify(kron, A, B)
 
 # damn I implemented a weird version of kron...
 kron_AXB(A::AbstractMatrix, B::AbstractMatrix) = kron(transpose(B), A)

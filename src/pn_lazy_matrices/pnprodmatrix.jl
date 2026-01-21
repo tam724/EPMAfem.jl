@@ -5,8 +5,10 @@ const ScaleMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractLazyScalar{T
 @inline A(S::ScaleMatrix) = S.args[2]
 Base.size(S::ScaleMatrix) = size(A(S))
 max_size(S::ScaleMatrix) = max_size(A(S))
-lazy_getindex(S::ScaleMatrix, idx::Vararg{Integer}) = *(a(S), getindex(A(S), idx...))
+lazy_getindex(S::ScaleMatrix, idx::Vararg{Integer}) = a(S)*getindex(A(S), idx...)
 @inline isdiagonal(S::ScaleMatrix) = isdiagonal(A(S))
+LinearAlgebra.transpose(S::ScaleMatrix) = lazy(*, _a(S), transpose(A(S)))
+
 
 mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
@@ -15,22 +17,23 @@ mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, 
 function required_workspace(::typeof(mul_with!), S::ScaleMatrix, n, cache_notifier)
     return register_cache_notifier(_a(S), cache_notifier) + required_workspace(mul_with!, A(S), n, cache_notifier)
 end
-# function required_workspace(::typeof(mul_with!), S::UnaryMinusMatrix, n, cache_notifier)
-#     return required_workspace(mul_with!, A(S), n, cache_notifier)
-# end
+
 
 materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix) = materialize_with(ws, S, skeleton, true, false)
 function materialize_with(ws::Workspace, S::ScaleMatrix, skeleton::AbstractMatrix, α::Number, β::Number)
-    A_mat, _ = materialize_with(ws, A(S), skeleton, α*a(S), β)
-    return A_mat, ws
+    S_mat, _ = materialize_with(ws, A(S), skeleton, α*a(S), β)
+    return S_mat, ws
 end
 
 function required_workspace(::typeof(materialize_with), S::ScaleMatrix, cache_notifier)
     return register_cache_notifier(_a(S), cache_notifier) + required_workspace(materialize_with, A(S), cache_notifier)
 end
-# function required_workspace(::typeof(materialize_with), S::UnaryMinusMatrix, cache_notifier)
-#     return required_workspace(materialize_with, A(S), cache_notifier)
-# end
+
+
+function materialize_diag_with(ws::Workspace, S::ScaleMatrix, skeleton::Diagonal, α::Number, β::Number)
+    S_diag, _ = materialize_diag_with(ws, A(S), skeleton, α*a(S), β)
+    return S_diag, ws
+end
 
 # it seems as if now the fun starts :D this can be heavily optimized (matrix product chain, etc..) well only go for some simple heuristics here
 # let's start implementing this with only A*B (the general case follows later..)
@@ -264,7 +267,7 @@ function required_workspace(::typeof(materialize_with), M::ProdMatrix, cache_not
     return 2*max_m*max_n + max_internals
 end
 
-# we want to add an additional dispatch for A * X * B (this should probably be treated generally in ProdMatrix)
+# add an additional dispatch for A * X * B (this should probably be treated generally in ProdMatrix)
 const ThreeProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}}
 @inline A(M::ThreeProdMatrix) = M.args[1]
 @inline X(M::ThreeProdMatrix) = M.args[2]
