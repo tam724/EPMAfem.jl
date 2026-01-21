@@ -22,19 +22,19 @@ lazy_getindex(C::CachedMatrix{T}, idx::Vararg{Integer}) where T = lazy_getindex(
 @inline isdiagonal(M::MaterializedOrCachedMatrix) = isdiagonal(A(M))
 lazy_objectid(M::MaterializedOrCachedMatrix) = lazy_objectid(A(M))
 
-function mul_with!(ws::Workspace, Y::AbstractVecOrMat, M::MaterializedOrCachedMatrix, X::AbstractVecOrMat, α::Number, β::Number)
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(M::MaterializedOrCachedMatrix), X::AbstractVecOrMat, α::Number, β::Number)
     materialized_M, _ = materialize_with(ws, M)
     mul_with!(nothing, Y, materialized_M, X, α, β)
 end
-function mul_with!(ws::Workspace, Y::AbstractVecOrMat, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}), X::AbstractVecOrMat, α::Number, β::Number) where T
     materialized_Mt, _ = materialize_with(ws, parent(Mt))
     mul_with!(nothing, Y, transpose(materialized_Mt), X, α, β)
 end
-function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::MaterializedOrCachedMatrix, α::Number, β::Number)
+function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(M::MaterializedOrCachedMatrix), α::Number, β::Number)
     materialized_M, _ = materialize_with(ws, M)
     mul_with!(nothing, Y, X, materialized_M, α, β)
 end
-function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(Mt::Transpose{T, <:MaterializedOrCachedMatrix{T}}), α::Number, β::Number) where T
     materialized_Mt, _ = materialize_with(ws, parent(Mt))
     mul_with!(nothing, Y, X, transpose(materialized_Mt), α, β)
 end

@@ -16,22 +16,22 @@ _label(A::AbstractMatrix) = "$(size(A))Matrix"
 _label(A::CUDA.CUSPARSE.SparseArrays.AbstractSparseMatrix) = "$(size(A))Sparse[nnz=$(CUDA.CUSPARSE.nnz(A))]"
 _label(A::Diagonal) = "$(size(A))Diagonal"
 
-function mul_with!(::Workspace, Y::AbstractVecOrMat, L::LazyMatrix, X::AbstractVecOrMat, α::Number, β::Number)
+function mul_with!(::Workspace, Y::AbstractVecOrMat, @nospecialize(L::LazyMatrix), X::AbstractVecOrMat, α::Number, β::Number)
     CUDA.NVTX.@range "mul $(_label(A(L)))" begin
         mul_with!(nothing, Y, A(L), X, α, β)
     end
 end
-function mul_with!(::Workspace, Y::AbstractVecOrMat, Lt::Transpose{T, <:LazyMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
+function mul_with!(::Workspace, Y::AbstractVecOrMat, @nospecialize(Lt::Transpose{T, <:LazyMatrix{T}}), X::AbstractVecOrMat, α::Number, β::Number) where T
     CUDA.NVTX.@range "mul trans $(_label(A(parent(Lt))))" begin
         mul_with!(nothing, Y, transpose(A(parent(Lt))), X, α, β)
     end
 end
-function mul_with!(::Workspace, Y::AbstractVecOrMat, X::AbstractVecOrMat, L::LazyMatrix, α::Number, β::Number)
+function mul_with!(::Workspace, Y::AbstractVecOrMat, X::AbstractVecOrMat, @nospecialize(L::LazyMatrix), α::Number, β::Number)
     CUDA.NVTX.@range "mul $(_label(A(L)))" begin
         mul_with!(nothing, Y, X, A(L), α, β)    
     end
 end        
-function mul_with!(::Workspace, Y::AbstractVecOrMat, X::AbstractVecOrMat, Lt::Transpose{T, <:LazyMatrix{T}}, α::Number, β::Number) where T
+function mul_with!(::Workspace, Y::AbstractVecOrMat, X::AbstractVecOrMat, @nospecialize(Lt::Transpose{T, <:LazyMatrix{T}}), α::Number, β::Number) where T
     CUDA.NVTX.@range "mul trans $(_label(A(parent(Lt))))" begin
         mul_with!(nothing, Y, X, transpose(A(parent(Lt))), α, β)
     end

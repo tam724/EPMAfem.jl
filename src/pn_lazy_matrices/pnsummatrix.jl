@@ -8,7 +8,7 @@ LinearAlgebra.transpose(S::SumMatrix) = lazy(+, transpose.(As(S))...)
 
 
 ## mul_with
-function mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::SumMatrix, X::AbstractVecOrMat, α::Number, β::Number)
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(S::SumMatrix), X::AbstractVecOrMat, α::Number, β::Number)
     CUDA.NVTX.@range "mul_with! SumMatrix" begin
         for A in As(S)
             mul_with!(ws, Y, A, X, α, β)
@@ -16,7 +16,7 @@ function mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::SumMatrix, X::Abstract
         end
     end
 end
-function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::SumMatrix, α::Number, β::Number)
+function mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(S::SumMatrix), α::Number, β::Number)
     CUDA.NVTX.@range "mul_with! SumMatrix" begin
         for A in As(S)
             mul_with!(ws, Y, X, A, α, β)

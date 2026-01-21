@@ -53,7 +53,7 @@ function lazy_getindex(BM::BlockMatrix, i::Int, j::Int)
     end
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, BM::BlockMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(BM::BlockMatrix), x::AbstractVector, α::Number, β::Number)
     n1, n2 = block_size(BM)
 
     x1 = @view(x[1:n1])
@@ -151,7 +151,7 @@ function lazy_getindex(BM::BlockDiagMatrix{T}, i::Int, j::Int) where T
     end
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, BM::BlockDiagMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(BM::BlockDiagMatrix), x::AbstractVector, α::Number, β::Number)
     n1, n2 = block_size(BM)
 
     x1 = @view(x[1:n1])
@@ -194,17 +194,17 @@ max_size(I::InplaceInverseMatrix) = max_size(A(I))
 lazy_getindex(I::InplaceInverseMatrix, idx::Vararg{Integer}) = error("Cannot getindex")
 @inline isdiagonal(I::InplaceInverseMatrix) = isdiagonal(A(I))
 
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, I::InplaceInverseMatrix, α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(I), transpose(X), α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, It::Transpose{T, <:InplaceInverseMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(It), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(I::InplaceInverseMatrix), α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(I), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(It::Transpose{T, <:InplaceInverseMatrix{T}}), α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(It), transpose(X), α, β)
 
-function mul_with!(ws::Workspace, Y::AbstractVecOrMat, I::InplaceInverseMatrix, X::AbstractVecOrMat, α::Number, β::Number)
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(I::InplaceInverseMatrix), X::AbstractVecOrMat, α::Number, β::Number)
     A_mat, _ = materialize_with(ws, M(I))
     @assert !β
     @assert α isa Bool && α
     ldiv!(Y, A_mat, X)
 end
 
-function mul_with!(ws::Workspace, Y::AbstractVecOrMat, It::Transpose{T, <:InplaceInverseMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(It::Transpose{T, <:InplaceInverseMatrix{T}}), X::AbstractVecOrMat, α::Number, β::Number) where T
     A_mat, _ = materialize_with(ws, M(parent(It)))
     @assert !β
     @assert α isa Bool && α

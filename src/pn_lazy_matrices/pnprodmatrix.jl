@@ -10,10 +10,10 @@ lazy_getindex(S::ScaleMatrix, idx::Vararg{Integer}) = a(S)*getindex(A(S), idx...
 LinearAlgebra.transpose(S::ScaleMatrix) = lazy(*, _a(S), transpose(A(S)))
 
 
-mul_with!(ws::Workspace, Y::AbstractVecOrMat, S::ScaleMatrix, X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, S::ScaleMatrix, α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
-mul_with!(ws::Workspace, Y::AbstractVecOrMat, St::Transpose{T, <:ScaleMatrix{T}}, X::AbstractVecOrMat, α::Number, β::Number) where T= mul_with!(ws, Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, St::Transpose{T, <:ScaleMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
+mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(S::ScaleMatrix), X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(S::ScaleMatrix), α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
+mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(St::Transpose{T, <:ScaleMatrix{T}}), X::AbstractVecOrMat, α::Number, β::Number) where T= mul_with!(ws, Y, transpose(A(parent(St))), X, a(parent(St))*α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(St::Transpose{T, <:ScaleMatrix{T}}), α::Number, β::Number) where T = mul_with!(ws, Y, X, transpose(A(parent(St))), a(parent(St))*α, β)
 function required_workspace(::typeof(mul_with!), S::ScaleMatrix, n, cache_notifier)
     return register_cache_notifier(_a(S), cache_notifier) + required_workspace(mul_with!, A(S), n, cache_notifier)
 end
@@ -58,16 +58,16 @@ function lazy_getindex(M::TwoProdMatrix, i::Int, j::Int)
 end
 @inline isdiagonal(M::TwoProdMatrix) = isdiagonal(A(M)) && isdiagonal(B(M))
 
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::TwoProdMatrix, α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(M), transpose(X), α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(Mt), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(M::TwoProdMatrix), α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(M), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(Mt::Transpose{T, <:TwoProdMatrix{T}}), α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(Mt), transpose(X), α, β)
 
-function mul_with!(ws::Workspace, y::AbstractVector, M::TwoProdMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(M::TwoProdMatrix), x::AbstractVector, α::Number, β::Number)
     WS, rem = take_ws(ws, size(B(M), 1))
     mul_with!(rem, WS, B(M), x, true, false)
     mul_with!(rem, y, A(M), WS, α, β)
 end
 
-function mul_with!(ws::Workspace, Y::AbstractMatrix, M::TwoProdMatrix, X::AbstractMatrix, α::Number, β::Number)
+function mul_with!(ws::Workspace, Y::AbstractMatrix, @nospecialize(M::TwoProdMatrix), X::AbstractMatrix, α::Number, β::Number)
     CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin      
 
         WS, rem = take_ws(ws, (size(B(M), 1), size(X, 2)))
@@ -76,14 +76,14 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, M::TwoProdMatrix, X::Abstra
     end
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, Mt::Transpose{T, <:TwoProdMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Mt::Transpose{T, <:TwoProdMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
     M = parent(Mt)
     WS, rem = take_ws(ws, size(B(M), 1))
     mul_with!(rem, WS, transpose(A(M)), x, true, false)
     mul_with!(rem, y, transpose(B(M)), WS, α, β)
 end
 
-function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:TwoProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, Y::AbstractMatrix, @nospecialize(Mt::Transpose{T, <:TwoProdMatrix{T}}), X::AbstractMatrix, α::Number, β::Number) where T
     CUDA.NVTX.@range "mul_with! TwoProdMatrix" begin
         M = parent(Mt)
 
@@ -147,11 +147,11 @@ function lazy_getindex(M::ProdMatrix, i::Int, j::Int)
 end
 isdiagonal(M::ProdMatrix) = all(isdiagonal, As(M))
 
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, M::ProdMatrix, α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(M), transpose(X), α, β)
-mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, Mt::Transpose{T, <:ProdMatrix{T}}, α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(Mt), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(M::ProdMatrix), α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(M), transpose(X), α, β)
+mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(Mt::Transpose{T, <:ProdMatrix{T}}), α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(Mt), transpose(X), α, β)
 
 # no strategy here, simply multiply right to left for now.. (its vector anyways)
-function mul_with!(ws::Workspace, y::AbstractVector, M::ProdMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(M::ProdMatrix), x::AbstractVector, α::Number, β::Number)
     CUDA.NVTX.@range "mul_with! ProdMatrix" begin
         my_ws = maximum(A -> size(A, 2), As(M))
         r_, rem = take_ws(ws, my_ws)
@@ -167,7 +167,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, M::ProdMatrix, x::AbstractV
 end
 
 # simply loop over the multiple X's (consider materializing first...)
-function mul_with!(ws::Workspace, Y::AbstractMatrix, M::ProdMatrix, X::AbstractMatrix, α::Number, β::Number)
+function mul_with!(ws::Workspace, Y::AbstractMatrix, @nospecialize(M::ProdMatrix), X::AbstractMatrix, α::Number, β::Number)
     CUDA.NVTX.@range "mul_with! ProdMatrix" begin
         my_ws_size = maximum(A -> size(A, 2), As(M))
         r_, rem = take_ws(ws, my_ws_size)
@@ -186,7 +186,7 @@ function mul_with!(ws::Workspace, Y::AbstractMatrix, M::ProdMatrix, X::AbstractM
     end
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, Mt::Transpose{T, <:ProdMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Mt::Transpose{T, <:ProdMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
     CUDA.NVTX.@range "mul_with! ProdMatrix" begin
         M = parent(Mt)
         n = length(As(M))
@@ -205,7 +205,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, Mt::Transpose{T, <:ProdMatr
 end
 
 # simply loop over the multiple X's (consider materializing first...)
-function mul_with!(ws::Workspace, Y::AbstractMatrix, Mt::Transpose{T, <:ProdMatrix{T}}, X::AbstractMatrix, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, Y::AbstractMatrix, @nospecialize(Mt::Transpose{T, <:ProdMatrix{T}}), X::AbstractMatrix, α::Number, β::Number) where T
     CUDA.NVTX.@range "mul_with! ProdMatrix" begin
         M = parent(Mt)
         n = length(As(M))

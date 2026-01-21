@@ -24,7 +24,7 @@ LinearAlgebra.transpose(K::KronMatrix) = lazy(kron, transpose.(As(K))...)
 
 _r_view(A::AbstractArray, n...) = reshape(@view(A[1:prod(n)]), n...)
 
-function mul_with!(ws::Workspace, y::AbstractMatrix, x::AbstractMatrix, K::KronMatrix, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractMatrix, x::AbstractMatrix, @nospecialize(K::KronMatrix), α::Number, β::Number)
     mx = map(A -> size(A, 1), As(K))
     nx = map(A -> size(A, 2), As(K))
     max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
@@ -51,11 +51,11 @@ function mul_with!(ws::Workspace, y::AbstractMatrix, x::AbstractMatrix, K::KronM
     return y
 end
 
-function mul_with!(ws::Workspace, y::AbstractMatrix, x::Transpose{T, <:AbstractMatrix{T}}, K::KronMatrix{T}, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractMatrix, x::Transpose{T, <:AbstractMatrix{T}}, @nospecialize(K::KronMatrix{T}), α::Number, β::Number) where T
     mul_with!(ws, transpose(y), transpose(K), transpose(x), α, β)
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, K::KronMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KronMatrix), x::AbstractVector, α::Number, β::Number)
     mx = map(A -> size(A, 1), As(K))
     nx = map(A -> size(A, 2), As(K))
     max_x = prod(max(m, n) for (m, n) in zip(mx, nx))
@@ -86,11 +86,11 @@ function mul_with!(ws::Workspace, y::AbstractVector, K::KronMatrix, x::AbstractV
     mul_with!(rem, yi, transpose(xi), Aiᵀ, α, β)
 end
 
-function mul_with!(ws::Workspace, y::AbstractMatrix, K::KronMatrix{T}, x::Transpose{T, <:AbstractMatrix{T}}, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractMatrix, @nospecialize(K::KronMatrix), x::Transpose{T, <:AbstractMatrix{T}}, α::Number, β::Number) where T
     return mul_with!(ws, transpose(y), transpose(x), transpose(K), α, β)
 end
 
-function mul_with!(ws::Workspace, y::AbstractMatrix, K::KronMatrix, x::AbstractMatrix, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractMatrix, @nospecialize(K::KronMatrix), x::AbstractMatrix, α::Number, β::Number)
     if size(x, 2) == 1 return mul_with!(ws, vec(y), K, vec(x), α, β) end
     mx = map(A -> size(A, 1), As(K))
     nx = map(A -> size(A, 2), As(K))

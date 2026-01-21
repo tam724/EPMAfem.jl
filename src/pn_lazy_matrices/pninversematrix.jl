@@ -9,12 +9,12 @@ isdiagonal(K::BackslashMatrix) = isdiagonal(A(K))
 
 lazy_getindex(K::BackslashMatrix, i::Int, j::Int) = error("Cannot getindex")
 
-function mul_with!(ws::Workspace, y::AbstractVector, K::BackslashMatrix, x::AbstractVector, α::Number, β::Number)
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::BackslashMatrix), x::AbstractVector, α::Number, β::Number)
     A_, rem = materialize_with(ws, M(K))
     y .= α .* (A_ \ x) .+ β .* y
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:BackslashMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Kt::Transpose{T, <:BackslashMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
     A_, rem = materialize_with(ws, M(parent(Kt)))
     y .= α .* (transpose(A_) \ x) .+ β .* y
 end
@@ -52,7 +52,7 @@ lazy_getindex(K::KrylovMinresMatrix, i::Int, j::Int) = error("Cannot getindex")
 #         stats)
 # end
 
-function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovMinresMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovMinresMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(K), ws)
     CUDA.NVTX.@range "minres allocate" begin
         solver = Krylov.MinresSolver(A_, x) # this allocates!
@@ -65,7 +65,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovMinresMatrix{T}, x
     end
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KrylovMinresMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Kt::Transpose{T, <:KrylovMinresMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(parent(Kt)), ws)
     CUDA.NVTX.@range "minres allocate" begin
         solver = Krylov.MinresSolver(A_, x) # this allocates!
@@ -93,14 +93,14 @@ isdiagonal(K::KrylovGmresMatrix) = isdiagonal(A(K))
 
 lazy_getindex(K::KrylovGmresMatrix, i::Int, j::Int) = error("Cannot getindex")
 
-function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovGmresMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovGmresMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(K), ws)
     solver = Krylov.GmresSolver(A_, x) # this allocates!
     Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
     y .= α .* solver.x .+ β .* y
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KrylovGmresMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Kt::Transpose{T, <:KrylovGmresMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(parent(Kt)), ws)
     solver = Krylov.GmresSolver(A_, x) # this allocates!
     Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
@@ -122,14 +122,14 @@ isdiagonal(K::KrylovCGMatrix) = isdiagonal(A(K))
 
 lazy_getindex(K::KrylovCGMatrix, i::Int, j::Int) = error("Cannot getindex")
 
-function mul_with!(ws::Workspace, y::AbstractVector, K::KrylovCGMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovCGMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(K), ws)
     solver = Krylov.CGSolver(A_, x) # this allocates!
     Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
     y .= α .* solver.x .+ β .* y
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, Kt::Transpose{T, <:KrylovCGMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Kt::Transpose{T, <:KrylovCGMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(parent(Kt)), ws)
     solver = Krylov.CGSolver(A_, x) # this allocates!
     Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
@@ -177,7 +177,7 @@ isdiagonal(S::SchurMatrix) = false # should not happen..
 
 lazy_getindex(S::SchurMatrix, i::Int, j::Int) = error("Cannot getindex")
 
-function mul_with!(ws::Workspace, y::AbstractVector, S::SchurMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(S::SchurMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
     @assert α
     @assert !β
 
@@ -195,7 +195,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, S::SchurMatrix{T}, x::Abstr
     mul_with!(ws, y_, D⁻¹(S), v, true, false)
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:SchurMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(St::Transpose{T, <:SchurMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
     @assert α
     @assert !β
     S = parent(St)
@@ -260,7 +260,7 @@ function LinearAlgebra.transpose(S::HalfSchurMatrix{T}) where T
     return Transpose(S)
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, S::HalfSchurMatrix{T}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(S::HalfSchurMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
     @assert α
     @assert !β
 
@@ -274,7 +274,7 @@ function mul_with!(ws::Workspace, y::AbstractVector, S::HalfSchurMatrix{T}, x::A
     mul_with!(ws, x_, inv_AmBD⁻¹C(S), u, true, false)
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, St::Transpose{T, <:HalfSchurMatrix{T}}, x::AbstractVector, α::Number, β::Number) where T
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(St::Transpose{T, <:HalfSchurMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
     @assert α
     @assert !β
     S = parent(St)

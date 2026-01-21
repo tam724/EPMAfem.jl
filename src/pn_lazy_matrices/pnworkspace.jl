@@ -8,7 +8,7 @@ function create_workspace(::typeof(materialize_with), L::AbstractLazyMatrixOrTra
 end
 create_workspace(n::Integer, allocate) = create_workspace(WorkspaceSize(n, CacheStructure(nothing, nothing)), allocate)
 function create_workspace(ws::WorkspaceSize, allocate::Function)
-    workspace = allocate(ws.workspace)
+    workspace = @view(allocate(ws.workspace)[1:end]) # less types!
 
     return PreallWorkspace(workspace, create_cache(ws.cache, allocate))
 end
