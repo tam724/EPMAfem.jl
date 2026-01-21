@@ -133,8 +133,8 @@ end
 function lazy_getindex(M::ProdMatrix, i::Int, j::Int)
     # naive implementation
     @warn "getindex of ProdMatrix is probably very slow!" maxlog=5
-    x = zeros(maximum(A -> size(A, 2), As(M)))
-    y = zeros(maximum(A -> size(A, 2), As(M)))
+    x = zeros(maximum(A -> max(size(A, 1), size(A, 2)), As(M)))
+    y = zeros(maximum(A -> max(size(A, 1), size(A, 2)), As(M)))
     A = As(M)[end]
     copyto!(@view(x[1:size(A, 1)]), @view(A[:, j]))
     for i in lastindex(As(M)) - 1 : -1 : firstindex(As(M))
@@ -146,6 +146,8 @@ function lazy_getindex(M::ProdMatrix, i::Int, j::Int)
     return x[i]
 end
 isdiagonal(M::ProdMatrix) = all(isdiagonal, As(M))
+
+LinearAlgebra.transpose(M::ProdMatrix) = lazy(*, reverse(transpose.(As(M)))...)
 
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(M::ProdMatrix), α::Number, β::Number) = mul_with!(ws, transpose(Y), transpose(M), transpose(X), α, β)
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(Mt::Transpose{T, <:ProdMatrix{T}}), α::Number, β::Number) where T = mul_with!(ws, transpose(Y), parent(Mt), transpose(X), α, β)
@@ -229,7 +231,7 @@ end
 
 function required_workspace(::typeof(mul_with!), M::ProdMatrix, n, cache_notifier)
     #TODO this is currently an endpoint for batched mul, since we iterate in prodmatrix
-    my_ws = maximum(A -> max_size(A, 2), As(M)) # we could skip the last here
+    my_ws = maximum(A -> max(max_size(A, 1), max_size(A, 2)), As(M)) # we could skip the last here
     int_ws = maximum(A -> required_workspace(mul_with!, A, 1, cache_notifier), As(M))
     return 2*my_ws + int_ws
 end
@@ -266,6 +268,16 @@ function required_workspace(::typeof(materialize_with), M::ProdMatrix, cache_not
     max_internals = maximum(A -> required_workspace(materialize_with, materialize(A), cache_notifier), As(M))
     return 2*max_m*max_n + max_internals
 end
+
+function materialize_diag_with(ws::Workspace, K::ProdMatrix, skeleton::Diagonal, α::Number, β::Number)
+    #TODO: pretty bad implementation!
+    @assert size(K, 1) == size(K, 2)
+    for i in 1:size(K, 1)
+        skeleton.diag[i] = α * lazy_getindex(K, i, i) + β * skeleton.diag[i]
+    end
+    return skeleton, ws
+end
+
 
 # add an additional dispatch for A * X * B (this should probably be treated generally in ProdMatrix)
 const ThreeProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}}

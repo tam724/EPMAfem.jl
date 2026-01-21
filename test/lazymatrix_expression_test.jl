@@ -30,7 +30,7 @@ function test_random_multiplication(AT, M, lazy_M, N = 5)
     end
 end
 
-function test_random_multiplication_mat(AT, M, lazy_M, N = 5, n=5)
+function test_random_multiplication_mat(AT, M, lazy_M, N = 5, n = 5)
     unlazy_M = unlazy(lazy_M, size->similar(dense_array_type(AT), size); n=n)
     Y, lazy_Y = similar(dense_array_type(AT), size(M, 1), n), similar(dense_array_type(AT), size(M, 1), n)
     fill!(Y, zero(eltype(M))); 
@@ -42,6 +42,23 @@ function test_random_multiplication_mat(AT, M, lazy_M, N = 5, n=5)
         mul!(lazy_Y, unlazy_M, X)
         @test Y ≈ lazy_Y
     end
+end
+
+function test_materialization(AT, M, lazy_M)
+    if AT <: CUDA.CUSPARSE.CuSparseMatrixCSC || AT <: CuArray return end
+    unlazy_M = unlazy(materialize(lazy_M), size->similar(dense_array_type(AT), size))
+    materialized_M, _ = materialize_with(unlazy_M.ws, unlazy_M.A)
+    @test materialized_M ≈ M
+end
+
+function test_diag_materialization(AT, M, lazy_M)
+    if AT <: CUDA.CUSPARSE.CuSparseMatrixCSC || AT <: CuArray return end
+    if size(M, 1) != size(M, 2) return end
+
+    unlazy_M = unlazy(materialize(lazy_M), size->similar(dense_array_type(AT), size))
+    skel = Diagonal(similar(dense_array_type(AT), size(M, 1)))
+    diag_M, _ = PNLazyMatrices.materialize_diag_with(unlazy_M.ws, unlazy_M.A.args[1], skel, true, false)
+    @test diag(diag_M) ≈ diag(M)
 end
 
 function test_expression(AT, vars, expr)
@@ -62,6 +79,14 @@ function test_expression(AT, vars, expr)
     @testset "transpose multiplication" begin
         test_random_multiplication(AT, transpose(M), transpose(lazy_M))
         test_random_multiplication_mat(AT, transpose(M), transpose(lazy_M))
+    end
+
+    @testset "materialization" begin
+        test_materialization(AT, M, lazy_M)
+    end
+    
+    @testset "diag_materialization" begin
+        test_diag_materialization(AT, M, lazy_M)
     end
 end
 

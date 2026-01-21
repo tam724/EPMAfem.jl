@@ -10,12 +10,12 @@ Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::Number) where T = LazyScalar(T(a
 
 const PNLAZYMATRICES_SIMPLIFY = false
 if PNLAZYMATRICES_SIMPLIFY
-    Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = _lazy_simplify(*, a, L)
-    Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = _lazy_simplify(*, a, L)
-    Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = _lazy_simplify(*, A, B)
+    Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy_simplify(*, a, L)
+    Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = lazy_simplify(*, a, L)
+    Base.:*(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy_simplify(*, A, B)
 
-    Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = _lazy_simplify(+, lazy_expand(L1), lazy_expand(L2))
-    LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = _lazy_simplify(kron, A, B)
+    Base.:+(L1::AbstractLazyMatrixOrTranspose, L2::AbstractLazyMatrixOrTranspose) = lazy_simplify(+, lazy_expand(L1), lazy_expand(L2))
+    LinearAlgebra.kron(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy_simplify(kron, A, B)
 else
     Base.:*(a::AbstractLazyScalar{T}, L::AbstractLazyMatrixOrTranspose{T}) where T = lazy(*, a, L)
     Base.:*(L::AbstractLazyMatrixOrTranspose{T}, a::AbstractLazyScalar{T}) where T = lazy(*, a, L)

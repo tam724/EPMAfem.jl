@@ -250,3 +250,21 @@ function lazy_expand(K::KronMatrix)
     factors = map(A -> _lazy_expand_sums(lazy_expand(A)), As(K))
     return lazy(+, map(args -> kron(args...), tuple_product(factors...))...)
 end
+
+
+# TYPE STABLE SIMPLIFICATIONS
+# (A + B) + C = A + B + C
+lazy(::typeof(+), A::AbstractLazyMatrixOrTranspose, S::SumMatrix) = lazy(+, A, As(S)...)
+lazy(::typeof(+), S::SumMatrix, A::AbstractLazyMatrixOrTranspose) = lazy(+, As(S)..., A)
+lazy(::typeof(+), S1::SumMatrix, S2::SumMatrix) = lazy(+, As(S1)..., As(S2)...)
+
+# a * b * A
+lazy(::typeof(*), a::AbstractLazyScalar, S::ScaleMatrix) = lazy(*, a*_a(S), A(S))
+lazy(::typeof(*), S1::ScaleMatrix, S2::ScaleMatrix) = lazy(*, _a(S1)*_a(S2), lazy(*, A(S1), A(S2)))
+lazy(::typeof(*), A1::AbstractLazyMatrix, S::ScaleMatrix) = lazy(*, _a(S), lazy(*, A1, A(S)))
+lazy(::typeof(*), S::ScaleMatrix, A1::AbstractLazyMatrix) = lazy(*, _a(S), lazy(*, A(S), A1))
+
+lazy(::typeof(*), A::AbstractLazyMatrixOrTranspose, P::ProdMatrix) = lazy(*, A, As(P)...)
+lazy(::typeof(*), P::ProdMatrix, A::AbstractLazyMatrixOrTranspose) = lazy(*, As(P)..., A)
+lazy(::typeof(*), P1::ProdMatrix, P2::ProdMatrix) = lazy(*, As(P1)..., As(P2)...)
+
