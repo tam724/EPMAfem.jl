@@ -268,3 +268,6 @@ lazy(::typeof(*), A::AbstractLazyMatrixOrTranspose, P::ProdMatrix) = lazy(*, A, 
 lazy(::typeof(*), P::ProdMatrix, A::AbstractLazyMatrixOrTranspose) = lazy(*, As(P)..., A)
 lazy(::typeof(*), P1::ProdMatrix, P2::ProdMatrix) = lazy(*, As(P1)..., As(P2)...)
 
+lazy(::typeof(kron), A::AbstractLazyMatrixOrTranspose, P::KronMatrix) = lazy(kron, A, As(P)...)
+lazy(::typeof(kron), P::KronMatrix, A::AbstractLazyMatrixOrTranspose) = lazy(kron, As(P)..., A)
+lazy(::typeof(kron), P1::KronMatrix, P2::KronMatrix) = lazy(kron, As(P1)..., As(P2)...)
