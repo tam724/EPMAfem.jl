@@ -80,22 +80,42 @@ lazy_objectid(::AbstractMatrix) = error("oh ohh.. ")
 
 max_size(A::AbstractLazyMatrix, n::Integer) = max_size(A)[n]
 LinearAlgebra.transpose(A::AbstractLazyMatrix) = isdiagonal(A) ? A : Transpose(A)
+LinearAlgebra.adjoint(A::AbstractLazyMatrix{<:Real}) = transpose(A)
 required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix, cache_notifier) = required_workspace(mul_with!, L, 1, cache_notifier) # TODO: remove usage, deprecated
 
-struct LazyOpMatrix{T, OP, ARGS} <: AbstractLazyMatrix{T}
+"""
+    LazyOpMatrix{T, ...}
+
+The core matrix expression type. Stores the computational graph for matrix-vector and matrix-matrix multiplication in the type. (is this good? TBD..)
+
+Fields:
+ - op:OP (the operation e.g. Base.:+ for the sum of two matrices or Base.kron for the kronecker product)
+ - args::ARGS (the arguments of the op, a tuple of one or more AbstractLazyMatrix'es)
+ - kwargs::KWARG (optional keyword arguments to op)
+
+Construct a LazyOpMatrices via 'lazy()' (e.g. 'lazy(+, A, B)'). Or via the overloads of the high level operators '+'.
+"""
+struct LazyOpMatrix{T<:Number, OP, ARGS<:Tuple, KWARGS<:NamedTuple} <: AbstractLazyMatrix{T}
     op::OP
     args::ARGS
+    kwargs::KWARGS
 end
 
-function Base.show(io::IO, T::Type{<:LazyOpMatrix{_T, _OP, _ARGS}}) where {_T, _OP, _ARGS}
+const _NO_KWARGS = @NamedTuple{}
+
+# omit printing the inner types.. print only the eltype T and the op OP
+function Base.show(io::IO, ::Type{<:LazyOpMatrix{_T, _OP}}) where {_T, _OP}
     print(io, "LazyOpMatrix{$_T, $_OP, (...)}")
 end
 
-function lazy(op, args...)
+# "constructor" 
+function lazy(op, args...; kwargs...)
 	T = promote_type(eltype.(args)...)
-	return LazyOpMatrix{T, typeof(op), typeof(args)}(op, args)
+    _kwargs = (; kwargs...)
+	return LazyOpMatrix{T, typeof(op), typeof(args), typeof(_kwargs)}(op, args, _kwargs)
 end
 
+# eagerly convert a vector of arguments to a tuple (not type stable!)
 lazy(op, arg::AbstractVector) = lazy(op, arg...)
 
 lazy(::typeof(+), A::AbstractLazyMatrixOrTranspose) = A

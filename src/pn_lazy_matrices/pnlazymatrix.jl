@@ -51,16 +51,3 @@ function materialize_with(ws::Workspace, L::LazyMatrix, skeleton::AbstractMatrix
     return skeleton, ws
 end
 required_workspace(::typeof(materialize_with), ::LazyMatrix, cache_notifier) = 0 # TODO: add cache Notifier
-
-function materialize_diag_with(ws::Workspace, L::LazyMatrix, skeleton::Diagonal, α::Number, β::Number) where T
-    @assert size(L, 1) == size(L, 2) # assert a square matrix at the lowest level.
-    skeleton.diag .= α .* diag(A(L)) .+ β.*skeleton.diag
-    return skeleton, ws
-end
-
-function materialize_diag_with(ws::Workspace, L::Transpose{T, <:LazyMatrix{T}}, skeleton::Diagonal, α::Number, β::Number) where T
-    @assert size(L, 1) == size(L, 2) # assert a square matrix at the lowest level.
-    skeleton.diag .= α .* diag(A(parent(L))) .+ β.*skeleton.diag
-    return skeleton, ws
-end
-

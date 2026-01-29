@@ -1,8 +1,10 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Debugger = "31a5f54b-26ea-5ae9-a837-f05ce5417438"
 EPMAfem = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+MethodAnalysis = "85b6ec6f-f7df-4429-9514-a64bcd9ee824"
 NeXLCore = "93a0284f-3680-435e-8d39-dd6e52a1dbc8"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
@@ -10,4 +12,4 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [sources]
 EPMAfem = {path = ".."}
-NeXLCore = {rev = "master", url = "https://github.com/usnistgov/NeXLCore.jl.git"}
+NeXLCore = {rev = "master", url = "https://github.com/tam724/NeXLCore.jl"}

@@ -14,7 +14,7 @@ function dot_buf(x::AbstractVector, A::AbstractMatrix, y::AbstractVector, buf::A
     return dot(y, buf)
 end
 
-# this feels hacky and should be done in CUDA.jl, avoids NaN * false = NaN (sould be 0.0)
+# this feels hacky and should be done in CUDA.jl, avoids NaN * false = NaN (should be 0.0)
 # see: https://github.com/JuliaGPU/CUDA.jl/issues/2607
 function my_rmul!(A::AbstractArray{T}, β::Bool) where T
     if !β fill!(A, zero(T)) end

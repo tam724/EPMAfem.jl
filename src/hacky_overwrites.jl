@@ -121,41 +121,43 @@ end
 
 # fast check if SparseMatrix is diagonal
 function LinearAlgebra.isdiag(A::SparseArrays.SparseMatrixCSC)
-    return all(rv == cp for (rv, cp) ∈ zip(A.rowval, @view(A.colptr[1:end-1])))
+    return all(rv == cp for (rv, cp) ∈ zip(A.rowval, @view(A.colptr[1:end-1]))) || invoke(LinearAlgebra.isdiag, Tuple{AbstractMatrix}, A)
 end
 
-# we need transpose(A) * Diagonal() on CUDA:
-function LinearAlgebra.mul!(B::CUDA.GPUArrays.AbstractGPUVecOrMat,
-                            D::Diagonal{<:Any, <:CUDA.GPUArrays.AbstractGPUArray},
-                            At::Transpose{<:Number, <:CUDA.GPUArrays.AbstractGPUVecOrMat},
-                            α::Number,
-                            β::Number)
-    dd = D.diag
-    d = length(dd)
-    m, n = size(At, 1), size(At, 2)
-    m′, n′ = size(B, 1), size(B, 2)
-    m == d || throw(DimensionMismatch("right hand side has $m rows but D is $d by $d"))
-    (m, n) == (m′, n′) || throw(DimensionMismatch("expect output to be $m by $n, but got $m′ by $n′"))
-    @. B = α * dd * At + β * B
+if pkgversion(GPUArrays) < v"11.3.0"
+    # we need transpose(A) * Diagonal() on CUDA:
+    function LinearAlgebra.mul!(B::CUDA.GPUArrays.AbstractGPUVecOrMat,
+                                D::Diagonal{<:Any, <:CUDA.GPUArrays.AbstractGPUArray},
+                                At::Transpose{<:Number, <:CUDA.GPUArrays.AbstractGPUVecOrMat},
+                                α::Number,
+                                β::Number)
+        dd = D.diag
+        d = length(dd)
+        m, n = size(At, 1), size(At, 2)
+        m′, n′ = size(B, 1), size(B, 2)
+        m == d || throw(DimensionMismatch("right hand side has $m rows but D is $d by $d"))
+        (m, n) == (m′, n′) || throw(DimensionMismatch("expect output to be $m by $n, but got $m′ by $n′"))
+        @. B = α * dd * At + β * B
 
-    B
-end
+        B
+    end
 
-function LinearAlgebra.mul!(B::CUDA.GPUArrays.AbstractGPUVecOrMat,
-                            At::Transpose{<:Number, <:CUDA.GPUArrays.AbstractGPUVecOrMat},
-                            D::Diagonal{<:Any, <:CUDA.GPUArrays.AbstractGPUArray},
-                            α::Number,
-                            β::Number)
-    dd = D.diag
-    d = length(dd)
-    m, n = size(At, 1), size(At, 2)
-    m′, n′ = size(B, 1), size(B, 2)
-    n == d || throw(DimensionMismatch("left hand side has $n columns but D is $d by $d"))
-    (m, n) == (m′, n′) || throw(DimensionMismatch("expect output to be $m by $n, but got $m′ by $n′"))
-    ddT = transpose(dd)
-    @. B = α * At * ddT + β * B
+    function LinearAlgebra.mul!(B::CUDA.GPUArrays.AbstractGPUVecOrMat,
+                                At::Transpose{<:Number, <:CUDA.GPUArrays.AbstractGPUVecOrMat},
+                                D::Diagonal{<:Any, <:CUDA.GPUArrays.AbstractGPUArray},
+                                α::Number,
+                                β::Number)
+        dd = D.diag
+        d = length(dd)
+        m, n = size(At, 1), size(At, 2)
+        m′, n′ = size(B, 1), size(B, 2)
+        n == d || throw(DimensionMismatch("left hand side has $n columns but D is $d by $d"))
+        (m, n) == (m′, n′) || throw(DimensionMismatch("expect output to be $m by $n, but got $m′ by $n′"))
+        ddT = transpose(dd)
+        @. B = α * At * ddT + β * B
 
-    B
+        B
+    end
 end
 
 
@@ -282,4 +284,32 @@ if pkgversion(CUDA) < v"5.9.5" # https://github.com/JuliaGPU/CUDA.jl/pull/2958
             return rmul!(A, eltype(A)(val))
         end
     end
+end
+
+# ldiv! with α and  β for Diagonals (CPU and GPU)
+# from: https://github.com/JuliaLang/LinearAlgebra.jl/blob/3a4fdad7f608928ecb4b41e76b1e9ecacd058444/src/diagonal.jl#L637 (removed singular check)
+function LinearAlgebra.ldiv!(B::AbstractVecOrMat, D::Diagonal, A::AbstractVecOrMat, α::Number, β::Number)
+    LinearAlgebra.require_one_based_indexing(A, B)
+    dd = D.diag
+    d = length(dd)
+    m, n = size(A, 1), size(A, 2)
+    m′, n′ = size(B, 1), size(B, 2)
+    m == d || throw(DimensionMismatch(lazy"right hand side has $m rows but D is $d by $d"))
+    (m, n) == (m′, n′) || throw(DimensionMismatch(lazy"expect output to be $m by $n, but got $m′ by $n′"))
+    @inbounds for j in axes(A,2), i in axes(A,1)
+        B[i, j] = α * (dd[i] \A[i, j]) + β * B[i, j]
+    end
+    return B
+end
+
+# from: https://github.com/JuliaGPU/GPUArrays.jl/blob/efdc7cf6c8bc262133e9749c18083672b4fd2082/src/host/linalg.jl#L420 (removed singluar check)
+function LinearAlgebra.ldiv!(B::AbstractGPUVecOrMat, D::Diagonal{<:Any, <:AbstractGPUArray}, A::AbstractGPUVecOrMat, α::Number, β::Number)
+    dd = D.diag
+    d = length(dd)
+    m, n = size(A, 1), size(A, 2)
+    m′, n′ = size(B, 1), size(B, 2)
+    m == d || throw(DimensionMismatch("right hand side has $m rows but D is $d by $d"))
+    (m, n) == (m′, n′) || throw(DimensionMismatch("expect output to be $m by $n, but got $m′ by $n′"))
+    B .= α .* (dd .\ A) .+ β .* B
+    return B
 end

@@ -1,29 +1,61 @@
 # direct solver
-const BackslashMatrix{T} = LazyOpMatrix{T, typeof(\), <:Tuple{<:MaterializedMatrix{T}}}
-M(K::BackslashMatrix) = only(K.args)
-A(K::BackslashMatrix) = A(M(K))
+const InverseMatrix{T} = LazyOpMatrix{T, typeof(Base.inv), <:Tuple{<:AbstractMatrix{T}}, _NO_KWARGS}
+A(K::InverseMatrix) = only(K.args)
 
-Base.size(K::BackslashMatrix) = size(A(K))
-max_size(K::BackslashMatrix) = max_size(A(K))
-isdiagonal(K::BackslashMatrix) = isdiagonal(A(K))
+Base.size(K::InverseMatrix) = size(A(K))
+max_size(K::InverseMatrix) = max_size(A(K))
+isdiagonal(K::InverseMatrix) = isdiagonal(A(K))
 
-lazy_getindex(K::BackslashMatrix, i::Int, j::Int) = error("Cannot getindex")
+lazy_getindex(::InverseMatrix, ::Int, ::Int) = error("Cannot getindex")
+LinearAlgebra.transpose(K::InverseMatrix) = lazy(inv, transpose(A(K)))
 
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::BackslashMatrix), x::AbstractVector, α::Number, β::Number)
-    A_, rem = materialize_with(ws, M(K))
-    y .= α .* (A_ \ x) .+ β .* y
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(K::InverseMatrix), X::AbstractVecOrMat, α::Number, β::Number)
+    if isdiagonal(A(K))
+        A_, _ = materialize_with(ws, materialize(A(K)))
+        ldiv!(Y, A_, X, α, β)
+    else
+        @assert isone(α)
+        @assert iszero(β)
+        A_, _ = materialize_with(ws, lazy(decide_materialize_strategy(A(K)), A(K))) # enforce materialization
+        ldiv!(Y, lu!(A), X)
+    end
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Kt::Transpose{T, <:BackslashMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
-    A_, rem = materialize_with(ws, M(parent(Kt)))
-    y .= α .* (transpose(A_) \ x) .+ β .* y
+function mul_with!(ws::Workspace, Y::AbstractVecOrMat, X::AbstractVecOrMat, @nospecialize(K::InverseMatrix), α::Number, β::Number)
+    @assert isone(α)
+    @assert iszero(β)
+    if isdiagonal(A(K))
+        A_, _ = materialize_with(ws, materialize(A(K)))
+        copyto!(Y, X)
+        rdiv!(Y, A_)
+    else
+        A_, _ = materialize_with(ws, lazy(decide_materialize_strategy(A(K)), A(K))) # enforce materialization
+        copyto!(Y, X)
+        rdiv!(Y, lu!(A_))
+    end
 end
 
-required_workspace(::typeof(mul_with!), K::BackslashMatrix, n, cache_notifier) = required_workspace(materialize_with, M(K), cache_notifier)
+function required_workspace(::typeof(mul_with!), K::InverseMatrix, n, cache_notifier)
+    if isdiagonal(A(K))
+        return required_workspace(materialize_with, materialize(A(K)), cache_notifier)
+    else
+        return required_workspace(materialize_with, lazy(decide_materialize_strategy(A(K)), A(K)), cache_notifier)
+    end
+end
+
+function materialize_with(ws::Workspace, K::InverseMatrix, skeleton::AbstractMatrix)
+    A_mat, _ = materialize_with(ws, A(K), skeleton)
+    LinearAlgebra.inv!(A_mat)
+    return A_mat, ws
+end
+
+function required_workspace(::typeof(materialize_with), K::InverseMatrix, cache_notifier)
+    return required_workspace(materialize_with, A(K), cache_notifier)
+end
 
 # krylov_minres
-const KrylovMinresMatrix{T} = LazyOpMatrix{T, typeof(Krylov.minres), <:Tuple{<:AbstractMatrix{T}}}
-A(K::KrylovMinresMatrix) = K.args[1]
+const KrylovMinresMatrix{T} = LazyOpMatrix{T, typeof(Krylov.minres), <:Tuple{<:AbstractMatrix{T}}, <:Any}
+A(K::KrylovMinresMatrix) = only(K.args)
 
 Base.size(K::KrylovMinresMatrix) = size(A(K))
 max_size(K::KrylovMinresMatrix) = max_size(A(K))
@@ -52,39 +84,37 @@ lazy_getindex(K::KrylovMinresMatrix, i::Int, j::Int) = error("Cannot getindex")
 #         stats)
 # end
 
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovMinresMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
-    A_ = NotSoLazy{T}(A(K), ws)
-    CUDA.NVTX.@range "minres allocate" begin
-        solver = Krylov.MinresSolver(A_, x) # this allocates!
-    end
-    CUDA.NVTX.@range "minres solve" begin
-        Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=eps(T))
-    end
-    CUDA.NVTX.@range "minres copy" begin
-        y .= α .* solver.x .+ β .* y
-    end
+function LinearAlgebra.transpose(K::KrylovMinresMatrix) # matrix and preconditioner should be symmetric!
+    kwargs = K.kwargs
+    kwargs = haskey(K.kwargs, :M) ? (; kwargs..., M=transpose(K.kwargs.M)) : kwargs
+    return lazy(Krylov.gmres, transpose(A(K)); kwargs...)
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Kt::Transpose{T, <:KrylovMinresMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
-    A_ = NotSoLazy{T}(A(parent(Kt)), ws)
-    CUDA.NVTX.@range "minres allocate" begin
-        solver = Krylov.MinresSolver(A_, x) # this allocates!
-    end
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovMinresMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
     CUDA.NVTX.@range "minres solve" begin
-        Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=eps(T))
-    end
-    CUDA.NVTX.@range "minres copy" begin
+        A_ = NotSoLazy{T}(A(K), ws)
+
+        kwargs = K.kwargs
+        kwargs = haskey(kwargs, :M) ? Base.setindex(kwargs, NotSoLazy{T}(kwargs.M, ws), :M) : kwargs
+        kwargs = haskey(kwargs, :rtol) ? Base.setindex(kwargs, T(kwargs.rtol), :rtol) : kwargs
+        kwargs = haskey(kwargs, :atol) ? Base.setindex(kwargs, T(kwargs.atol), :atol) : kwargs
+
+        solver = Krylov.MinresWorkspace(A_, x) # this allocates!
+        Krylov.minres!(solver, A_, x; kwargs...)
+        @show solver.stats
         y .= α .* solver.x .+ β .* y
     end
 end
 
 function required_workspace(::typeof(mul_with!), K::KrylovMinresMatrix, n, cache_notifier)
     @assert n == 1
-    return required_workspace(mul_with!, A(K), n, cache_notifier)
+    req_ws = required_workspace(mul_with!, A(K), n, cache_notifier)
+    req_ws = haskey(K.kwargs, :M) ? max(req_ws, required_workspace(mul_with!, K.kwargs.M, n, cache_notifier)) : req_ws
+    return req_ws
 end
 
 # krylov_gmres
-const KrylovGmresMatrix{T} = LazyOpMatrix{T, typeof(Krylov.gmres), <:Tuple{<:AbstractMatrix{T}}}
+const KrylovGmresMatrix{T} = LazyOpMatrix{T, typeof(Krylov.gmres), <:Tuple{<:AbstractMatrix{T}}, <:Any}
 A(K::KrylovGmresMatrix) = K.args[1]
 
 Base.size(K::KrylovGmresMatrix) = size(A(K))
@@ -93,65 +123,126 @@ isdiagonal(K::KrylovGmresMatrix) = isdiagonal(A(K))
 
 lazy_getindex(K::KrylovGmresMatrix, i::Int, j::Int) = error("Cannot getindex")
 
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovGmresMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
-    A_ = NotSoLazy{T}(A(K), ws)
-    solver = Krylov.GmresSolver(A_, x) # this allocates!
-    Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
-    y .= α .* solver.x .+ β .* y
+function LinearAlgebra.transpose(K::KrylovGmresMatrix)
+    kwargs = K.kwargs
+    kwargs = haskey(K.kwargs, :M) ? (; kwargs..., N=transpose(K.kwargs.M)) : (; kwargs..., N=I)
+    kwargs = haskey(K.kwargs, :N) ? (; kwargs..., M=transpose(K.kwargs.N)) : (; kwargs..., M=I)
+    return lazy(Krylov.gmres, transpose(A(K)); kwargs...)
 end
 
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Kt::Transpose{T, <:KrylovGmresMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
-    A_ = NotSoLazy{T}(A(parent(Kt)), ws)
-    solver = Krylov.GmresSolver(A_, x) # this allocates!
-    Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
+function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovGmresMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
+    A_ = NotSoLazy{T}(A(K), ws)
+    
+    kwargs = K.kwargs
+    kwargs = haskey(kwargs, :M) && typeof(kwargs.M) <: AbstractLazyMatrix ? (; kwargs..., M=NotSoLazy{T}(kwargs.M, ws)) : kwargs
+    kwargs = haskey(kwargs, :N) && typeof(kwargs.N) <: AbstractLazyMatrix ? (; kwargs..., N=NotSoLazy{T}(kwargs.N, ws)) : kwargs
+    kwargs = haskey(kwargs, :rtol) ? (; kwargs..., rtol=T(kwargs.rtol)) : kwargs
+    kwargs = haskey(kwargs, :atol) ? (; kwargs..., atol=T(kwargs.atol)) : kwargs
+
+    solver = Krylov.GmresWorkspace(A_, x) # this allocates!
+    Krylov.gmres!(solver, A_, x; kwargs...)
+    @show solver.stats
     y .= α .* solver.x .+ β .* y
 end
 
 function required_workspace(::typeof(mul_with!), K::KrylovGmresMatrix, n, cache_notifier)
     @assert n == 1
-    return required_workspace(mul_with!, A(K), n, cache_notifier)
+    req_ws = required_workspace(mul_with!, A(K), n, cache_notifier)
+    req_ws = haskey(K.kwargs, :M) && typeof(K.kwargs.M) <: AbstractLazyMatrix ? max(req_ws, required_workspace(mul_with!, K.kwargs.M, n, cache_notifier)) : req_ws
+    req_ws = haskey(K.kwargs, :N) && typeof(K.kwargs.N) <: AbstractLazyMatrix ? max(req_ws, required_workspace(mul_with!, K.kwargs.N, n, cache_notifier)) : req_ws
+    return req_ws
 end
 
 # krylov cg
-const KrylovCGMatrix{T} = LazyOpMatrix{T, typeof(Krylov.cg), <:Tuple{<:AbstractMatrix{T}}}
+const KrylovCGMatrix{T} = LazyOpMatrix{T, typeof(Krylov.cg), <:Tuple{<:AbstractMatrix{T}}, <:Any}
 A(K::KrylovCGMatrix) = K.args[1]
 
 Base.size(K::KrylovCGMatrix) = size(A(K))
 max_size(K::KrylovCGMatrix) = max_size(A(K))
 isdiagonal(K::KrylovCGMatrix) = isdiagonal(A(K))
 
-lazy_getindex(K::KrylovCGMatrix, i::Int, j::Int) = error("Cannot getindex")
+lazy_getindex(::KrylovCGMatrix, ::Int, ::Int) = error("Cannot getindex")
+
+function LinearAlgebra.transpose(K::KrylovCGMatrix) # matrix and preconditioner should be symmetric!
+    kwargs = K.kwargs
+    kwargs = haskey(K.kwargs, :M) ? (; kwargs..., M=transpose(K.kwargs.M)) : kwargs
+    return lazy(Krylov.gmres, transpose(A(K)); kwargs...)
+end
 
 function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovCGMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
     A_ = NotSoLazy{T}(A(K), ws)
-    solver = Krylov.CGSolver(A_, x) # this allocates!
-    Krylov.solve!(solver, A_, x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
-    y .= α .* solver.x .+ β .* y
-end
+    
+    kwargs = K.kwargs
+    kwargs = haskey(kwargs, :M) && typeof(kwargs.M) <: AbstractLazyMatrixOrTranspose ? (; kwargs..., M=NotSoLazy{T}(kwargs.M, ws)) : kwargs
+    kwargs = haskey(kwargs, :rtol) ? (; kwargs..., rtol=T(kwargs.rtol)) : kwargs
+    kwargs = haskey(kwargs, :atol) ? (; kwargs..., atol=T(kwargs.atol)) : kwargs
 
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(Kt::Transpose{T, <:KrylovCGMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
-    A_ = NotSoLazy{T}(A(parent(Kt)), ws)
-    solver = Krylov.CGSolver(A_, x) # this allocates!
-    Krylov.solve!(solver, transpose(A_), x; rtol=T(sqrt(eps(Float64))), atol=zero(T))
+    solver = Krylov.CgWorkspace(A_, x) # this allocates!
+    Krylov.cg!(solver, A_, x; kwargs...)
+    @show solver.stats
     y .= α .* solver.x .+ β .* y
 end
 
 function required_workspace(::typeof(mul_with!), K::KrylovCGMatrix, n, cache_notifier)
     @assert n == 1
-    return required_workspace(mul_with!, A(K), n, cache_notifier)
+    req_ws = required_workspace(mul_with!, A(K), n, cache_notifier)
+    req_ws = haskey(K.kwargs, :M) ? max(req_ws, required_workspace(mul_with!, K.kwargs.M, n, cache_notifier)) : req_ws
+    return req_ws
 end
 
+# # krylov tricg
+# const KrylovTriCGMatrix{T} = LazyOpMatrix{T, typeof(Krylov.tricg), <:NTuple{3, AbstractMatrix{T}}, _NO_KWARGS}
+# A⁻¹(K::KrylovTriCGMatrix) = K.args[1]
+# B(K::KrylovTriCGMatrix) = K.args[2]
+# C⁻¹(K::KrylovTriCGMatrix) = K.args[3]
+
+# function Base.size(K::KrylovTriCGMatrix)
+#     n1 = only_unique(size(A⁻¹(K)))
+#     n2 = only_unique(size(C⁻¹(K)))
+#     size(B(K)) == (n1, n2) || error("size mismatch")
+#     return duplicate(n1 + n2)
+# end
+
+# function max_size(K::KrylovTriCGMatrix)
+#     n1 = only_unique(max_size(A⁻¹(K)))
+#     n2 = only_unique(max_size(C⁻¹(K)))
+#     max_size(B) == (n1, n2) || error("size mismatch")
+#     return duplicate(n1 + n2)
+# end
+
+# isdiagonal(K::KrylovTriCGMatrix) = false # only if B(K) == 0
+# lazy_getindex(::KrylovTriCGMatrix, i::Int, j::Int) = error("Cannot getindex")
+
+# function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(K::KrylovTriCGMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
+#     n1, n2 = only_unique(size(A⁻¹(K))), only_unique(size(C⁻¹(K)))
+#     _A⁻¹ = NotSoLazy{T}(A⁻¹(K), ws)
+#     _B = NotSoLazy{T}(B(K), ws)
+#     _C⁻¹ = NotSoLazy{T}(C⁻¹(K), ws)
+#     solver = Krylov.TricgSolver(_B, x) # this allocates!
+#     a_, b_ = @view(x[1:n1]), @view(x[n1+1:n1+n2])
+#     Krylov.solve!(solver, _B, a_, b_; M=_A⁻¹, N=_C⁻¹, rtol=T(sqrt(eps(Float64))), atol=zero(T))
+#     @show "TRICG", solver.stats
+#     u_, v_ = @view(y[1:n1]), @view(y[n1+1:n1+n2])
+#     u_ .= α .* solver.x .+ β .* u_
+#     v_ .= α .* solver.y .+ β .* v_
+# end
+
+# function required_workspace(::typeof(mul_with!), K::KrylovTriCGMatrix, n, cache_notifier)
+#     @assert n == 1
+#     return max(required_workspace(mul_with!, A⁻¹(K), n, cache_notifier),
+#         required_workspace(mul_with!, B(K), n, cache_notifier),
+#         required_workspace(mul_with!, C⁻¹(K), n, cache_notifier))
+# end
 
 function schur_complement() end
 
-const SchurMatrix{T} = LazyOpMatrix{T, typeof(schur_complement), <:NTuple{4, AbstractMatrix{T}}}
+const SchurMatrix{T} = LazyOpMatrix{T, typeof(schur_complement), <:NTuple{4, AbstractMatrix{T}}, _NO_KWARGS}
 inv_AmBD⁻¹C(S::SchurMatrix) = S.args[1]
 B(S::SchurMatrix) = S.args[2]
 C(S::SchurMatrix) = S.args[3]
 D⁻¹(S::SchurMatrix) = S.args[4]
 
-# inner_solver(S::SchurMatrix) = S.op[2]
-# inner_solver(St::Transpose{T, <:SchurMatrix{T}}) where T = parent(St).op[2]
+LinearAlgebra.transpose(S::SchurMatrix) = lazy(schur_complement, transpose(inv_AmBD⁻¹C(S)), transpose(C(S)), transpose(B(S)), transpose(D⁻¹(S)))
 
 function block_size(S::SchurMatrix)
     n1 = only_unique(size(inv_AmBD⁻¹C(S)))
@@ -178,118 +269,44 @@ isdiagonal(S::SchurMatrix) = false # should not happen..
 lazy_getindex(S::SchurMatrix, i::Int, j::Int) = error("Cannot getindex")
 
 function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(S::SchurMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
-    @assert α
-    @assert !β
-
+    @assert iszero(β)
     n1, n2 = block_size(S)
 
-    u = @view(x[1:n1])
-    v = @view(x[n1+1:n1+n2])
+    tmp, rem = take_ws(ws, max(n1, n2))
+    b_x, b_y = @view(tmp[1:n1]), @view(tmp[1:n2]) # aliased!
+    u, v = @view(x[1:n1]), @view(x[n1+1:n1+n2])
+    x_, y_ = @view(y[1:n1]), @view(y[n1+1:n1+n2])
 
-    x_ = @view(y[1:n1])
-    y_ = @view(y[n1+1:n1+n2])
-
-    mul_with!(ws, u, B(S)*D⁻¹(S), v, T(-1), true)
-    mul_with!(ws, x_, inv_AmBD⁻¹C(S), u, true, false)
-    mul_with!(ws, v, C(S), x_, T(-1), true)
-    mul_with!(ws, y_, D⁻¹(S), v, true, false)
+    copyto!(b_x, u)
+    mul_with!(rem, b_x, B(S)*D⁻¹(S), v, -α, α)
+    mul_with!(rem, x_, inv_AmBD⁻¹C(S), b_x, true, false)
+    copyto!(b_y, v)
+    mul_with!(rem, b_y, C(S), x_, -one(T), α)
+    mul_with!(rem, y_, D⁻¹(S), b_y, true, false)
 end
 
 function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(St::Transpose{T, <:SchurMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
-    @assert α
-    @assert !β
     S = parent(St)
-
+    @assert iszero(β)
     n1, n2 = block_size(St)
+    
+    tmp, rem = take_ws(ws, max(n1, n2))
+    b_x, b_y = @view(tmp[1:n1]), @view(tmp[1:n2]) # aliased!
+    u, v = @view(x[1:n1]), @view(x[n1+1:n1+n2])
+    x_, y_ = @view(y[1:n1]), @view(y[n1+1:n1+n2])
 
-    u = @view(x[1:n1])
-    v = @view(x[n1+1:n1+n2])
-
-    x_ = @view(y[1:n1])
-    y_ = @view(y[n1+1:n1+n2])
-
-    mul_with!(ws, u, transpose(C(S)) * transpose(D⁻¹(S)), v, T(-1), true)
-    mul_with!(ws, x_, transpose(inv_AmBD⁻¹C(S)), u, true, false)
-    mul_with!(ws, v, transpose(B(S)), x_, T(-1), true)
-    mul_with!(ws, y_, transpose(D⁻¹(S)), v, true, false)
+    copyto!(b_x, u)
+    mul_with!(rem, b_x, transpose(C(S)) * transpose(D⁻¹(S)), v, -α, α)
+    mul_with!(rem, x_, transpose(inv_AmBD⁻¹C(S)), b_x, true, false)
+    copyto!(b_y, v)
+    mul_with!(rem, b_y, transpose(B(S)), x_, -one(T), α)
+    mul_with!(rem, y_, transpose(D⁻¹(S)), b_y, true, false)
 end
 
 function required_workspace(::typeof(mul_with!), S::SchurMatrix, n, cache_notifier)
     @assert n == 1
-    maximum(A -> required_workspace(mul_with!, A, n, cache_notifier),
-        (inv_AmBD⁻¹C(S), B(S)*D⁻¹(S), C(S), D⁻¹(S), transpose(C(S))*transpose(D⁻¹(S)), transpose(B(S))))
-end
-
-# this is a weird one.. (we implement the interface here..)
-function half_schur_complement(BM::BlockMatrix, solver, fast_solver)
-    A, B, C, D = blocks(BM)
-    D⁻¹ = fast_solver(D)
-    inv_AmBD⁻¹C = solver(A - B * D⁻¹ * C)
-    return lazy(half_schur_complement, inv_AmBD⁻¹C, B, C, D⁻¹)
-end
-
-const HalfSchurMatrix{T} = LazyOpMatrix{T,  typeof(half_schur_complement), <:NTuple{4, AbstractMatrix{T}}}
-inv_AmBD⁻¹C(S::HalfSchurMatrix) = S.args[1]
-B(S::HalfSchurMatrix) = S.args[2]
-C(S::HalfSchurMatrix) = S.args[3]
-D⁻¹(S::HalfSchurMatrix) = S.args[4]
-
-function block_size(S::HalfSchurMatrix)
-    n1 = only_unique(size(inv_AmBD⁻¹C(S)))
-    n2 = only_unique(size(D⁻¹(S)))
-    return (n1, n2)
-end
-block_size(St::Transpose{T, <:HalfSchurMatrix{T}}) where T = block_size(parent(St))
-
-function Base.size(S::Union{HalfSchurMatrix, Transpose{T, <:HalfSchurMatrix{T}}}) where T
-    n1, n2 = block_size(S)
-    return (n1, n1 + n2)
-end
-function max_size(S::Union{HalfSchurMatrix, Transpose{T, <:HalfSchurMatrix{T}}}) where T
     n1 = only_unique(max_size(inv_AmBD⁻¹C(S)))
     n2 = only_unique(max_size(D⁻¹(S)))
-    @assert max_size(D(S)) == (n1, n2)
-    @assert max_size(C(S)) == (n2, n1)
-    return (n1, n1 + n2)
-end
-isdiagonal(S::HalfSchurMatrix) = false # not even square :D
-
-lazy_getindex(S::HalfSchurMatrix, i::Int, j::Int) = error("Cannot getindex")
-function LinearAlgebra.transpose(S::HalfSchurMatrix{T}) where T
-    @warn "this behaves weird!"
-    return Transpose(S)
-end
-
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(S::HalfSchurMatrix{T}), x::AbstractVector, α::Number, β::Number) where T
-    @assert α
-    @assert !β
-
-    n1, n2 = block_size(S)
-
-    u = @view(x[1:n1])
-    v = @view(x[n1+1:n1+n2])
-    x_ = @view(y[1:n1])
-
-    mul_with!(ws, u, B(S)*D⁻¹(S), v, T(-1), true)
-    mul_with!(ws, x_, inv_AmBD⁻¹C(S), u, true, false)
-end
-
-function mul_with!(ws::Workspace, y::AbstractVector, @nospecialize(St::Transpose{T, <:HalfSchurMatrix{T}}), x::AbstractVector, α::Number, β::Number) where T
-    @assert α
-    @assert !β
-    S = parent(St)
-
-    n1, n2 = block_size(St)
-
-    u = @view(x[1:n1])
-    v = @view(x[n1+1:n1+n2])
-    x_ = @view(y[1:n1])
-
-    mul_with!(ws, u, transpose(C(S))*transpose(D⁻¹(S)), v, T(-1), true)
-    mul_with!(ws, x_, transpose(inv_AmBD⁻¹C(S)), u, true, false)
-end
-
-function required_workspace(::typeof(mul_with!), S::HalfSchurMatrix, n, cache_notifier)
-    @assert n == 1
-    maximum(A -> required_workspace(mul_with!, A, n, cache_notifier), (inv_AmBD⁻¹C(S), B(S)*D⁻¹(S), transpose(C(S))*transpose(D⁻¹(S))))
+    max(n1, n2) + maximum(A -> required_workspace(mul_with!, A, n, cache_notifier),
+        (inv_AmBD⁻¹C(S), B(S)*D⁻¹(S), C(S), D⁻¹(S), transpose(C(S))*transpose(D⁻¹(S)), transpose(B(S))))
 end

@@ -3,12 +3,12 @@ function mat_with_materialize() end
 function mul_materialize() end
 function cache() end
 
-const BMaterializedMatrix{T} = LazyOpMatrix{T, typeof(broadcast_materialize), <:Tuple{<:AbstractMatrix{T}}}
-const MMaterializedMatrix{T} = LazyOpMatrix{T, typeof(mat_with_materialize), <:Tuple{<:AbstractMatrix{T}}}
-const XMaterializedMatrix{T} = LazyOpMatrix{T, typeof(mul_materialize), <:Tuple{<:AbstractMatrix{T}}}
+const BMaterializedMatrix{T} = LazyOpMatrix{T, typeof(broadcast_materialize), <:Tuple{<:AbstractMatrix{T}}, _NO_KWARGS}
+const MMaterializedMatrix{T} = LazyOpMatrix{T, typeof(mat_with_materialize), <:Tuple{<:AbstractMatrix{T}}, _NO_KWARGS}
+const XMaterializedMatrix{T} = LazyOpMatrix{T, typeof(mul_materialize), <:Tuple{<:AbstractMatrix{T}}, _NO_KWARGS}
 const MaterializedMatrix{T} = Union{BMaterializedMatrix{T}, MMaterializedMatrix{T}, XMaterializedMatrix{T}}
 
-const CachedMatrix{T} = LazyOpMatrix{T, typeof(cache), <:Tuple{<:AbstractMatrix{T}}} # but should be wrapped into a materialize.. (also allows resizematrix)
+const CachedMatrix{T} = LazyOpMatrix{T, typeof(cache), <:Tuple{<:AbstractMatrix{T}}, _NO_KWARGS} # but should be wrapped into a materialize.. (also allows resizematrix)
 const MaterializedOrCachedMatrix{T} = Union{MaterializedMatrix{T}, CachedMatrix{T}}
 
 @inline A(M::MaterializedMatrix) = only(M.args)

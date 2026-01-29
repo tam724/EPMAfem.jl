@@ -43,30 +43,21 @@ cache(A::AbstractLazyMatrix) = lazy(cache, materialize(A))
 cache(M::MaterializedMatrix) = lazy(cache, M)
 
 function decide_materialize_strategy(A::AbstractLazyMatrix)
-    if should_broadcast_materialize(A) return :broadcast end
-    return :mat_with
+    if should_broadcast_materialize(A) return broadcast_materialize end
+    return mat_with_materialize
     # return :mat # TODO: still unsure about this one..
     # this is a crude heuristic! (if it is "cheaper" to multiply with the matrix than to materialize, then materialize by multiplication) TOOD: should be checked better
     mat = workspace_size(required_workspace(materialize_with, A, ()))
     mA, nA = max_size(A)
     mul = min(mA, nA) * workspace_size(required_workspace(mul_with!, A, ()))
     if mat < mul
-        return :mat_with
+        return mat_with_materialize
     else
-        return :mul
+        return mul_materialize
     end
 end
 
-function materialize(A::AbstractLazyMatrix; forced=false)
-    strategy = decide_materialize_strategy(A)
-    if strategy == :broadcast
-        return lazy(broadcast_materialize, A)
-    elseif strategy == :mat_with
-        return lazy(mat_with_materialize, A)
-    else # strategy == :mul
-        return lazy(mul_materialize, A)
-    end
-end
+materialize(A::AbstractLazyMatrix) = lazy(decide_materialize_strategy(A), A)
 
 # simplify materialize and cache for LazyMatrix
 materialize(L::LazyMatrix) = L
@@ -90,9 +81,16 @@ materialize(M::Union{MaterializedMatrix{T}, Transpose{T, <:MaterializedMatrix{T}
 materialize(C::Union{CachedMatrix{T}, Transpose{T, <:CachedMatrix{T}}}) where T = C
 cache(C::Union{CachedMatrix{T}, Transpose{T, <:CachedMatrix{T}}}) where T = C
 
-LinearAlgebra.inv!(A::MaterializedMatrix) = lazy(LinearAlgebra.inv!, A)
-# force the matrix to copy here
-LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(LinearAlgebra.inv!, materialize(A; forced=true))
+LinearAlgebra.inv!(A::AbstractLazyMatrixOrTranspose) = lazy(inv, A)
+Base.:\(A::AbstractLazyMatrixOrTranspose) = lazy(inv, A)
+Base.inv(A::AbstractLazyMatrixOrTranspose) = lazy(inv, A)
+
+for krylov_solver in (:(Krylov.minres), :(Krylov.gmres), :(Krylov.cg))
+    @eval begin
+        $krylov_solver(A::AbstractLazyMatrixOrTranspose; kwargs...) = lazy($krylov_solver, A; kwargs...)
+        $krylov_solver(; kwargs...) = A -> lazy($krylov_solver, A; kwargs...)
+    end
+end
 
 blockmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose, C::AbstractLazyMatrixOrTranspose, D::AbstractLazyMatrixOrTranspose) = lazy(blockmatrix, A, B, C, D)
 blockmatrix(A::AbstractLazyMatrixOrTranspose, ::Nothing, ::Nothing, B::AbstractLazyMatrixOrTranspose) = lazy(blockdiagmatrix, A, B)
@@ -108,16 +106,14 @@ function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, A::AbstractLazyMatrixOrTrans
     return blockmatrix(A, nothing, nothing, B)
 end
 
+diagonal(A::AbstractLazyMatrixOrTranspose) = lazy(diagonal, A)
+
 # blockdiagmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(blockdiagmatrix, A, B)
 # function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, A::AbstractLazyMatrixOrTranspose, ::Nothing, ::Nothing, B::AbstractLazyMatrixOrTranspose)
 #     @assert sizes[1] == 2
 #     @assert sizes[2] == 2
 #     return blockdiagmatrix(A, B)
 # end
-
-Krylov.minres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.minres, A)
-Krylov.gmres(A::AbstractLazyMatrixOrTranspose) = lazy(Krylov.gmres, A)
-Base.:\(A::AbstractLazyMatrixOrTranspose) = lazy(\, materialize(A; forced=true))
 
 function schur_complement(BM::BlockMatrix, solver, fast_solver)
     A, B, C, D = blocks(BM)
@@ -164,6 +160,7 @@ end
 Base.getindex(A::NotSoLazy, i::Integer, j::Integer) = getindex(A.A, i, j)
 Base.size(A::NotSoLazy) = size(A.A)
 LinearAlgebra.transpose(A::NotSoLazy{T}) where T = NotSoLazy{T}(transpose(A.A), A.ws)
+LinearAlgebra.adjoint(A::NotSoLazy{T}) where {T<:Real} = NotSoLazy{T}(transpose(A.A), A.ws)
 
 function LinearAlgebra.mul!(y::AbstractVector, A::NotSoLazy, x::AbstractVector, α::Number, β::Number)
     mul_with!(A.ws, y, A.A, x, α, β)

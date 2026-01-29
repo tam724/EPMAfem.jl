@@ -55,9 +55,9 @@ function test_diag_materialization(AT, M, lazy_M)
     if AT <: CUDA.CUSPARSE.CuSparseMatrixCSC || AT <: CuArray return end
     if size(M, 1) != size(M, 2) return end
 
-    unlazy_M = unlazy(materialize(lazy_M), size->similar(dense_array_type(AT), size))
-    skel = Diagonal(similar(dense_array_type(AT), size(M, 1)))
-    diag_M, _ = PNLazyMatrices.materialize_diag_with(unlazy_M.ws, unlazy_M.A.args[1], skel, true, false)
+    unlazy_M = unlazy(materialize(diagonal(lazy_M)), size->similar(dense_array_type(AT), size))
+    diag_M, _ = PNLazyMatrices.materialize_with(unlazy_M.ws, unlazy_M.A)
+    @test diag_M isa Diagonal
     @test diag(diag_M) ≈ diag(M)
 end
 

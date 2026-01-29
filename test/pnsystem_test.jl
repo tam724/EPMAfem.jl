@@ -473,76 +473,6 @@ end
     @test M_.ws.cache.cache[PNLazyMatrices.lazy_objectid(B_c)][1][] == true
 end
 
-@testset "HalfSchurMatrix + solver" begin
-    A = rand(2, 2) |> x -> transpose(x) * x
-    D = rand(2, 2) |> x -> transpose(x) * x
-    B = rand(2, 3)
-    C1 = Diagonal(rand(3))
-    C2 = Diagonal(rand(3))
-
-    Al, Dl, Bl, C1l, C2l = lazy.((A, D, B, C1, C2))
-    BMl = [Al + Dl Bl
-    transpose(Bl) C1l + C2l]
-
-    BM = [A + D B
-    transpose(B) C1 + C2]
-
-    BMl_halfschur_minres = PNLazyMatrices.half_schur_complement(BMl, Krylov.minres, LinearAlgebra.inv!)
-    BMl_halfschur_gmres = PNLazyMatrices.half_schur_complement(BMl, Krylov.gmres, LinearAlgebra.inv!)
-    BMl_halfschur_backslash = PNLazyMatrices.half_schur_complement(BMl, \, LinearAlgebra.inv!)
-
-    x = rand(size(BMl_halfschur_minres, 2))
-    y_ = (BM \ copy(x))[1:2]
-
-    y_minres = unlazy(BMl_halfschur_minres) * copy(x)
-    @test y_minres ≈ y_
-    y_gmres = unlazy(BMl_halfschur_gmres) * copy(x)
-    @test y_gmres ≈ y_
-    y_backslash = unlazy(BMl_halfschur_backslash) * copy(x)
-    @test y_backslash ≈ y_
-end
-
-@testset "transpose(HalfSchurMatrix) + solver" begin
-    A = rand(2, 2)
-    D = rand(2, 2)
-    B = rand(2, 3)
-    Bt = rand(3, 2)
-    C1 = Diagonal(rand(3))
-    C2 = Diagonal(rand(3))
-
-    Al, Dl, Bl, Btl, C1l, C2l = lazy.((A, D, B, Bt, C1, C2))
-    BMl = [Al + Dl Bl
-    Btl C1l + C2l]
-
-    BM = [A + D B
-    Bt C1 + C2]
-
-    BMl_halfschur_gmres = PNLazyMatrices.half_schur_complement(BMl, Krylov.gmres, LinearAlgebra.inv!)
-    BMl_halfschur_backslash = PNLazyMatrices.half_schur_complement(BMl, \, LinearAlgebra.inv!)
-
-    x = rand(size(BMl_halfschur_gmres, 2))
-    y_ = (BM \ copy(x))[1:2]
-
-    y_gmres = unlazy(BMl_halfschur_gmres) * copy(x)
-    @test y_gmres ≈ y_
-    y_backslash = unlazy(BMl_halfschur_backslash) * copy(x)
-    @test y_backslash ≈ y_
-
-    # transpose
-    x = rand(size(BMl_halfschur_gmres, 2))
-    y_ = (transpose(BM) \ copy(x))[1:2]
-
-    y_gmres = unlazy(transpose(BMl_halfschur_gmres)) * copy(x)
-    @test y_gmres ≈ y_
-    y_gmres2 = transpose(unlazy(BMl_halfschur_gmres)) * copy(x)
-    @test y_gmres2 ≈ y_
-
-    y_backslash = unlazy(transpose(BMl_halfschur_backslash)) * copy(x)
-    @test y_backslash ≈ y_
-    y_backslash2 = transpose(unlazy(BMl_halfschur_backslash)) * copy(x)
-    @test y_backslash2 ≈ y_
-end
-
 @testset "SchurMatrix + gmres & \\" begin
     A = rand(2, 2)
     D = rand(2, 2)
@@ -559,7 +489,7 @@ end
     BM = [A + D B
     Bt C1 + C2]
     
-    BMl_schur_gmres = EPMAfem.schur_complement(BMl, Krylov.gmres, LinearAlgebra.inv!)
+    BMl_schur_gmres = EPMAfem.schur_complement(BMl, Krylov.gmres, LinearAlgebra.inv)
 
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
@@ -569,15 +499,13 @@ end
 
     # backslash
 
-    BMl_schur_backslash = EPMAfem.schur_complement(BMl, \, LinearAlgebra.inv!)
+    BMl_schur_backslash = EPMAfem.schur_complement(BMl, \, LinearAlgebra.inv)
 
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
 
     @test BM \ x ≈ unlazy(BMl_schur_backslash) * x
     @test transpose(BM) \ x ≈ unlazy(transpose(BMl_schur_backslash)) * x
-    
-    # TODO: find out why the transpose need 6* the workspace compared to the non transpose
 end
 
 @testset "SchurMatrix + minres" begin
@@ -594,7 +522,7 @@ end
     BM = [A + D B
     transpose(B) C]
     
-    BMl_schur_minres = EPMAfem.schur_complement(BMl, EPMAfem.minres, LinearAlgebra.inv!)
+    BMl_schur_minres = EPMAfem.schur_complement(BMl, EPMAfem.minres, LinearAlgebra.inv)
 
     x = rand(size(BMl, 1))
     y = rand(size(BMl, 2))
@@ -661,7 +589,7 @@ end
 
     Zl, Al, Dl, Bl, El = lazy.((Z, A, D, B, E))
 
-    C⁻¹l = \(Zl - Al*PNLazyMatrices.inv!(Dl)*Bl)
+    C⁻¹l = \(Zl - Al*inv(Dl)*Bl)
     C = Z - A*inv(D)*B
 
     x = rand(size(C, 1))
@@ -670,7 +598,7 @@ end
     @test transpose(C) \ x ≈ unlazy(transpose(C⁻¹l)) * x
     
 
-    K⁻¹l = \(Zl - Al*PNLazyMatrices.inv!(Dl + El)*Bl)
+    K⁻¹l = \(Zl - Al*inv(Dl + El)*Bl)
     K = Z - A*inv(D + E)*B
 
     x = rand(size(K, 1))
@@ -695,15 +623,15 @@ end
     @test transpose(C) \ x ≈ unlazy(transpose(C⁻¹l)) * x
 end
 
-@testset "InplaceInverseMatrix" begin
+@testset "InverseMatrix" begin
     D = Diagonal(rand(5))
     E = Diagonal(rand(5))
 
     DL = lazy(D)
     EL = lazy(E)
 
-    K = LinearAlgebra.inv!(kron(D + E, E))
-    KL = LinearAlgebra.inv!(kron(DL + EL, EL))
+    K = LinearAlgebra.inv(kron(D + E, E))
+    KL = LinearAlgebra.inv(kron(DL + EL, EL))
 
     x = rand(size(KL, 2))
 

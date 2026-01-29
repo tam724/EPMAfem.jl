@@ -1,4 +1,4 @@
-const ScaleMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractLazyScalar{T}, <:AbstractMatrix{T}}}
+const ScaleMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractLazyScalar{T}, <:AbstractMatrix{T}}, _NO_KWARGS}
 
 @inline a(S::ScaleMatrix) = S.args[1][]
 @inline _a(S::ScaleMatrix) = S.args[1]
@@ -29,15 +29,9 @@ function required_workspace(::typeof(materialize_with), S::ScaleMatrix, cache_no
     return register_cache_notifier(_a(S), cache_notifier) + required_workspace(materialize_with, A(S), cache_notifier)
 end
 
-
-function materialize_diag_with(ws::Workspace, S::ScaleMatrix, skeleton::Diagonal, α::Number, β::Number)
-    S_diag, _ = materialize_diag_with(ws, A(S), skeleton, α*a(S), β)
-    return S_diag, ws
-end
-
 # it seems as if now the fun starts :D this can be heavily optimized (matrix product chain, etc..) well only go for some simple heuristics here
 # let's start implementing this with only A*B (the general case follows later..)
-const TwoProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}}}
+const TwoProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}}, _NO_KWARGS}
 @inline A(M::TwoProdMatrix) = M.args[1]
 @inline B(M::TwoProdMatrix) = M.args[2]
 function Base.size(M::TwoProdMatrix)
@@ -111,7 +105,7 @@ function required_workspace(::typeof(materialize_with), M::TwoProdMatrix, cache_
 end
 
 # ProdMatrix
-const ProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{Vararg{AbstractMatrix{T}}}}
+const ProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{Vararg{AbstractMatrix{T}}}, _NO_KWARGS}
 @inline As(M::ProdMatrix) = M.args
 function Base.size(M::ProdMatrix)
     size(first(As(M)), 1), _product_matrix_size(size, As(M)...)
@@ -269,18 +263,8 @@ function required_workspace(::typeof(materialize_with), M::ProdMatrix, cache_not
     return 2*max_m*max_n + max_internals
 end
 
-function materialize_diag_with(ws::Workspace, K::ProdMatrix, skeleton::Diagonal, α::Number, β::Number)
-    #TODO: pretty bad implementation!
-    @assert size(K, 1) == size(K, 2)
-    for i in 1:size(K, 1)
-        skeleton.diag[i] = α * lazy_getindex(K, i, i) + β * skeleton.diag[i]
-    end
-    return skeleton, ws
-end
-
-
 # add an additional dispatch for A * X * B (this should probably be treated generally in ProdMatrix)
-const ThreeProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}}
+const ThreeProdMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractMatrix{T}, <:AbstractMatrix{T}, <:AbstractMatrix{T}}, _NO_KWARGS}
 @inline A(M::ThreeProdMatrix) = M.args[1]
 @inline X(M::ThreeProdMatrix) = M.args[2]
 @inline B(M::ThreeProdMatrix) = M.args[3]

@@ -118,7 +118,7 @@ function lazy_simplify(::typeof(+), L1::KronMatrix, L2::KronMatrix)
     end
 end
 
-const ScaleKronMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractLazyScalar{T}, KronMatrix{T}}}
+const ScaleKronMatrix{T} = LazyOpMatrix{T, typeof(*), <:Tuple{<:AbstractLazyScalar{T}, KronMatrix{T}}, _NO_KWARGS}
 
 function lazy_simplify(::typeof(+), L1::ScaleKronMatrix, L2::ScaleKronMatrix)
     a1, a2 = _a(L1), _a(L2)
@@ -267,6 +267,9 @@ lazy(::typeof(*), S::ScaleMatrix, A1::AbstractLazyMatrix) = lazy(*, _a(S), lazy(
 lazy(::typeof(*), A::AbstractLazyMatrixOrTranspose, P::ProdMatrix) = lazy(*, A, As(P)...)
 lazy(::typeof(*), P::ProdMatrix, A::AbstractLazyMatrixOrTranspose) = lazy(*, As(P)..., A)
 lazy(::typeof(*), P1::ProdMatrix, P2::ProdMatrix) = lazy(*, As(P1)..., As(P2)...)
+# fix ambiguity
+lazy(::typeof(*), S::ScaleMatrix, P::ProdMatrix) = lazy(*, _a(S), lazy(*, A(S), As(P)...))
+lazy(::typeof(*), P::ProdMatrix, S::ScaleMatrix) = lazy(*, _a(S), lazy(*, As(P)..., A(S)))
 
 lazy(::typeof(kron), A::AbstractLazyMatrixOrTranspose, P::KronMatrix) = lazy(kron, A, As(P)...)
 lazy(::typeof(kron), P::KronMatrix, A::AbstractLazyMatrixOrTranspose) = lazy(kron, As(P)..., A)
