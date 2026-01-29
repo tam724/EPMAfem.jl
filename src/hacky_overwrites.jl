@@ -313,3 +313,69 @@ function LinearAlgebra.ldiv!(B::AbstractGPUVecOrMat, D::Diagonal{<:Any, <:Abstra
     B .= α .* (dd .\ A) .+ β .* B
     return B
 end
+
+
+# we need diag for CuSparseMatrixCSC
+function LinearAlgebra.diag(A::CUDA.CUSPARSE.CuSparseMatrixCSC{T}, k::Integer=0) where T
+    m, n = size(A)
+    n_d = k < 0 ? min(m+k,n) : min(n-k,m)
+    diag = CuVector{T}(undef, n_d)
+    if isempty(A) || isempty(diag) return diag end
+    
+    @kernel function diag_kernel(diag, @Const(A_colPtr), @Const(A_rowVal), @Const(A_nzVal))
+        j = @index(Global, Linear)
+        col = j + ((k > 0) ? k : 0)
+        @inbounds nz_ind = A_colPtr[col]
+        @inbounds ind_next = A_colPtr[col+1]
+        v = zero(T)
+        while nz_ind < ind_next
+            @inbounds row = A_rowVal[nz_ind]
+            if col == row + k
+                @inbounds v = A_nzVal[nz_ind]
+                break
+            end
+            nz_ind += 1
+        end
+        @inbounds diag[j] = v
+    end
+    diag_kernel(get_backend(A))(diag, A.colPtr, A.rowVal, A.nzVal; ndrange = n_d)
+    return diag
+end
+
+function LinearAlgebra.diag(A::CUDA.CUSPARSE.CuSparseMatrixCSR{T}, k::Integer=0) where T
+    m, n = size(A)
+    n_d = k < 0 ? min(m+k,n) : min(n-k,m)
+    diag = CuVector{T}(undef, n_d)
+    if isempty(A) || isempty(diag) return diag end
+    
+    @kernel function diag_kernel(diag, @Const(A_rowPtr), @Const(A_colVal), @Const(A_nzVal))
+        i = @index(Global, Linear)
+        row = i + ((k < 0) ? -k : 0)
+        @inbounds nz_ind = A_rowPtr[row]
+        @inbounds ind_next = A_rowPtr[row+1]
+        v = zero(T)
+        while nz_ind < ind_next
+            @inbounds col = A_colVal[nz_ind]
+            if row + k == col
+                @inbounds v = A_nzVal[nz_ind]
+                break
+            end
+            nz_ind += 1
+        end
+        @inbounds diag[i] = v
+    end
+    diag_kernel(get_backend(A))(diag, A.rowPtr, A.colVal, A.nzVal; ndrange = n_d)
+    return diag
+end
+
+function LinearAlgebra.diag(At::Transpose{T, <:CUDA.CUSPARSE.CuSparseMatrixCSC{T}}, k::Integer=0) where T
+    A = parent(At)
+    At_ = CUDA.CUSPARSE.CuSparseMatrixCSR{T}(A.colPtr, A.rowVal, A.nzVal, reverse(A.dims))
+    return diag(At_, k)
+end
+
+function LinearAlgebra.diag(At::Transpose{T, <:CUDA.CUSPARSE.CuSparseMatrixCSR{T}}, k::Integer=0) where T
+    A = parent(At)
+    At_ = CUDA.CUSPARSE.CuSparseMatrixCSC{T}(A.rowPtr, A.colVal, A.nzVal, reverse(A.dims))
+    return diag(At_, k)
+end
