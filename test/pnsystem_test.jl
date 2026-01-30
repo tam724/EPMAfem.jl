@@ -769,7 +769,7 @@ end
     LM5 = LM4 * transpose(LM4);
 
     x = rand_vec(size(LM5, 2))
-    ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, ())
+    ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, 1, ())
     ws = EPMAfem.create_workspace(ws_size, rand_vec)
     y = rand_vec(size(LM5, 1))
     EPMAfem.mul_with!(ws, y, LM5, x, true, false)
@@ -813,7 +813,7 @@ end
         LM4 = may_m(γ * LM3 + kron(LM1, transpose(may_m(transpose(LJ) * LM2 * LJ))));
         LM5 = LM4 * transpose(LM4);
 
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, ())
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, 1, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM5, 1))
         EPMAfem.mul_with!(ws, y, LM5, x, true, false)
@@ -972,7 +972,7 @@ end
         LM4 = may_m(γ * LM3 + kron(LM1, transpose(may_m(transpose(LJ) * LM2 * LJ))));
         LM5 = LM4 * transpose(LM4);
 
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, ())
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM5, 1, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM5, 1))
         EPMAfem.mul_with!(ws, y, LM5, x, true, false)
@@ -1014,14 +1014,14 @@ end
         LM4 = EPMAfem.blockmatrix(LM1, LM2, transpose(LM2), LM3)
 
         x = rand_vec(size(LM4, 2))
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, ())
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, 1, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM4, 1))
         EPMAfem.mul_with!(ws, y, LM4, x, true, false)
         @test y ≈ M4 * x
 
         x = rand_vec(size(LM4, 1))
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, ())
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, 1, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM4, 2))
         EPMAfem.mul_with!(ws, y, transpose(LM4), x, true, false)
@@ -1065,14 +1065,14 @@ end
         LM4 = EPMAfem.blockmatrix(LM1, LM2, transpose(LM2), LM3)
 
         x = rand_vec(size(LM4, 2))
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, ())
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, 1, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM4, 1))
         EPMAfem.mul_with!(ws, y, LM4, x, true, false)
         @test y ≈ M4 * x
 
         x = rand_vec(size(LM4, 1))
-        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, ())
+        ws_size = EPMAfem.required_workspace(EPMAfem.mul_with!, LM4, 1, ())
         ws = EPMAfem.create_workspace(ws_size, rand_vec)
         y = rand_vec(size(LM4, 2))
         EPMAfem.mul_with!(ws, y, transpose(LM4), x, true, false)
@@ -1681,7 +1681,7 @@ end
 
     s = EPMAfem.materialize(k1 + k2)
 
-    EPMAfem.required_workspace(EPMAfem.mul_with!, s, ())
+    EPMAfem.required_workspace(EPMAfem.mul_with!, s, 1, ())
     ws = EPMAfem.create_workspace(EPMAfem.mul_with!, s, rand_vec)
 
     x = rand_vec(size(s, 2))

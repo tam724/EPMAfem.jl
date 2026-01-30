@@ -1,3 +1,4 @@
+module LazyMatrixExpressionTest
 using Revise
 using EPMAfem.PNLazyMatrices
 using Test
@@ -52,16 +53,16 @@ function test_materialization(AT, M, lazy_M)
 end
 
 _lump(A) = sum(A; dims=2)[:]
+_lump(A::Transpose) = sum(parent(A); dims=1)[:]
 
 function test_diag_materialization(AT, M, lazy_M)
-    if AT <: CUDA.CUSPARSE.CuSparseMatrixCSC || AT <: CuArray return end
     if size(M, 1) != size(M, 2) return end
 
     let
-        unlazy_M = unlazy(materialize(diagonal(lazy_M)), size->similar(dense_array_type(AT), size))
+        unlazy_M = unlazy(materialize(diagonal(lazy_M; diagview=diag)), size->similar(dense_array_type(AT), size))
         diag_M, _ = PNLazyMatrices.materialize_with(unlazy_M.ws, unlazy_M.A)
         @test diag_M isa Diagonal
-        @test diag(diag_M) ≈ diagview(M)
+        @test diag(diag_M) ≈ diag(M)
     end
 
     let
@@ -69,6 +70,14 @@ function test_diag_materialization(AT, M, lazy_M)
         diag_M, _ = PNLazyMatrices.materialize_with(unlazy_M.ws, unlazy_M.A)
         @test diag_M isa Diagonal
         @test diag(diag_M) ≈ _lump(M)
+    end
+
+    if AT <: CUDA.CUSPARSE.CuSparseMatrixCSC || AT <: CuArray return end
+    let
+        unlazy_M = unlazy(materialize(diagonal(lazy_M)), size->similar(dense_array_type(AT), size))
+        diag_M, _ = PNLazyMatrices.materialize_with(unlazy_M.ws, unlazy_M.A)
+        @test diag_M isa Diagonal
+        @test diag(diag_M) ≈ diagview(M)
     end
 end
 
@@ -549,4 +558,6 @@ let
             test_expression(AT{ST}, vars, expr)
         end
     end
+end
+
 end

@@ -52,9 +52,13 @@ end
 
 abstract type AbstractLazyMatrix{T} <: AbstractMatrix{T} end
 const AbstractLazyMatrixOrTranspose{T} = Union{<:AbstractLazyMatrix{T}, Transpose{T, <:AbstractLazyMatrix{T}}}
+
 # interface:
 function mul_with!() end
+function required_workspace(::typeof(mul_with!)) end
+
 function materialize_with() end
+function required_workspace(::typeof(materialize_with)) end
 
 # indirection to catch mul!(::Transpose, ...)
 _mul!(C::Transpose, A, B, α, β) = mul!(parent(C), transpose(B), transpose(A), α, β)
@@ -81,7 +85,6 @@ lazy_objectid(::AbstractMatrix) = error("oh ohh.. ")
 max_size(A::AbstractLazyMatrix, n::Integer) = max_size(A)[n]
 LinearAlgebra.transpose(A::AbstractLazyMatrix) = isdiagonal(A) ? A : Transpose(A)
 LinearAlgebra.adjoint(A::AbstractLazyMatrix{<:Real}) = transpose(A)
-required_workspace(::typeof(mul_with!), L::AbstractLazyMatrix, cache_notifier) = required_workspace(mul_with!, L, 1, cache_notifier) # TODO: remove usage, deprecated
 
 """
     LazyOpMatrix{T, ...}

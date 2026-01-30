@@ -13,6 +13,6 @@ using Test
 @time @testset "EPMAfemLazyMatrixExpr" begin include("lazymatrix_expression_test.jl") end
 @time @testset "TwoDiagMatrix" begin include("twodiagmatrix_test.jl") end
 @time @testset "RowSparseMatrices" begin include("rowsparsematrices_test.jl") end
-@time @testset "RowSparseMatrices" begin include("hacky_overwrites_test.jl") end
+@time @testset "HackyOverwrites" begin include("hacky_overwrites_test.jl") end
 
 end

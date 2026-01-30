@@ -106,7 +106,7 @@ function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, A::AbstractLazyMatrixOrTrans
     return blockmatrix(A, nothing, nothing, B)
 end
 
-diagonal(A::AbstractLazyMatrixOrTranspose) = lazy(diagonal, A)
+diagonal(A::AbstractLazyMatrixOrTranspose; diagview=diagview) = lazy(diagonal, A; diagview=diagview)
 
 # blockdiagmatrix(A::AbstractLazyMatrixOrTranspose, B::AbstractLazyMatrixOrTranspose) = lazy(blockdiagmatrix, A, B)
 # function Base.hvcat(sizes::Tuple{<:Int64, <:Int64}, A::AbstractLazyMatrixOrTranspose, ::Nothing, ::Nothing, B::AbstractLazyMatrixOrTranspose)
@@ -141,8 +141,8 @@ function unlazy(At::Transpose{T, <:AbstractLazyMatrix{T}}, ws_alloc=zeros; n=1) 
     return NotSoLazy{T}(At, ws)
 end
 
-_recursive_required_workspace_mul(A::AbstractLazyMatrix) = required_workspace(mul_with!, A, ())
-_recursive_required_workspace_mul(At::Transpose{T, <:AbstractLazyMatrix}) where T = required_workspace(mul_with!, parent(At), ())
+_recursive_required_workspace_mul(A::AbstractLazyMatrix) = required_workspace(mul_with!, A, 1, ())
+_recursive_required_workspace_mul(At::Transpose{T, <:AbstractLazyMatrix}) where T = required_workspace(mul_with!, parent(At), 1, ())
 _recursive_required_workspace_mul(a::AbstractLazyScalar) = 0
 _recursive_required_workspace_mul(coll) = mapreduce(_recursive_required_workspace_mul, max, coll)
 

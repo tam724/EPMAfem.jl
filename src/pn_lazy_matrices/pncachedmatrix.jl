@@ -50,7 +50,14 @@ function materialize_with(ws::Workspace, M::BMaterializedMatrix, skeleton::Abstr
     if warn @warn "Materializing a materialized matrix" end
     bcd_, _ = materialize_broadcasted(ws, A(M), false)
     bcd = Base.Broadcast.instantiate(bcd_)
-    M_ = Base.Broadcast.materialize!(skeleton, bcd)
+    # TODO: HACK! CUSPARSE does not support broadcasting into output storage..
+    bcd_flat = Base.Broadcast.flatten(bcd)
+    if any(args -> typeof(args) <: CUDA.GPUArrays.AbstractGPUSparseMatrix, bcd_flat.args)
+        M_ = Base.Broadcast.materialize(bcd)
+    else
+    # END HACK
+        M_ = Base.Broadcast.materialize!(skeleton, bcd)
+    end
     return M_, ws
 end
 function materialize_with(ws::Workspace, M::BMaterializedMatrix, skeleton::AbstractMatrix, α::Number, β::Number; warn=true)

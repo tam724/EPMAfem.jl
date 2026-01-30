@@ -379,3 +379,9 @@ function LinearAlgebra.diag(At::Transpose{T, <:CUDA.CUSPARSE.CuSparseMatrixCSR{T
     At_ = CUDA.CUSPARSE.CuSparseMatrixCSC{T}(A.rowPtr, A.colVal, A.nzVal, reverse(A.dims))
     return diag(At_, k)
 end
+
+function LinearAlgebra.mul!(C::CuMatrix, A::Union{GPUArrays.AbstractGPUSparseArray, Transpose{<:Number, <:GPUArrays.AbstractGPUSparseArray}}, B::Union{GPUArrays.AbstractGPUSparseArray, <:Transpose{<:Number, <:GPUArrays.AbstractGPUSparseArray}}, α::Number, β::Number)
+    @warn "Please don't try this at home!"
+    C .= α .* CuMatrix(A * B) .+ β .* C
+    return C
+end

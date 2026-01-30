@@ -17,7 +17,7 @@ function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(K::InverseM
         @assert isone(α)
         @assert iszero(β)
         A_, _ = materialize_with(ws, lazy(decide_materialize_strategy(A(K)), A(K))) # enforce materialization
-        ldiv!(Y, lu!(A), X)
+        ldiv!(Y, lu!(A_), X)
     end
 end
 
