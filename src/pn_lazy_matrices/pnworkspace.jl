@@ -89,11 +89,13 @@ function mat_view(v::AbstractVector, m::Integer, n::Integer)
 end
 
 function structured_mat_view(v::AbstractVector, M::AbstractMatrix)
+    M_structure = structure(M)
     if isdiagonal(M)
-        return Diagonal(@view(v[1:only_unique(size(M))]))
-    else
-        return reshape(@view(v[1:prod(size(M))]), size(M))
+        @assert M_structure isa DiagonalStructure
     end
+    ws = required_workspace(M_structure, size(M))
+    memory = reshape(@view(v[1:prod(ws)]), ws)
+    return M_structure(memory)
 end
 
 function structured_from_ws(ws::Workspace, L::AbstractMatrix)
