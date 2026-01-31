@@ -8,6 +8,7 @@ using LinearAlgebra
 
 using EPMAfem.Dimensions
 using EPMAfem.Sparse3Tensor
+using EPMAfem.BlockDiagonals
 using EPMAfem.PNLazyMatrices
 
 include("space_model.jl")

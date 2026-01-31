@@ -21,6 +21,8 @@ include("special_matrices/sparse3tensor.jl")
 using EPMAfem.Sparse3Tensor
 include("special_matrices/blockedmatrices.jl")
 using EPMAfem.BlockedMatrices
+include("special_matrices/blockdiagmatrix.jl")
+using EPMAfem.BlockDiagonals
 
 # include("special_matrices/twodiagonalmatrix.jl")
 

@@ -3,7 +3,13 @@
 ∂y(u, dims) = ∂(Y(), u, dims)
 ∂z(u, dims) = ∂(Z(), u, dims)
 
-∫R_ρuv(ρ) = (u, v, (dims, dx, dΓ, dΓi, n)) -> ∫(ρ*u*v)dx
+struct ∫R_ρuv{F}
+    ρ::F
+end
+
+function (int::∫R_ρuv)(u, v, (dims, dx, dΓ, dΓi, n))
+    return ∫(int.ρ*u*v)dx
+end
 ∫R_uv(u, v, (dims, dx, dΓ, dΓi, n)) = ∫(u*v)dx
 # ∫R_v(v, (dims, dx, dΓ, dΓi, n)) = ∫(v)dx
 
@@ -81,4 +87,21 @@ function assemble_bilinear(a::Union{typeof(∫R_u_∂zv), typeof(∫R_u_∂xv), 
     end
     return kron(reverse(lazy.(Matrix.(_assemble_bilinear.(rank_decomp(a, dimensionality(model)), model._args, Us, Vs))))...)
     # return assemble_bilinear(a, model, U, V)
+end
+
+function is_discontinuous(V::Gridap.FESpaces.FESpace)
+    cell_dofs = Gridap.FESpaces.get_cell_dof_ids(V)
+    # flatten DOFs of all cells
+    all_dofs = vcat(cell_dofs...)
+    # if number of unique DOFs equals total DOFs, it's discontinuous
+    length(all_dofs) == length(unique(all_dofs))
+end
+
+function assemble_bilinear(a::Union{typeof(∫R_uv), ∫R_ρuv}, model, U, V)
+    if U == V && is_discontinuous(U)
+        n_per_cell = unique(length.(Gridap.FESpaces.get_cell_dof_ids(U))) |> only
+        return BlockDiagonal{n_per_cell}(_assemble_bilinear(a, get_args(model), U, V))
+    else
+        return _assemble_bilinear(a, get_args(model), U, V)
+    end
 end
