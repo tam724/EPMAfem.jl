@@ -6,6 +6,10 @@ function lazy_print(io::IO, L::LazyMatrix, indent=0)
     println(io, string(repeat(_INDENT, indent)), iszero(indent) ? " " : "∟ ", "($(repr(lazy_objectid(L))))::", size_string(L)," $(typeof(L))")
 end
 
+function lazy_print(io::IO, L::LazyResizeMatrix, indent=0)
+    println(io, string(repeat(_INDENT, indent)), iszero(indent) ? " " : "∟ ", "($(repr(lazy_objectid(L))))::", size_string(L)," $(typeof(L))")
+end
+
 function lazy_print(io::IO, a::AbstractLazyScalar, indent=0)
     println(io, string(repeat(_INDENT, indent)), iszero(indent) ? " " : "∟ ", "($(a[]))::$(typeof(a))")
 end

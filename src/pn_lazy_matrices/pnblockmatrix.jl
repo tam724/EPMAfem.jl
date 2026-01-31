@@ -38,6 +38,7 @@ diag_blocks(BM::BlockMatrix) = A(BM), B(BM), C(BM), D(BM)
 Base.size(BM::BlockMatrix) = duplicate(sum(block_size(BM)))
 max_size(BM::BlockMatrix) = duplicate(sum(max_block_size(BM)))
 isdiagonal(BM::BlockMatrix) = false # would need B === 0
+structure(::BlockMatrix) = DenseStructure()
 
 function lazy_getindex(BM::BlockMatrix, i::Int, j::Int)
     mA, nA = size(A(BM))
@@ -136,6 +137,7 @@ duplicate(x) = (x, x)
 Base.size(BM::BlockDiagMatrix) = duplicate(sum(block_size(BM)))
 max_size(BM::BlockDiagMatrix) = duplicate(sum(max_block_size(BM)))
 isdiagonal(BM::BlockDiagMatrix) = isdiagonal(A(BM)) && isdiagonal(B(BM))
+structure(BM::BlockDiagMatrix) = isdiagonal(A(BM)) && isdiagonal(B(BM)) ? DiagonalStructure() : DenseStructure()
 
 function lazy_getindex(BM::BlockDiagMatrix{T}, i::Int, j::Int) where T
     mA, nA = size(A(BM))

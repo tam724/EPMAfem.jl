@@ -18,6 +18,7 @@ function lazy_getindex(D::DiagMatrix{T}, i::Int, j::Int) where {T}
 end
 
 isdiagonal(D::DiagMatrix) = true
+structure(::DiagMatrix) = DiagonalStructure()
 LinearAlgebra.transpose(D::DiagMatrix) = diagonal(transpose(A(D)))
 
 materialize_with(ws::Workspace, D::DiagMatrix, skeleton::Diagonal) = materialize_with(ws, D, skeleton, true, false)

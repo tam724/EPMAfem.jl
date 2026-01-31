@@ -12,6 +12,8 @@ function max_size(At::Transpose{T, <:AbstractLazyMatrix}, n::Integer) where T
     end
 end
 isdiagonal(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = isdiagonal(parent(Lt))
+structure(Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = structure(parent(Lt)) # TODO: transpose structure ? 
+
 required_workspace(::typeof(mul_with!), Lt::Transpose{T, <:AbstractLazyMatrix{T}}, n, cache_notifier) where T = required_workspace(mul_with!, parent(Lt), n, cache_notifier)
 
 

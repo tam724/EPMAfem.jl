@@ -20,6 +20,13 @@ function lazy_getindex(K::KronMatrix{T}, i::Integer, j::Integer) where T
     return val
 end
 isdiagonal(K::KronMatrix) = all(isdiagonal, As(K))
+
+structure(::typeof(kron), ::Vararg{AbstractMatrixStructure}) = DenseStructure()
+structure(::typeof(kron), ::Vararg{<:DiagonalStructure}) = DiagonalStructure()
+structure(::typeof(kron), ::DiagonalStructure, ::BlockDiagonalStructure{N}) where N = BlockDiagonalStructure{N}()
+structure(::typeof(kron), a::DiagonalStructure, b::DiagonalStructure, c::Vararg{AbstractMatrixStructure}) = structure(kron, DiagonalStructure(), c...)
+structure(K::KronMatrix) = structure(kron, structure.(K.args)...)
+
 LinearAlgebra.transpose(K::KronMatrix) = lazy(kron, transpose.(As(K))...)
 
 _r_view(A::AbstractArray, n...) = reshape(@view(A[1:prod(n)]), n...)

@@ -1,6 +1,5 @@
 module BlockDiagonals
 using LinearAlgebra
-using ConcreteStructs
 using SparseArrays
 using Adapt
 
@@ -88,6 +87,30 @@ function Base.getindex(A::BlockDiagonal{T, N}, i, j) where {T, N}
     return A.diag[block_offset + ii + jj * N + 1]
 end
 
+function Base.setindex!(A::BlockDiagonal{T, N}, v, i, j) where {T, N}
+    # bounds check
+    m = size(A, 1)
+    (1 ≤ i ≤ m && 1 ≤ j ≤ m) || throw(BoundsError(A, (i, j)))
+
+    # which block are we in?
+    bi = (i - 1) ÷ N
+    bj = (j - 1) ÷ N
+
+    # off-diagonal block → zero
+    if bi != bj
+        iszero(v) || error("Cannot set off diagonal block element to nonzero")
+        return 
+    end
+
+    # local indices inside the block
+    ii = (i - 1) % N
+    jj = (j - 1) % N
+
+    # index into diag (column-major)
+    block_offset = bi * N * N
+    return A.diag[block_offset + ii + jj * N + 1] = v
+end
+
 Adapt.adapt_structure(to, x::BlockDiagonal{T, N}) where {T, N} = BlockDiagonal{N}(Adapt.adapt_structure(to, x.diag))
 
 function LinearAlgebra.mul!(c::AbstractVector, A::BlockDiagonal{T, N}, b::AbstractVector, α::Number, β::Number) where {T, N}
@@ -118,6 +141,13 @@ function LinearAlgebra.mul!(C::AbstractMatrix, B::AbstractMatrix, A::BlockDiagon
         mul!(C_i, B_i, A_i, α, β)
     end
     return C
+end
+
+function LinearAlgebra.inv!(A::BlockDiagonal{T, N}) where {T, N}
+    for i in 1:n_blocks(A)
+        A_i = reshape(@view(A.diag[(i-1)*N*N + 1: i*N*N]), (N, N))
+        A_i .= inv(A_i)
+    end
 end
 
 

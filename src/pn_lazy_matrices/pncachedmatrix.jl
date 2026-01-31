@@ -20,6 +20,7 @@ max_size(M::MaterializedOrCachedMatrix) = max_size(A(M))
 lazy_getindex(M::MaterializedMatrix{T}, idx::Vararg{Integer}) where T = lazy_getindex(A(M), idx...)
 lazy_getindex(C::CachedMatrix{T}, idx::Vararg{Integer}) where T = lazy_getindex(M(C), idx...)
 @inline isdiagonal(M::MaterializedOrCachedMatrix) = isdiagonal(A(M))
+structure(M::MaterializedOrCachedMatrix) = structure(A(M))
 lazy_objectid(M::MaterializedOrCachedMatrix) = lazy_objectid(A(M))
 
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(M::MaterializedOrCachedMatrix), X::AbstractVecOrMat, α::Number, β::Number)

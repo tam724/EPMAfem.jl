@@ -5,6 +5,7 @@ A(K::InverseMatrix) = only(K.args)
 Base.size(K::InverseMatrix) = size(A(K))
 max_size(K::InverseMatrix) = max_size(A(K))
 isdiagonal(K::InverseMatrix) = isdiagonal(A(K))
+structure(K::InverseMatrix) = structure(A(K))
 
 lazy_getindex(::InverseMatrix, ::Int, ::Int) = error("Cannot getindex")
 LinearAlgebra.transpose(K::InverseMatrix) = lazy(inv, transpose(A(K)))
@@ -60,6 +61,7 @@ A(K::KrylovMinresMatrix) = only(K.args)
 Base.size(K::KrylovMinresMatrix) = size(A(K))
 max_size(K::KrylovMinresMatrix) = max_size(A(K))
 isdiagonal(K::KrylovMinresMatrix) = isdiagonal(A(K))
+structure(K::KrylovMinresMatrix) = structure(A(K))
 
 lazy_getindex(K::KrylovMinresMatrix, i::Int, j::Int) = error("Cannot getindex")
 
@@ -120,6 +122,7 @@ A(K::KrylovGmresMatrix) = K.args[1]
 Base.size(K::KrylovGmresMatrix) = size(A(K))
 max_size(K::KrylovGmresMatrix) = max_size(A(K))
 isdiagonal(K::KrylovGmresMatrix) = isdiagonal(A(K))
+structure(K::KrylovGmresMatrix) = structure(A(K))
 
 lazy_getindex(K::KrylovGmresMatrix, i::Int, j::Int) = error("Cannot getindex")
 
@@ -160,6 +163,7 @@ A(K::KrylovCGMatrix) = K.args[1]
 Base.size(K::KrylovCGMatrix) = size(A(K))
 max_size(K::KrylovCGMatrix) = max_size(A(K))
 isdiagonal(K::KrylovCGMatrix) = isdiagonal(A(K))
+structure(K::KrylovCGMatrix) = structure(A(K))
 
 lazy_getindex(::KrylovCGMatrix, ::Int, ::Int) = error("Cannot getindex")
 
@@ -265,6 +269,7 @@ function max_size(S::SchurMatrix)
     return duplicate(n1 + n2)
 end
 isdiagonal(S::SchurMatrix) = false # should not happen..
+structure(S::SchurMatrix) = DenseStructure()
 
 lazy_getindex(S::SchurMatrix, i::Int, j::Int) = error("Cannot getindex")
 

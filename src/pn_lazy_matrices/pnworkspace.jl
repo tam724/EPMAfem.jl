@@ -71,6 +71,11 @@ function take_ws(ws::PreallWorkspace, n::Integer)
     return @view(ws.workspace[1:n]), PreallWorkspace(@view(ws.workspace[n+1:end]), ws.cache)
 end
 
+function take_ws(ws::PreallWorkspace, (n, )::Tuple{<:Integer})
+    return @view(ws.workspace[1:n]), PreallWorkspace(@view(ws.workspace[n+1:end]), ws.cache)
+end
+
+
 function take_ws(ws::PreallWorkspace, (n, m)::Tuple{<:Integer, <:Integer})
     return reshape(@view(ws.workspace[1:n*m]), (n, m)), PreallWorkspace(@view(ws.workspace[n*m+1:end]), ws.cache)
 end
@@ -92,29 +97,12 @@ function structured_mat_view(v::AbstractVector, M::AbstractMatrix)
 end
 
 function structured_from_ws(ws::Workspace, L::AbstractMatrix)
+    L_structure = structure(L)
     if isdiagonal(L)
-        memory, rem = take_ws(ws, only_unique(size(L)))
-        structured_L = Diagonal(memory)
-        return structured_L, rem
-    else
-        return take_ws(ws, size(L))
+        @assert L_structure isa DiagonalStructure
     end
-end
-
-function required_workspace(::typeof(structured_from_ws), A::AbstractMatrix)
-    return prod(size(A))
-end
-
-function required_workspace(::typeof(structured_from_ws), A::Diagonal)
-    return only_unique(size(A))
-end
-
-function required_workspace(::typeof(structured_from_ws), L::AbstractLazyMatrix)
-    if isdiagonal(L) #  we only track diagonal (thats the only thing we will need this for, not general though..)
-        return only_unique(max_size(L))
-    else
-        return prod(max_size(L))
-    end
+    memory, rem = take_ws(ws, required_workspace(L_structure, size(L)))
+    return L_structure(memory), rem
 end
 
 function structured_from_ws(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T
@@ -122,6 +110,7 @@ function structured_from_ws(ws::Workspace, Lt::Transpose{T, <:AbstractLazyMatrix
     return transpose(L), ws
 end
 
+required_workspace(::typeof(structured_from_ws), L::AbstractLazyMatrix) = prod(required_workspace(structure(L), max_size(L)))
 required_workspace(::typeof(structured_from_ws), Lt::Transpose{T, <:AbstractLazyMatrix{T}}) where T = required_workspace(structured_from_ws, parent(Lt))
 
 function invalidate_cache!(ws::Workspace)

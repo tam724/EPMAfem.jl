@@ -9,6 +9,7 @@ lazy_getindex(S::ScaleMatrix, idx::Vararg{Integer}) = a(S)*getindex(A(S), idx...
 @inline isdiagonal(S::ScaleMatrix) = isdiagonal(A(S))
 LinearAlgebra.transpose(S::ScaleMatrix) = lazy(*, _a(S), transpose(A(S)))
 
+structure(S::ScaleMatrix) = structure(A(S))
 
 mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(S::ScaleMatrix), X::AbstractVecOrMat, α::Number, β::Number) = mul_with!(ws, Y, A(S), X, a(S)*α, β)
 mul_with!(ws::Workspace, Y::AbstractMatrix, X::AbstractMatrix, @nospecialize(S::ScaleMatrix), α::Number, β::Number) = mul_with!(ws, Y, X, A(S), a(S)*α, β)
@@ -140,6 +141,14 @@ function lazy_getindex(M::ProdMatrix, i::Int, j::Int)
     return x[i]
 end
 isdiagonal(M::ProdMatrix) = all(isdiagonal, As(M))
+function structure(M::ProdMatrix)
+    if all(isdiagonal, As(M))
+        return DiagonalStructure()
+        # TODO!
+    else
+        return DenseStructure()
+    end
+end
 
 LinearAlgebra.transpose(M::ProdMatrix) = lazy(*, reverse(transpose.(As(M)))...)
 

@@ -7,6 +7,9 @@ using ConcreteStructs
 using Krylov
 using Adapt
 
+using EPMAfem.BlockDiagonals
+
+include("pnmatrixstructure.jl")
 include("pnmatrices.jl")
 include("pnlazymatrix.jl")
 include("pnscalar.jl")

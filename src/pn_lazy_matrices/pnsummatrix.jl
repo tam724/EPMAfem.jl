@@ -6,6 +6,14 @@ lazy_getindex(S::SumMatrix, idx::Vararg{Integer}) = +(getindex.(As(S), idx...)..
 isdiagonal(S::SumMatrix) = all(isdiagonal, As(S))
 LinearAlgebra.transpose(S::SumMatrix) = lazy(+, transpose.(As(S))...)
 
+structure(::typeof(+), ::AbstractMatrixStructure, ::AbstractMatrixStructure) = DenseStructure()
+structure(::typeof(+), ::S, ::S) where {S <: AbstractMatrixStructure} = S()
+structure(::typeof(+), ::Vararg{S}) where {S <: AbstractMatrixStructure} = S()
+structure(::typeof(+), ::DiagonalStructure, ::BlockDiagonalStructure{N}) where N = BlockDiagonalStructure{N}()
+structure(::typeof(+), ::BlockDiagonalStructure{N}, ::DiagonalStructure) where N = BlockDiagonalStructure{N}()
+structure(::typeof(+), a::AbstractMatrixStructure, b::AbstractMatrixStructure, c...) = structure(+, structure(+, a, b), c...)
+structure(S::SumMatrix) = structure(+, structure.(S.args)...)
+
 
 ## mul_with
 function mul_with!(ws::Workspace, Y::AbstractVecOrMat, @nospecialize(S::SumMatrix), X::AbstractVecOrMat, α::Number, β::Number)

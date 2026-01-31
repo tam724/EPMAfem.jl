@@ -12,6 +12,10 @@ lazy_getindex(L::LazyMatrix, i::Int, j::Int) = getindex(A(L), i, j)
 isdiagonal(::LazyMatrix{<:Number, <:Diagonal}) = true
 isdiagonal(::LazyMatrix{<:Number, <:AbstractArray}) = false
 
+structure(::LazyMatrix{<:Number, <:Diagonal}) = DiagonalStructure()
+structure(::LazyMatrix{<:Number, <:BlockDiagonal{<:Any, N}}) where N = BlockDiagonalStructure{N}()
+structure(::LazyMatrix{<:Number, <:AbstractArray}) = DenseStructure()
+
 _label(A::AbstractMatrix) = "$(size(A))Matrix"
 _label(A::CUDA.CUSPARSE.SparseArrays.AbstractSparseMatrix) = "$(size(A))Sparse[nnz=$(CUDA.CUSPARSE.nnz(A))]"
 _label(A::Diagonal) = "$(size(A))Diagonal"

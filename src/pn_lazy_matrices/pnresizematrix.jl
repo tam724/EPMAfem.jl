@@ -42,6 +42,7 @@ max_size(R::LazyResizeMatrix) = R.max_size
 max_size(R::LazyResizeMatrix, n::Integer) = R.max_size[n]
 lazy_getindex(R::LazyResizeMatrix, i::Integer, j::Integer) = getindex(_reshape_view(R), i, j)
 @inline isdiagonal(R::LazyResizeMatrix) = false
+@inline structure(R::LazyResizeMatrix) = DenseStructure()
 
 function lazy_setindex!(ws::Workspace, R::LazyResizeMatrix, val, i::Integer, j::Integer)
     A(R)[i, j] = val
