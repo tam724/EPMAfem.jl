@@ -69,7 +69,17 @@ function get_args_(discrete_model::DiscreteModel{ND, ND}) where ND
     dims = dimensionality(ND)
     R = Triangulation(discrete_model)
     Γ = BoundaryTriangulation(discrete_model)
+
     dx = Measure(R, 6)
+    # if ND == 2
+    #     nodal_quad = Gridap.ReferenceFEs.GenericQuadrature([Point(0.0, 0.0), Point(0.0, 1.0), Point(1.0, 0.0), Point(1.0, 1.0)], [0.25, 0.25, 0.25, 0.25], "nodal")
+    #     dx = Measure(CellQuadrature(R, nodal_quad))
+    # elseif ND == 1
+    #     nodal_quad = Gridap.ReferenceFEs.GenericQuadrature([Point(0.0), Point(1.0)], [0.5, 0.5], "nodal")
+    #     dx = Measure(CellQuadrature(R, nodal_quad))
+    # else
+    #     error("Not implemented")
+    # end
     dΓ = Measure(Γ, 6)
     dΓi = Dict((tag => Measure(BoundaryTriangulation(discrete_model; tags=tag), 6)) for tag in boundary_tags(dims))
     n = get_normal_vector(Γ)
@@ -135,7 +145,8 @@ function eval_basis_boundary(model, μ::Function, dim)
 end
 
 function interpolable(vec, model)
-    interp = uncached_interpolable(vec, model)
+    f = uncached_interpolable(vec, model)
+    interp = Gridap.CellData.Interpolable(f; searchmethod=Gridap.CellData.KDTreeSearch(; num_nearest_vertices=5))
     rand_point = cartesian_unit_vector(Z(), dimensionality(model))
     cache = Gridap.Arrays.return_cache(interp, rand_point)
     return x -> Gridap.Arrays.evaluate!(cache, interp, x)

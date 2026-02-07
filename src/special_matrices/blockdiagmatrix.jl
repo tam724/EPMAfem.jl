@@ -2,6 +2,7 @@ module BlockDiagonals
 using LinearAlgebra
 using SparseArrays
 using Adapt
+using StaticArrays
 
 """
     BlockDiagonal{T, N<:Integer, V<:AbstractVector{T}} <: AbstractMatrix{T}
@@ -143,11 +144,57 @@ function LinearAlgebra.mul!(C::AbstractMatrix, B::AbstractMatrix, A::BlockDiagon
     return C
 end
 
+function fast_inv!(::Val{N}, A::AbstractArray{T}) where {N, T}
+    if N < 14 # see StaticArrays.jl 
+        A_static = SMatrix{N, N, T}(A)
+        A .= inv(A_static)
+    else
+        A .= inv!(A)
+    end
+end
+
+function LinearAlgebra.lu!(A::BlockDiagonal{T, N}, pivot::Union{RowMaximum,NoPivot,RowNonZero} = LinearAlgebra.lupivottype(eltype(A)); check=true, allowsingular=false) where {T, N}
+    ipiv = zeros(Int64, size(A, 1))
+    for i in 1:n_blocks(A)
+        A_i = reshape(@view(A.diag[(i-1)*N*N + 1: i*N*N]), (N, N))
+        A_i_LU = lu!(A_i, pivot; check=check, allowsingular=allowsingular)
+        @assert issuccess(A_i_LU; allowsingular=allowsingular) 
+        @view(ipiv[N*(i-1)+1: N*i]) .= A_i_LU.ipiv
+    end
+    return LU(A, ipiv, zero(LinearAlgebra.BlasInt))
+end
+
+function LinearAlgebra.ldiv!(A_lu::LU{T, <:BlockDiagonal{T, N}}, B::AbstractVecOrMat) where {T, N}
+    A = A_lu.factors
+    for i in 1:n_blocks(A)
+        b_i = @view(B[N*(i-1)+1: N*i, :])
+        A_i_LU = LU(reshape(@view(A.diag[(i-1)*N*N + 1: i*N*N]), (N, N)), @view(A_lu.ipiv[N*(i-1)+1: N*i]), 0)
+        ldiv!(A_i_LU, b_i)
+    end
+    return B
+end
+
 function LinearAlgebra.inv!(A::BlockDiagonal{T, N}) where {T, N}
     for i in 1:n_blocks(A)
         A_i = reshape(@view(A.diag[(i-1)*N*N + 1: i*N*N]), (N, N))
-        A_i .= inv(A_i)
+        A_i .= fast_inv!(Val{N}(), A_i)
     end
+end
+
+function LinearAlgebra.kron!(C::BlockDiagonal{<:Any, N}, A::Diagonal, B::BlockDiagonal{<:Any, N}) where N
+    n_b = length(B.diag)
+    for i in 1:length(A.diag)
+        C.diag[n_b*(i-1)+1:n_b*i] .= B.diag .* A.diag[i:i]
+    end
+    return C
+end
+
+function LinearAlgebra.kron!(C::BlockDiagonal{<:Any, N}, A::Diagonal, B::BlockDiagonal{<:Any, N}, α::Number, β::Number) where N
+    n_b = length(B.diag)
+    for i in 1:length(A.diag)
+        C.diag[n_b*(i-1)+1:n_b*i] .= α .* B.diag .* A.diag[i:i] .+ β .* C.diag[n_b*(i-1)+1:n_b*i]
+    end
+    return C
 end
 
 
