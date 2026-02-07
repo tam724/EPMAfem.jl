@@ -1,41 +1,30 @@
 using Revise
+using EPMAfem
 using EPMAfem.PNLazyMatrices
-using EPMAfem.Krylov
-using LinearAlgebra
+using EPMAfem.BlockDiagonals
 using EPMAfem.CUDA
-using MethodAnalysis
+using EPMAfem.SparseArrays
+using LinearAlgebra
 
-N = 5
-A = lazy(randn(N, N) + 3*I |> A -> transpose(A) * A)
-B = lazy(randn(N, N) + 3*I |> A -> transpose(A) * A)
-C = lazy(Diagonal(rand(N)))
+using EPMAfem.SphericalHarmonicsModels
+SH = EPMAfem.SphericalHarmonicsModels
 
-A_dense = kron(2.0 * A.A + B.A, C.A + 2.0*A.A)
+model = SH.EOSphericalHarmonicsModel(10, 3)
 
-A_ = unlazy(kron(2.0 * A + B, C + 2.0 * A))
+SH.plus(model)
 
-A_ * rand(size(A_, 2))
-
-methods(PNLazyMatrices.mul_with!)
-methodinstances(PNLazyMatrices.mul_with!)
+A = SH.assemble_bilinear(SH.∫S²_μuv(Ω -> Ω[1]*Ω[3]), model, SH.minus(model), SH.minus(model), SH.lebedev_quadrature_max())
+heatmap(A)
+eigen(A).values
 
 
-skel = Diagonal(zeros(size(A_, 1)))
-test, ws = PNLazyMatrices.materialize_diag_with(A_.ws, A_.A, skel, true, false)
+using EPMAfem.Gridap
 
-@assert diag(A_dense) ≈ diag(test)
+model = CartesianDiscreteModel((0, 1), 10)
+V = TestFESpace(model, ReferenceFE(raviart_thomas, Float64, 0), conformity=:Hdiv)
 
+Ω = Triangulation(model)
+dx = Measure(Ω, 5)
 
-
-
-
-
-
-M = unlazy(kron(A, B))
-
-M_ = kron(A.A, B.A)
-diag(M_)
-
-
-
-test, ws = PNLazyMatrices
+a(u,v) = ∫(dot(u, v))dx
+A = assemble_matrix(a, TrialFESpace(V), V)
