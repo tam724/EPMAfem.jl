@@ -18,7 +18,7 @@ Questions? Feel free to contact:
     # clone the repository and start julia
     > git clone git@github.com:tam724/EPMAfem.jl.git
     > cd EPMAfem.jl
-    > julia
+    > julia #used julia version 1.11.4
 
     # in pkg mode (julia> ]) activate and instantiate the project
     pkg> activate scripts_twofold_adjoint_method/
@@ -30,4 +30,4 @@ Questions? Feel free to contact:
     # for the reduced taylor remainder
     julia> include("scripts_twofold_adjoint_method/taylor_remainder1D.jl")
 ```
-(Instantiation will load the version `EPMAfem.jl#v0.2.0`)
+(Instantiation will load the version `EPMAfem.jl#twofold_repro`)
