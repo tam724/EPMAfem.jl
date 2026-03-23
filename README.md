@@ -18,7 +18,7 @@ Questions? Feel free to contact:
     # clone the repository and start julia
     > git clone git@github.com:tam724/EPMAfem.jl.git
     > cd EPMAfem.jl
-    > julia #used julia version 1.11.4
+    > julia # I used julia version 1.11.4 (partially tested with 1.12.5)
 
     # in pkg mode (julia> ]) activate and instantiate the project
     pkg> activate scripts_twofold_adjoint_method/
