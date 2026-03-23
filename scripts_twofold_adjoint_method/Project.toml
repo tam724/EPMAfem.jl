@@ -12,4 +12,4 @@ SphericalHarmonics = "c489a379-e885-57ff-9236-bd896d33c250"
 EPMAfem = {url = "https://github.com/tam724/EPMAfem.jl", rev="fix_repro"}
 
 [compat]
-SphericalHarmonics = "1.14"
+SphericalHarmonics = "0.1.14"
