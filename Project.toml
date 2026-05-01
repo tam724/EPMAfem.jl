@@ -1,7 +1,7 @@
 name = "EPMAfem"
 uuid = "848e12bd-6edd-4bf7-bcc4-b8f35569fb4b"
-authors = ["Tamme Claus <claus@acom.rwth-aachen.de>"]
 version = "0.2.0"
+authors = ["Tamme Claus <claus@acom.rwth-aachen.de>"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -31,9 +31,11 @@ Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [weakdeps]
 NeXLCore = "93a0284f-3680-435e-8d39-dd6e52a1dbc8"
+MathLink = "18c93696-a329-5786-9845-8443133fa0b4"
 
 [extensions]
 NeXLCoreExt = "NeXLCore"
+MathLinkExt = "MathLink"
 
 [compat]
 Adapt = "4.3.0"
@@ -51,6 +53,7 @@ Krylov = "0.10"
 Lebedev = "1.2"
 LegendrePolynomials = "0.4"
 LinearAlgebra = "1.11"
+MathLink = "0.6.3"
 NeXLCore = "0.3.16"
 Observables = "0.5.5"
 Random = "1.11"

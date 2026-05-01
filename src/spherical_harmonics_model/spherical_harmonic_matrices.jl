@@ -58,17 +58,6 @@ LebedevQuadrature{2}() = LebedevQuadrature{2}(4*80)
 
 lebedev_quadrature_max() = LebedevQuadrature{3}()
 
-function guess_lebedev_order_from_model(model, fac=3)
-    available_orders = getavailableorders()
-    return available_orders[end]
-    # N = max_degree(model)*fac #TODO: this should be checked somehow..
-    # idx = findfirst(o -> o > N, available_orders)
-    # if isnothing(idx)
-    #     return available_orders[end]
-    # end
-    # return available_orders[idx]
-end
-
 function lebedev_points(quad::LebedevQuadrature{3})
     x, y, z, w = lebedev_by_order(quad.order)
     Ω = to_Ω.(z, x, y)
@@ -219,7 +208,7 @@ function assemble_bilinear(integral::∫S²_kuv{<:Abstract1DBasisExp}, model::Ab
     return A
 end
 
-function assemble_bilinear(integral::IntFuncIntegral, model::AbstractHarmonicsModel{D}, U, V, quad::NSphericalQuadrature{D}=LedebevQuadrature(guess_lebedev_order_from_model(model))) where {D}
+function assemble_bilinear(integral::IntFuncIntegral, model::AbstractHarmonicsModel{D}, U, V, quad::NSphericalQuadrature{D}=LedebevQuadrature()) where {D}
     cache = zeros(length(V), length(U))
     function f!(cache, Ω)
         Y_U, Y_V = _eval_basis_functions!(model, Ω, U, V)
@@ -271,7 +260,7 @@ function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_ab
     return A
 end
 
-function assemble_bilinear(integral::∫∫S²_kuv, model::AbstractHarmonicsModel{D}, U, V, quad::NSphericalQuadrature{D}=LedebevQuadrature(guess_lebedev_order_from_model(model))) where {D}
+function assemble_bilinear(integral::∫∫S²_kuv, model::AbstractHarmonicsModel{D}, U, V, quad::NSphericalQuadrature{D}=LedebevQuadrature()) where {D}
     cache1 = zeros(length(V), length(U))
     cache2 = zeros(length(V), length(U))
     function fᵤ!(cache1, Ωᵤ)
