@@ -84,6 +84,8 @@ extend_3D(x::VectorValue{1}) = VectorValue(select(x, Z()), 0.0, 0.0)
 extend_3D(x::VectorValue{2}) = VectorValue(select(x, Z()), select(x, X()), 0.0)
 extend_3D(x::VectorValue{3}) = x
 
+# extend_2D(x::VectorValue{1}) = VectorValue(select(x, Z()), 0.0)
+
 constrain(x::VectorValue{3}, ::_1D) = VectorValue(select(x, Z()))
 constrain(x::VectorValue{3}, ::_2D) = VectorValue(select(x, Z()), select(x, X()))
 constrain(x::VectorValue{3}, ::_3D) = x
@@ -100,7 +102,7 @@ from_Ω(Ω) = (; z=Ωz(Ω), x=Ωx(Ω), y=Ωy(Ω))
 function unitsphere_cartesian_to_spherical(Ω::VectorValue{3})
     z, x, y = Ωz(Ω), Ωx(Ω), Ωy(Ω)
 
-    r = sqrt(x*x + y*y + z*z)
+    r = sqrt(z*z + x*x + y*y)
     θ = atan(sqrt(x*x + y*y), z)
     ϕ = atan(y, x)
     if !isapprox(r, 1.0)
@@ -116,9 +118,25 @@ function unitsphere_spherical_to_cartesian((θ, ϕ))
     return VectorValue(z, x, y)
 end
 
+function unitcircle_cartesian_to_polar(Ω::VectorValue{2})
+    z, x = Ωz(Ω), Ωx(Ω)
+    r = sqrt(z*z + x*x)
+    θ = atan(Ω[2], Ω[1])
+    if !isapprox(r, 1.0)
+        @warn "normalizing direction from $r to 1.0"
+    end
+    return θ
+end
+
+function unitcircle_polar_to_cartesian(θ)
+    z = cos(θ)
+    x = sin(θ)
+    return VectorValue(z, x)
+end
+
 export SpaceDimension, X, Y, Z
 export SpaceDimensionality, _1D, _2D, _3D, dimensions, dimensionality
 export cartesian_unit_vector, extend_3D, Ωx, Ωy, Ωz, to_Ω, from_Ω
-export unitsphere_spherical_to_cartesian, unitsphere_cartesian_to_spherical
+export unitsphere_cartesian_to_spherical, unitsphere_spherical_to_cartesian, unitcircle_cartesian_to_polar, unitcircle_polar_to_cartesian
 
 end

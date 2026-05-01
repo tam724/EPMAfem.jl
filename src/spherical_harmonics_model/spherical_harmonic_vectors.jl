@@ -1,33 +1,31 @@
+@concrete struct ∫S²_hv
+    h
+end
+
 @concrete struct ∫S²_nΩgv
     n
     g
 end
 
-function assemble_linear(int::∫S²_nΩgv, model, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
-    cache = zeros(length(V))
-    function f!(cache, Ω)
-        Y_V = _eval_basis_functions!(model, Ω, V)
-        dot_n_Ω = dot(int.n, Ω)
-        if dot_n_Ω <= 0
-            # TODO: maybe add the two here.
-            cache .= (dot_n_Ω * int.g(Ω)) .* Y_V
-        else
-            cache .= zero(eltype(cache))
-        end
+∫S²_2nΩgv(n, g) = ∫S²_nΩgv(n, Ω -> 2*g(Ω))
+
+int_func(int::∫S²_hv, Ω) = int.h(Ω)
+function int_func(int::∫S²_nΩgv, Ω)
+    g = int.g(Ω)
+    dot_n_Ω = dot(int.n, Ω)
+    if dot_n_Ω <= 0
+        return dot_n_Ω*g
+    else
+        return zero(g)
     end
-    return quad(f!, cache)
 end
 
-@concrete struct ∫S²_hv
-    h
-end
-
-
-function assemble_linear(int::∫S²_hv, model, V, quad::SphericalQuadrature=lebedev_quadrature(guess_lebedev_order_from_model(model)))
+function assemble_linear(int::Union{∫S²_hv, ∫S²_nΩgv}, model::AbstractHarmonicsModel{D}, V, quad::NSphericalQuadrature{D}=LebedevQuadrature{D}()) where {D}
+    quad isa HCubatureQuadrature && @warn("hcubature quadrature does not perform very well here!")
     cache = zeros(length(V))
     function f!(cache, Ω)
         Y_V = _eval_basis_functions!(model, Ω, V)
-        cache .= int.h(Ω) .* Y_V
+        cache .= int_func(int, Ω) .* Y_V
     end
     return quad(f!, cache)
 end

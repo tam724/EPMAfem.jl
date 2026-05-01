@@ -18,7 +18,7 @@ end
     f
 end
 
-function discretize(pn_Ω_bc::PNDirectionBoundaryCondition, direction_mdl::SphericalHarmonicsModels.AbstractSphericalHarmonicsModel, arch::PNArchitecture)
+function discretize(pn_Ω_bc::PNDirectionBoundaryCondition, direction_mdl::SphericalHarmonicsModels.AbstractHarmonicsModel, arch::PNArchitecture)
     SH = EPMAfem.SphericalHarmonicsModels
     n = EPMAfem.Dimensions.outwards_normal(pn_Ω_bc.space_dimension, pn_Ω_bc.space_boundary, dimensionality(direction_mdl))
     @show n
@@ -43,7 +43,7 @@ end
     q
 end
 
-function discretize(pn_Ω_q::PNDirectionSource, direction_mdl::SphericalHarmonicsModels.AbstractSphericalHarmonicsModel, arch::PNArchitecture)
+function discretize(pn_Ω_q::PNDirectionSource, direction_mdl::SphericalHarmonicsModels.AbstractHarmonicsModel, arch::PNArchitecture)
     SH = EPMAfem.SphericalHarmonicsModels
     bΩp = SH.assemble_linear(SH.∫S²_hv(pn_Ω_q.q), direction_mdl, SH.even(direction_mdl)) |> arch
     bΩm = SH.assemble_linear(SH.∫S²_hv(pn_Ω_q.q), direction_mdl, SH.odd(direction_mdl)) |> arch

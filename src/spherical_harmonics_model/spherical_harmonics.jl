@@ -20,7 +20,9 @@ include("spherical_harmonics_transport.jl")
 include("spherical_harmonics_boundary.jl")
 include("spherical_harmonic_vectors.jl")
 
-export AbstractSphericalHarmonicsModel, EOSphericalHarmonicsModel, EEEOSphericalHarmonicsModel, minus, plus
+export AbstractHarmonicsModel, minus, plus
+export spherical_harmonics, EOSphericalHarmonicsModel, EEEOSphericalHarmonicsModel
+export circular_harmonics, EOCircularHarmonicsModel
 export assemble_bilinear, assemble_linear
 
 end

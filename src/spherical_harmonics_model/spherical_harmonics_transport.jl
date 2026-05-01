@@ -106,7 +106,8 @@ function A_plus(l, k, k´, ::Z)
     end
 end
 
-function get_transport_coefficient(m1, m2, dim)
+# note: transport coefficient is typically used for the coefficient describing scattering (O.o)
+function get_transport_coefficient(m1::SphericalHarmonic, m2::SphericalHarmonic, dim)
     l, k = degree(m1), order(m1)
     l_, k_ = degree(m2), order(m2)
     val = 0.0
@@ -123,4 +124,34 @@ function get_transport_coefficient(m1, m2, dim)
         val = 0.0
     end
     return val
+end
+
+# implements \int_{S^1} \Omega[1] * Y_1(\Omega) * Y_2(\Omega) \diff \Omega
+function get_transport_coefficient(m1::CircularHarmonic, m2::CircularHarmonic, ::Z)
+    l, k = degree(m1), order(m1)
+    l_, k_ = degree(m2), order(m2)
+    if k != k_
+        return 0.0
+    elseif (l_ == 1 && l == 0) || (l_ == 0 && l == 1)
+        return 1/sqrt(2)
+    elseif (l_ == l+1) || (l_+1 == l)
+        return 1/2
+    else
+        return 0.0
+    end
+end
+
+# implements \int_{S^1} \Omega[2] * Y_1(\Omega) * Y_2(\Omega) \diff \Omega
+function get_transport_coefficient(m1::CircularHarmonic, m2::CircularHarmonic, ::X)
+    l, k = degree(m1), order(m1)
+    l_, k_ = degree(m2), order(m2)
+    if k == k_
+        return 0.0
+    elseif (l_ == 1 && l == 0) || (l_ == 0 && l == 1)
+        return (-1)^k*(l_-l)/sqrt(2)
+    elseif abs(l_-l) == 1
+        return (-1)^k*(l_-l)/2
+    else
+        return 0.0
+    end
 end

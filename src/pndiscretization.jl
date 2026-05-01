@@ -75,29 +75,29 @@ function discretize_space_updatable(pn_eq::Union{AbstractPNEquations, AbstractMo
     return SpaceDiscretization(space_mdl, arch, ρp, ρm, ∂p, ∇pm), ρp_tens, ρm_tens
 end
 
-function discretize_direction(pn_eq::Union{AbstractPNEquations, AbstractMonochromPNEquations}, direction_mdl::SphericalHarmonicsModels.AbstractSphericalHarmonicsModel, arch::PNArchitecture)
+function discretize_direction(pn_eq::Union{AbstractPNEquations, AbstractMonochromPNEquations}, direction_mdl::SphericalHarmonicsModels.AbstractHarmonicsModel{D}, arch::PNArchitecture) where D
     SH = EPMAfem.SphericalHarmonicsModels
 
     n_elem = number_of_elements(pn_eq)
     n_scat = number_of_scatterings(pn_eq)
 
     ## assemble all the direction matrices
-    kp = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) |> arch for i in 1:n_scat] for e in 1:n_elem]
-    km = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.minus(direction_mdl), SH.minus(direction_mdl), SH.hcubature_quadrature(1e-9, 1e-9))) |> arch for i in 1:n_scat] for e in 1:n_elem]
+    kp = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.HCubatureQuadrature{D}(1e-9, 1e-9))) |> arch for i in 1:n_scat] for e in 1:n_elem]
+    km = [[diag_if_diag(SH.assemble_bilinear(SH.∫S²_kuv(scattering_kernel(pn_eq, e, i)), direction_mdl, SH.minus(direction_mdl), SH.minus(direction_mdl), SH.HCubatureQuadrature{D}(1e-9, 1e-9))) |> arch for i in 1:n_scat] for e in 1:n_elem]
 
-    Ip = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.exact_quadrature())) |> arch
-    Im = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.minus(direction_mdl), SH.minus(direction_mdl), SH.exact_quadrature())) |> arch
+    Ip = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.ExactQuadrature{D}())) |> arch
+    Im = diag_if_diag(SH.assemble_bilinear(SH.∫S²_uv, direction_mdl, SH.minus(direction_mdl), SH.minus(direction_mdl), SH.ExactQuadrature{D}())) |> arch
 
-    absΩp_full = [SH.assemble_bilinear(∫, direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(direction_mdl))]
-    if direction_mdl isa SH.EOSphericalHarmonicsModel
+    absΩp_full = [SH.assemble_bilinear(∫, direction_mdl, SH.plus(direction_mdl), SH.plus(direction_mdl), SH.ExactQuadrature{D}()) for ∫ ∈ SH.∫S²_absΩuv(dimensionality(direction_mdl))]
+    if direction_mdl isa SH.EOHarmonicsModel
         absΩp = arch.(absΩp_full)
     else
         @assert direction_mdl isa SH.EEEOSphericalHarmonicsModel
         absΩp = [BlockedMatrices.blocked_from_mat(absΩp_full[i], SH.get_indices_∫S²absΩuv(direction_mdl)) |> arch for (i, dim) in enumerate(dimensions(dimensionality(direction_mdl)))] 
     end
 
-    Ωpm_full = [SH.assemble_bilinear(∫, direction_mdl, SH.plus(direction_mdl), SH.minus(direction_mdl), SH.exact_quadrature()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(direction_mdl))]
-    if direction_mdl isa SH.EOSphericalHarmonicsModel
+    Ωpm_full = [SH.assemble_bilinear(∫, direction_mdl, SH.plus(direction_mdl), SH.minus(direction_mdl), SH.ExactQuadrature{D}()) for ∫ ∈ SH.∫S²_Ωuv(dimensionality(direction_mdl))]
+    if direction_mdl isa SH.EOHarmonicsModel
         Ωpm = arch.(Ωpm_full)
     else
         @assert direction_mdl isa SH.EEEOSphericalHarmonicsModel
