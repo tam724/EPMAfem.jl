@@ -1,4 +1,4 @@
-function populate_boundary_dict_circular_harmonics(D, Nmax)
+function populate_boundary_dict_circular_harmonics(D, Nmax; test=false)
     @assert D == 1 || D == 3 # D=1 -> X, D=3 -> Z
     b_dict = EPMAfem.SphericalHarmonicsModels.boundary_matrix_circular_harmonics_dict
     moms = circular_harmonics(Nmax)
@@ -11,7 +11,10 @@ function populate_boundary_dict_circular_harmonics(D, Nmax)
             l, k = EPMAfem.SphericalHarmonicsModels.degreeorder(m1)
             l_, k_ = EPMAfem.SphericalHarmonicsModels.degreeorder(m2)
             if haskey(b_dict, (D, (l, k), (l_, k_))) || haskey(b_dict, (D, (l_, k_), (l, k)))
-                # test value ? 
+                if test
+                    b_val = haskey(b_dict, (D, (l, k), (l_, k_))) ? b_dict[(D, (l, k), (l_, k_))] : b_dict[(D, (l_, k_), (l, k))]
+                    @assert b_val ≈ w_num(get_boundary_coefficient_symbolic(m1, m2, dim))::Float64
+                end
             else
                 b_val = get_boundary_coefficient_symbolic(m1, m2, dim)
                 b_dict[(D, (l, k), (l_, k_))] = w_num(b_val)::Float64
