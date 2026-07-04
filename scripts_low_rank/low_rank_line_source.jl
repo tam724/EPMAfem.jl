@@ -191,7 +191,7 @@ for N in [47]
         data = deserialize(path(N, 4, Val(:cons)))
         plot!(EPMAfem.energy_model(model), data["mass"]./4π, label=nothing, color=3, ls=:dash)
 
-        plot!([], [], ls=:dash, color=:gray, label=L"(\textrm{mass \, conservative})")
+        plot!([], [], ls=:dash, color=:gray, label=L"(\textrm{conservative})")
         xlabel!(L"t")
         ylabel!("mass")
         ylims!(0.98, 1.001)
@@ -237,7 +237,7 @@ for N in [47]
         plot!(EPMAfem.energy_model(model), data["ranks"].p, label=nothing, color=3, ls=:dash)
 
         plot!([], [], ls=:solid, alpha=0.5, color=:gray, label=L"r^- (\textrm{transparent})")
-        plot!([], [], ls=:dash, color=:gray, label=L"(\textrm{mass \, conservative})")
+        plot!([], [], ls=:dash, color=:gray, label=L"(\textrm{conservative})")
         xlabel!(L"t")
         ylabel!("rank")
         plot!(fontfamily="Computer Modern", size=(400, 300), dpi=1000)

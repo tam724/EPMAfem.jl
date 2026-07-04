@@ -179,9 +179,9 @@ begin
     plot!(x, meas1[(N3, :noaug, 0.025)], label=nothing, ls=:solid, color=2)
     plot!([], [], label="BUG", ls=:solid, color=:gray)
     plot!(x, meas1[(N3, :aug, 0.025)], label=nothing, ls=:dash, color=2)
-    plot!([], [], label="mass cons.", ls=:dash, color=:gray)
+    plot!([], [], label="cons.", ls=:dash, color=:gray)
     plot!(x, meas1[(N3, :aug2, 0.025)], label=nothing, ls=:dot, color=2)
-    plot!([], [], label="mass cons., beam", ls=:dot, color=:gray)
+    plot!([], [], label="cons., beam", ls=:dot, color=:gray)
 
     plot!(x, meas1[(N3, :noaug, 0.0125)], label=nothing, color=3, ls=:solid)
     plot!(x, meas1[(N3, :aug, 0.0125)], label=nothing, color=3, ls=:dash)
@@ -212,9 +212,9 @@ begin
     plot!(x, meas2[(N3, :noaug, 0.025)], label=nothing, ls=:solid, color=2)
     plot!([], [], label="BUG", ls=:solid, color=:gray)
     plot!(x, meas2[(N3, :aug, 0.025)], label=nothing, ls=:dash, color=2)
-    plot!([], [], label="mass cons.", ls=:dash, color=:gray)
+    plot!([], [], label="cons.", ls=:dash, color=:gray)
     plot!(x, meas2[(N3, :aug2, 0.025)], label=nothing, ls=:dot, color=2)
-    plot!([], [], label="mass cons., beam", ls=:dot, color=:gray)
+    plot!([], [], label="cons., beam", ls=:dot, color=:gray)
 
     plot!(x, meas2[(N3, :noaug, 0.0125)], label=nothing, color=3, ls=:solid)
     plot!(x, meas2[(N3, :aug, 0.0125)], label=nothing, color=3, ls=:dash)
