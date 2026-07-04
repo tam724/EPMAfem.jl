@@ -31,3 +31,19 @@ Questions? Feel free to contact:
     julia> include("scripts_twofold_adjoint_method/taylor_remainder1D.jl")
 ```
 (Instantiation will load the version `EPMAfem.jl#twofold_repro`)
+
+- "Conservative Dynamical Low-Rank Approximation for Heterogeneous Modeling in Electron Probe Microanalysis"
+```julia
+    # clone the repository and start julia
+    > git clone git@github.com:tam724/EPMAfem.jl.git
+    > cd EPMAfem.jl
+    > julia # I used julia version 
+
+    # in pkg mode (julia> ]) activate and instantiate the project
+    pkg> activate scripts_low_rank/
+    pkg> instantiate
+
+    # run the
+    julia> include("scripts_low_rank/low_rank_boundary_1D.jl")
+```
+(Instantiation will load the version `EPMAfem.jl#dlr_repro`)
