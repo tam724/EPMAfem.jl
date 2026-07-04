@@ -106,9 +106,9 @@ outflux = zeros(length(sol), 5)
     end
     plot(-1.5:0.01:1.5, x -> func(VectorValue(x)), label=L"P_{%$(N)}")
     plot!(-1.5:0.01:1.5, x -> func1(VectorValue(x)), label=L"P_{%$(N)} \textrm{(5, default)}")
-    plot!(-1.5:0.01:1.5, x -> func2(VectorValue(x)), label=L"P_{%$(N)} \textrm{(5, mass)}")
-    plot!(-1.5:0.01:1.5, x -> func3(VectorValue(x)), label=L"P_{%$(N)} \textrm{(7, mass)}")
-    plot!(-1.5:0.01:1.5, x -> func4(VectorValue(x)), label=L"P_{%$(N)} \textrm{(9, mass)}")
+    plot!(-1.5:0.01:1.5, x -> func2(VectorValue(x)), label=L"P_{%$(N)} \textrm{(5, cons.)}")
+    plot!(-1.5:0.01:1.5, x -> func3(VectorValue(x)), label=L"P_{%$(N)} \textrm{(7, cons.)}")
+    plot!(-1.5:0.01:1.5, x -> func4(VectorValue(x)), label=L"P_{%$(N)} \textrm{(9, cons.)}")
     plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000, legend=:bottom)
     xlabel!(L"x")
     ylabel!(L"\langle \psi \rangle")
@@ -141,9 +141,9 @@ x = (x[1:end-1] + x[2:end])/2
 
 plot(x, func.interp.args[2].free_values, label=L"P_{%$(N)}", color=:black)
 plot!(x, func1.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
-plot!(x, func2.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(5, mass\, cons.)}", color=2)
-plot!(x, func3.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(7, mass\, cons.)}", color=3)
-plot!(x, func4.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(9, mass\, cons.)}", ls=:dash, color=4)
+plot!(x, func2.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(5, cons.)}", color=2)
+plot!(x, func3.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(7, cons.)}", color=3)
+plot!(x, func4.interp.args[2].free_values, label=L"P_{%$(N)} \textrm{(9, cons.)}", ls=:dash, color=4)
 plot!(size=(400, 300), fontfamily="Computer Modern", dpi=1000, legend=:bottom)
 xlabel!(L"x")
 ylabel!(L"\langle \psi \rangle")
@@ -157,9 +157,9 @@ begin
     t = energy_model
     plot(t, 100*energies[:, 1]./energy0, label=L"P_{%$(N)}", color=:black)
     plot!(t, 100*energies[:, 2]./energy0, label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
-    plot!(t, 100*energies[:, 3]./energy0, label=L"P_{%$(N)} \textrm{(5, mass\, cons.)}", color=2)
-    plot!(t, 100*energies[:, 4]./energy0, label=L"P_{%$(N)} \textrm{(7, mass\, cons.)}", color=3)
-    plot!(t, 100*energies[:, 5]./energy0, label=L"P_{%$(N)} \textrm{(9, mass\, cons.)}", color=4)
+    plot!(t, 100*energies[:, 3]./energy0, label=L"P_{%$(N)} \textrm{(5, cons.)}", color=2)
+    plot!(t, 100*energies[:, 4]./energy0, label=L"P_{%$(N)} \textrm{(7, cons.)}", color=3)
+    plot!(t, 100*energies[:, 5]./energy0, label=L"P_{%$(N)} \textrm{(9, cons.)}", color=4)
 
     zoom_range = 20:1:55
     zoom_datarange = (0.999, 1.001)
@@ -175,9 +175,9 @@ begin
     t = energy_model
     plot(t, abs.(energies[:, 1] .- energy0), label=L"P_{%$(N)}", color=:black, yaxis=:log)
     plot!(t, abs.(energies[:, 2] .- energy0), label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
-    plot!(t, abs.(energies[:, 3] .- energy0), label=L"P_{%$(N)} \textrm{(5, mass\, cons.)}", color=2)
-    plot!(t, abs.(energies[:, 4] .- energy0), label=L"P_{%$(N)} \textrm{(7, mass\, cons.)}", color=3)
-    plot!(t, abs.(energies[:, 5] .- energy0), label=L"P_{%$(N)} \textrm{(9, mass\, cons.)}", color=4)
+    plot!(t, abs.(energies[:, 3] .- energy0), label=L"P_{%$(N)} \textrm{(5, cons.)}", color=2)
+    plot!(t, abs.(energies[:, 4] .- energy0), label=L"P_{%$(N)} \textrm{(7, cons.)}", color=3)
+    plot!(t, abs.(energies[:, 5] .- energy0), label=L"P_{%$(N)} \textrm{(9, cons.)}", color=4)
 
     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", right_margin=2Plots.mm, legend=:right)
     xlabel!(L"t")
@@ -205,9 +205,9 @@ begin
 
     plot(t, abs.(masses[:, 1] .- M0), yaxis=:log, label=L"P_{%$(N)}", color=:black)
     plot!(t, abs.(masses[:, 2] .- M0), label=L"P_{%$(N)} \textrm{(5, default)}", color=1)
-    plot!(t, abs.(masses[:, 3] .- M0), label=L"P_{%$(N)} \textrm{(5, mass\, cons.)}", color=2)
-    plot!(t, abs.(masses[:, 4] .- M0), label=L"P_{%$(N)} \textrm{(7, mass\, cons.)}", color=3)
-    plot!(t, abs.(masses[:, 5] .- M0), label=L"P_{%$(N)} \textrm{(9, mass\, cons.)}", color=4)
+    plot!(t, abs.(masses[:, 3] .- M0), label=L"P_{%$(N)} \textrm{(5, cons.)}", color=2)
+    plot!(t, abs.(masses[:, 4] .- M0), label=L"P_{%$(N)} \textrm{(7, cons.)}", color=3)
+    plot!(t, abs.(masses[:, 5] .- M0), label=L"P_{%$(N)} \textrm{(9, cons.)}", color=4)
 
     plot!(t, abs.(masses[:, 1] .+ cumtrapz(outflux[:, 1], step(energy_model)) .- M0), yaxis=:log, color=:black, ls=:dash, label=nothing)
     plot!(t, abs.(masses[:, 2] .+ cumtrapz(outflux[:, 2], step(energy_model)) .- M0), color=1, ls=:dash, label=nothing)

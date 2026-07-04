@@ -103,7 +103,7 @@ begin
     plot!(-1:0.01:0, x -> func_lowrank_aug_0(VectorValue(x)), color=2, ls=:solid, label=nothing, alpha=0.5)
     plot!(-1:0.01:0, x -> func_lowrank5_0(VectorValue(x)), color=3, ls=:solid, label=L"P_{47}, \textrm{(5, default)}")
     plot!(-1:0.01:0, x -> func_lowrank5_aug_0(VectorValue(x)), color=3, ls=:solid, label=nothing, alpha=0.5)
-    plot!([], [], color=:gray, alpha=0.5, label=L"\textrm{mass\, cons.}")
+    plot!([], [], color=:gray, alpha=0.5, label=L"\textrm{cons.}")
     annotate!(-0.12, 0.9, (L"t=0.3", 10))
 
     plot!(-1:0.01:0, x -> exact_solution_average(1.3, x), color=:black, ls=:dash, label=nothing, linewidth=2)
@@ -186,9 +186,9 @@ begin
     plot!(t, mass[:, 2]./mass_bound, label=L"P_{7}", xflip=false, color=5)
     plot!(t, mass[:, 1]./mass_bound, label=L"P_{47}", color=1)
     plot!(t, mass[:, 3]./mass_bound, label=L"P_{47} \textrm{(3, default)}", color=2, ls=:solid)
-    plot!(t, mass[:, 4]./mass_bound, label=L"P_{47} \textrm{(3, mass \, cons.)}", color=2, ls=:dash)
+    plot!(t, mass[:, 4]./mass_bound, label=L"P_{47} \textrm{(3, cons.)}", color=2, ls=:dash)
     plot!(t, mass[:, 5]./mass_bound, label=L"P_{47} \textrm{(5, default)}", color=3, ls=:solid)
-    plot!(t, mass[:, 6]./mass_bound, label=L"P_{47} \textrm{(5, mass\, cons.)}", color=3, ls=:dash)
+    plot!(t, mass[:, 6]./mass_bound, label=L"P_{47} \textrm{(5, cons.)}", color=3, ls=:dash)
 
     zoom_range = 120:-1:45
     zoom_datarange = (0.998, 1.004)
@@ -230,9 +230,9 @@ begin
     plot!(t, energies[:, 2]./energy_bound, label=L"P_{7}", xflip=false, color=5)
     plot!(t, energies[:, 1]./energy_bound, label=L"P_{47}", color=1)
     plot!(t, energies[:, 3]./energy_bound, label=L"P_{47} \textrm{(3, default)}", color=2, ls=:solid)
-    plot!(t, energies[:, 4]./energy_bound, label=L"P_{47} \textrm{(3, mass\, cons.)}", color=2, ls=:dash)
+    plot!(t, energies[:, 4]./energy_bound, label=L"P_{47} \textrm{(3, cons.)}", color=2, ls=:dash)
     plot!(t, energies[:, 5]./energy_bound, label=L"P_{47} \textrm{(5, default)}", color=3, ls=:solid)
-    plot!(t, energies[:, 6]./energy_bound, label=L"P_{47} \textrm{(5, mass\, cons.)}", color=3, ls=:solid)
+    plot!(t, energies[:, 6]./energy_bound, label=L"P_{47} \textrm{(5, cons.)}", color=3, ls=:solid)
     plot!(t3, energies3[:, 1]./energy_bound, label=L"P_{47} \textrm{(highres)}", color=4, ls=:dash)
 
     zoom_range = 120:-1:45
@@ -256,12 +256,13 @@ begin
 end
 
 ## TIMINGS
-using BenchmarkTools
-b1 = @benchmark for (ϵ, ψ) in $(sol) end # 35.332 s
-b2 = @benchmark for (ϵ, ψ) in $(sol2) end # 1.347 s
-b3 = @benchmark for (ϵ, ψ) in $(sol_lowrank) end # 1.498s
-b4 = @benchmark for (ϵ, ψ) in $(sol_lowrank_aug) end # 1.604s
-b5 = @benchmark for (ϵ, ψ) in $(sol_lowrank5) end # 1.984s
-b6 = @benchmark for (ϵ, ψ) in $(sol_lowrank5_aug) end # 2.761s
-b7 = @benchmark for (ϵ, ψ) in $(sol3) end
+
+# using BenchmarkTools
+# b1 = @benchmark for (ϵ, ψ) in $(sol) end # 35.332 s
+# b2 = @benchmark for (ϵ, ψ) in $(sol2) end # 1.347 s
+# b3 = @benchmark for (ϵ, ψ) in $(sol_lowrank) end # 1.498s
+# b4 = @benchmark for (ϵ, ψ) in $(sol_lowrank_aug) end # 1.604s
+# b5 = @benchmark for (ϵ, ψ) in $(sol_lowrank5) end # 1.984s
+# b6 = @benchmark for (ϵ, ψ) in $(sol_lowrank5_aug) end # 2.761s
+# b7 = @benchmark for (ϵ, ψ) in $(sol3) end
 
