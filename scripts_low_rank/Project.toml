@@ -9,4 +9,4 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [sources]
 EPMAfem = {url = "https://github.com/tam724/EPMAfem.jl", rev="dlr_repro"}
-NeXLCore = {url = "https://github.com/tam724/NeXLCore.jl", rev="main"}
+NeXLCore = {url = "https://github.com/tam724/NeXLCore.jl", rev="master"}
