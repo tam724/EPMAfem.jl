@@ -6,3 +6,4 @@ figures_old/
 *.vtu
 .vscode/
 old_stuff/
+scripts_new/results/*
