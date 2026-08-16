@@ -208,7 +208,7 @@ function assemble_bilinear(integral::∫S²_kuv{<:Abstract1DBasisExp}, model::Ab
     return A
 end
 
-function assemble_bilinear(integral::IntFuncIntegral, model::AbstractHarmonicsModel{D}, U, V, quad::NSphericalQuadrature{D}=LedebevQuadrature()) where {D}
+function assemble_bilinear(integral::IntFuncIntegral, model::AbstractHarmonicsModel{D}, U, V, quad::NSphericalQuadrature{D}=LedebevQuadrature{Ð}()) where {D}
     cache = zeros(length(V), length(U))
     function f!(cache, Ω)
         Y_U, Y_V = _eval_basis_functions!(model, Ω, U, V)
@@ -260,7 +260,7 @@ function assemble_bilinear(integral::Union{Val{:∫S²_absΩzuv}, Val{:∫S²_ab
     return A
 end
 
-function assemble_bilinear(integral::∫∫S²_kuv, model::AbstractHarmonicsModel{D}, U, V, quad::NSphericalQuadrature{D}=LedebevQuadrature()) where {D}
+function assemble_bilinear(integral::∫∫S²_kuv, model::AbstractHarmonicsModel{D}, U, V, quad::NSphericalQuadrature{D}=LedebevQuadrature{D}()) where {D}
     cache1 = zeros(length(V), length(U))
     cache2 = zeros(length(V), length(U))
     function fᵤ!(cache1, Ωᵤ)

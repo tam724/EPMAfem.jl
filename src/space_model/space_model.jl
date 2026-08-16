@@ -25,7 +25,7 @@ function GeneralSpaceModel(discrete_model::DiscreteModel{ND, ND}; plus=(name=lag
     return GeneralSpaceModel{ND}(discrete_model, plus_fe_space, minus_fe_space, get_args_(discrete_model))
 end
 
-function GridapSpaceModel(discrete_model::DiscreteModel; plus=(order=1, conformity=:H1), minus=(order=0, conformity=:L2))
+function GridapSpaceModel(discrete_model::DiscreteModel; plus=(name=lagrangian, order=1, conformity=:H1), minus=(name=lagrangian, order=0, conformity=:L2))
    return GeneralSpaceModel(discrete_model, plus=plus, minus=minus)
 end
 
@@ -70,7 +70,7 @@ function get_args_(discrete_model::DiscreteModel{ND, ND}) where ND
     R = Triangulation(discrete_model)
     Γ = BoundaryTriangulation(discrete_model)
 
-    dx = Measure(R, 6)
+    dx = Measure(R, 50)
     # if ND == 2
     #     nodal_quad = Gridap.ReferenceFEs.GenericQuadrature([Point(0.0, 0.0), Point(0.0, 1.0), Point(1.0, 0.0), Point(1.0, 1.0)], [0.25, 0.25, 0.25, 0.25], "nodal")
     #     dx = Measure(CellQuadrature(R, nodal_quad))
@@ -80,7 +80,7 @@ function get_args_(discrete_model::DiscreteModel{ND, ND}) where ND
     # else
     #     error("Not implemented")
     # end
-    dΓ = Measure(Γ, 6)
+    dΓ = Measure(Γ, 50)
     dΓi = Dict((tag => Measure(BoundaryTriangulation(discrete_model; tags=tag), 6)) for tag in boundary_tags(dims))
     n = get_normal_vector(Γ)
     return (dims, dx, dΓ, dΓi, n)

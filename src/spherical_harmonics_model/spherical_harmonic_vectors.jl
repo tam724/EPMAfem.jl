@@ -5,7 +5,10 @@ end
 @concrete struct ∫S²_nΩgv
     n
     g
+    weighting
 end
+
+∫S²_nΩgv(n, g) = ∫S²_nΩgv(n, g, true)
 
 ∫S²_2nΩgv(n, g) = ∫S²_nΩgv(n, Ω -> 2*g(Ω))
 
@@ -14,7 +17,7 @@ function int_func(int::∫S²_nΩgv, Ω)
     g = int.g(Ω)
     dot_n_Ω = dot(int.n, Ω)
     if dot_n_Ω <= 0
-        return dot_n_Ω*g
+        return int.weighting ? dot_n_Ω*g : g
     else
         return zero(g)
     end
