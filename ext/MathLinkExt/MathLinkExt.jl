@@ -3,6 +3,7 @@ module MathLinkExt
 using EPMAfem
 using EPMAfem.SphericalHarmonicsModels
 using EPMAfem.SphericalHarmonicsModels: CircularHarmonic, degree, order
+using EPMAfem.SphericalHarmonicsModels: SphericalHarmonic
 using MathLink
 
 function w_object(ch::CircularHarmonic)
@@ -98,6 +99,42 @@ end
 function get_outgoing_approx(m1::CircularHarmonic, m2::CircularHarmonic, dim::EPMAfem.Dimensions.Z)
     return w_integrate_halfcircle_out(w_object(m1)*w_object(m2), dim)
 end
+
+# SPHERICAL HARMONICS
+function w_object(mom::SphericalHarmonic)
+    l, m = degree(mom), order(mom)
+    C = W"Sqrt"((2*l+1)/(2*W"Pi")*W"Simplify"(W"Factorial"(l - abs(m))/W"Factorial"(l + abs(m))))
+    if m == 0
+        C = W"Simplify"(C*(1/(W"Sqrt"(2))))
+    end
+    Y = W"LegendreP"(l, abs(m), W"Cos"(W"t"))
+    if m < 0
+        Y = W"Simplify"(Y * W"Sin"(abs(m)*W"p"))
+    elseif m > 0
+        Y = W"Simplify"(Y * W"Cos"(abs(m)*W"p"))
+    else
+        Y = Y
+    end
+    return W"Simplify"(Y*C)
+end
+
+function w_integrate_sphere(w_object)
+    W"Integrate"(W"Simplify"(w_object*W"Sin"(W"t")), (W"t", 0, W"Pi"), (W"p", 0, 2W"Pi"))
+end
+
+function get_boundary_coefficient_symbolic(m1::SphericalHarmonic, m2::SphericalHarmonic, ::EPMAfem.Dimensions.Z)
+    w_integrate_sphere(w_object(m1)*w_object(m2)*W"Abs"(W"Cos"(W"t")))
+end
+
+function get_boundary_coefficient_symbolic(m1::SphericalHarmonic, m2::SphericalHarmonic, ::EPMAfem.Dimensions.X)
+    w_integrate_sphere(w_object(m1)*w_object(m2)*W"Abs"(W"Sin"(W"t")*W"Cos"(W"p")))
+end
+
+function get_boundary_coefficient_symbolic(m1::SphericalHarmonic, m2::SphericalHarmonic, ::EPMAfem.Dimensions.Y)
+    w_integrate_sphere(w_object(m1)*w_object(m2)*W"Abs"(W"Sin"(W"t")*W"Sin"(W"p")))
+end
+
+
 
 include("boundary_dicts_generation.jl")
 
