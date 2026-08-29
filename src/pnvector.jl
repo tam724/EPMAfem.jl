@@ -39,7 +39,7 @@ function ((; b, cache)::PNVectorIntegrator{<:Rank1DiscretePNVector})(idx, ψ)
     # mul!(transpose(cache.buf), transpose(b.bx.p), ψp) AT = BT * C <=> A = CT * B
     mul!(cache.buf.p, transpose(ψp), b.bx.p)
     mul!(cache.buf.m, transpose(ψm), b.bx.m)
-    cache.integral[1] += Δϵ * bϵ2 * (dot(cache.buf.p, b.bΩ.p), dot(cache.buf.m, b.bΩ.m))
+    cache.integral[1] += Δϵ * bϵ2 * (dot(cache.buf.p, b.bΩ.p) + dot(cache.buf.m, b.bΩ.m))
     return nothing
 end
 
@@ -59,7 +59,8 @@ function assemble_at!(rhs, (; b)::PNVectorAssembler{<:Rank1DiscretePNVector}, id
         bϵ2 = b.bϵ[idx]
     end
     mul!(rhs_p, b.bx.p, transpose(b.bΩ.p), bϵ2*Δ, β)
-    mul!(rhs_m, b.bx.m, transpose(b.bΩ.m), bϵ2*Δ, β)
+    γ = sym ? -1 : 1
+    mul!(rhs_m, b.bx.m, transpose(b.bΩ.m), γ*bϵ2*Δ, β)
 end
 
 ## for array valued integrations

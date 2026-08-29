@@ -70,7 +70,7 @@ function get_args_(discrete_model::DiscreteModel{ND, ND}) where ND
     R = Triangulation(discrete_model)
     Γ = BoundaryTriangulation(discrete_model)
 
-    dx = Measure(R, 50)
+    dx = Measure(R, 30)
     # if ND == 2
     #     nodal_quad = Gridap.ReferenceFEs.GenericQuadrature([Point(0.0, 0.0), Point(0.0, 1.0), Point(1.0, 0.0), Point(1.0, 1.0)], [0.25, 0.25, 0.25, 0.25], "nodal")
     #     dx = Measure(CellQuadrature(R, nodal_quad))
@@ -80,8 +80,8 @@ function get_args_(discrete_model::DiscreteModel{ND, ND}) where ND
     # else
     #     error("Not implemented")
     # end
-    dΓ = Measure(Γ, 50)
-    dΓi = Dict((tag => Measure(BoundaryTriangulation(discrete_model; tags=tag), 6)) for tag in boundary_tags(dims))
+    dΓ = Measure(Γ, 30)
+    dΓi = Dict((tag => Measure(BoundaryTriangulation(discrete_model; tags=tag), 30)) for tag in boundary_tags(dims))
     n = get_normal_vector(Γ)
     return (dims, dx, dΓ, dΓi, n)
 end

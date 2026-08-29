@@ -143,7 +143,7 @@ function discretize_problem(pn_eq::AbstractPNEquations, mdl::DiscretePNModel, ar
     end
 end
 
-function discretize_rhs(pn_ex::PNExcitation, mdl::DiscretePNModel, arch::PNArchitecture)
+function discretize_rhs(pn_ex, mdl::DiscretePNModel, arch::PNArchitecture)
     T = base_type(arch)
 
     SM = EPMAfem.SpaceModels
@@ -159,14 +159,15 @@ function discretize_rhs(pn_ex::PNExcitation, mdl::DiscretePNModel, arch::PNArchi
             m = spzeros(nb.nx.m)) |> arch for i in 1:number_of_beam_positions(pn_ex)]
 
     nz = Dimensions.cartesian_unit_vector(Dimensions.Z(), dimensionality(mdl))
+    # nz3D = nz # Dimensions.extend_3D(nz) (for true 2D)
     nz3D = Dimensions.extend_3D(nz)
-    gΩs = [(p = SH.assemble_linear(SH.∫S²_nΩgv(nz3D, Ω -> beam_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.plus(direction_mdl), SH.lebedev_quadrature_max()),
+    gΩs = [(p = SH.assemble_linear(SH.∫S²_nΩgv(nz3D, Ω -> beam_direction_distribution(pn_ex, i, Ω), false), direction_mdl, SH.plus(direction_mdl)),
              m = spzeros(nb.nΩ.m)) |> arch for i in 1:number_of_beam_directions(pn_ex)]
 
     return [Rank1DiscretePNVector(false, mdl, arch, gϵs[i], gxp[j], gΩs[k]) for i in 1:number_of_beam_energies(pn_ex), j in 1:number_of_beam_positions(pn_ex), k in 1:number_of_beam_directions(pn_ex)]
 end
 
-function discretize_extraction(pn_ex::PNExtraction, mdl::DiscretePNModel, arch::PNArchitecture; updatable=true)
+function discretize_extraction(pn_ex, mdl::DiscretePNModel, arch::PNArchitecture; updatable=true)
     T = base_type(arch)
 
     ## instantiate Gridap
@@ -178,7 +179,8 @@ function discretize_extraction(pn_ex::PNExtraction, mdl::DiscretePNModel, arch::
 
     ## ... and extraction
     μϵs = [Vector{T}([extraction_energy_distribution(pn_ex, i, ϵ) for ϵ ∈ energy_model(mdl)]) for i in 1:number_of_extractions(pn_ex)]
-    μΩps = [SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.plus(direction_mdl)) |> arch for i in 1:number_of_extractions(pn_ex)]
+    μΩps = [(p=SH.assemble_linear(SH.∫S²_hv(Ω -> extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.plus(direction_mdl)),
+                m = SH.assemble_linear(SH.∫S²_hv(Ω->extraction_direction_distribution(pn_ex, i, Ω)), direction_mdl, SH.minus(direction_mdl))) |> arch for i in 1:number_of_extractions(pn_ex)]
 
     if updatable
         ρ_proj = SM.assemble_bilinear(SM.∫R_uv, space_mdl, SM.minus(space_mdl), SM.plus(space_mdl))
@@ -186,7 +188,8 @@ function discretize_extraction(pn_ex::PNExtraction, mdl::DiscretePNModel, arch::
         n_parameters = (number_of_elements(pn_ex.pn_eq), n_basis(mdl).nx.m)
         return [UpdatableRank1DiscretePNVector(Rank1DiscretePNVector(true, mdl, arch, μϵs[i], ρ_proj*@view(ρs[i, :]) |> arch, μΩps[i]), EPMAfem.PNNoAbsorption(mdl, arch, ρ_proj, i), n_parameters) for i in 1:number_of_extractions(pn_ex)]
     else
-        μxps = [SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.plus(space_mdl)) |> arch for i in 1:number_of_extractions(pn_ex)]
+        μxps = [(p=SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.plus(space_mdl)),
+                    m = SM.assemble_linear(SM.∫R_μv(x -> extraction_space_distribution(pn_ex, i, x)), space_mdl, SM.minus(space_mdl))) |> arch for i in 1:number_of_extractions(pn_ex)]
         return [Rank1DiscretePNVector(true, mdl, arch, μϵs[i], μxps[i], μΩps[i]) for i in 1:number_of_extractions(pn_ex)]
     end
 end
@@ -204,7 +207,9 @@ function discretize_outflux(mdl::DiscretePNModel, arch::PNArchitecture, ϵ_func=
     ## ... and extraction
     μϵ = Vector{T}([ϵ_func(ϵ) for ϵ ∈ energy_model(mdl)])
     n = VectorValue(1.0, 0.0, 0.0)
-    μΩp = SH.assemble_linear(SH.∫S²_hv(Ω -> abs(dot(Ω, n))), direction_mdl, SH.plus(direction_mdl)) |> arch
-    μxp = SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> isapprox(x[1], 0.0, atol=1e-12)), space_mdl, SM.plus(space_mdl)) |> arch
-    return Rank1DiscretePNVector(true, mdl, arch, μϵ, μxp, μΩp)
+    nb = EPMAfem.n_basis(mdl)
+
+    μΩ = (p=SH.assemble_linear(SH.∫S²_nΩgv(n, Ω -> 2.0, true, false), direction_mdl, SH.plus(direction_mdl)), m=zeros(nb.nΩ.m)) |> arch
+    μx = (p=SM.assemble_linear(SM.∫∂R_ngv{Dimensions.Z}(x -> isapprox(x[1], 0.0, atol=1e-12)), space_mdl, SM.plus(space_mdl)), m=zeros(nb.nx.m)) |> arch
+    return Rank1DiscretePNVector(true, mdl, arch, μϵ, μx, μΩ)
 end
