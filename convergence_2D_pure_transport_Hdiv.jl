@@ -40,13 +40,13 @@ name(::H1_L2) = "H1-L2"
 Lname(::H1_L2) = L"H^1\!-\!L^2"
 struct L2_Hdiv_H1_{V} <: HierarchyVariant end # L2 Hdiv H1 with arbitrary next 
 name(::L2_Hdiv_H1_{V}) where V = "L2-Hdiv-H1_$(V)"
-Lname(::L2_Hdiv_H1_{:H1H1}) where V = L"L^2-H(\textrm{div})-H^1"
+Lname(::L2_Hdiv_H1_{:H1H1}) = L"L^2\!-\!H(\textrm{div})\!-\!H^1"
 struct L2_H1_H1H1 <: HierarchyVariant end # L2 following only H1 (to substantiate Hdiv)
 name(::L2_H1_H1H1) = "L2-H1-H1H1"
-Lname(::L2_H1_H1H1) = L"L^2-H^1-H^1H^1"
+Lname(::L2_H1_H1H1) = L"L^2\!-\!H^1\!-\!H^1H^1"
 struct L2_H1_L2H1 <: HierarchyVariant end # mäh
 name(::L2_H1_L2H1) = "L2-H1-L2H1"
-Lname(::L2_H1_L2H1) = L"L^2-H^1-L^2H^1"
+Lname(::L2_H1_L2H1) = L"L^2\!-\!H^1\!-\!L^2H^1"
 
 deg_to_space(v::HierarchyVariant, deg) = deg_to_spaces(v, deg)[1]
 
@@ -295,7 +295,9 @@ end
 
 
 # df = DataFrame(variant = String[], order = Int[], grid_res = Float64[], N = Int[], L2 = Float64[], L1 = Float64[], Linf = Float64[], L2_input = Float64[], L1_input = Float64[], Linf_input = Float64[], n_cells = Int[], n_dof0 = Int[], n_dof = Int[])
-df = deserialize("results_l2hdiv/data.jls")
+folder_name = "results_l2hdiv_cartesian/"
+# df = serialize(joinpath(folder_name, "data.jls"), df)
+df = deserialize(joinpath(folder_name, "data.jls"))
 
 # initial condition (the sqrt(2π) is the integrated zeroth moment)
 gaussian(x; σ = 0.1) = sqrt(2π)/(2π*σ^2)*exp(-1/(2σ^2)*(x[1]^2 + x[2]^2))
@@ -316,24 +318,32 @@ end
 #     end
 # end
 
+mesh = :cartesian
+
 begin
     for v in [L2_H1(), H1_L2(), L2_Hdiv_H1_{:L2}(), L2_Hdiv_H1_{:H1H1}(), L2_H1_H1H1()]
-        for order in [1]
+        for order in [0, 1]
             N = 39
             res_unstructured = [0.25, 0.18, 0.12, 0.09, 0.06, 0.045, 0.03, 0.02]
+            res_structured = [20, 25, 40, 50, 75, 100, 150, 200]
             res_range = if order == 0
                 1:8
             elseif order == 1
                 1:5
             end
-            for grid_res in res_range # 1:5 # 1:7
+            for grid_res in res_range
                 # skip if already computed
                 if !isempty(df[(df.variant .== name(v)) .& (df.order .== order) .& (df.grid_res .== grid_res) .& (df.N .== N), :]) @show ("skip", name(v), order, grid_res, N) continue end
                 GC.gc()
                 @show ("computing", name(v), order, grid_res, N)
 
-                grid_gen_2D((-1.5, 1.5, -1.5, 1.5); min_res=res_unstructured[grid_res], max_res=res_unstructured[grid_res], filepath="/tmp/tmp_msh.msh")
-                model = DiscreteModelFromFile("/tmp/tmp_msh.msh")
+                if mesh == :triangular
+                    grid_gen_2D((-1.5, 1.5, -1.5, 1.5); min_res=res_unstructured[grid_res], max_res=res_unstructured[grid_res], filepath="/tmp/tmp_msh.msh")
+                    model = DiscreteModelFromFile("/tmp/tmp_msh.msh")
+                else
+                    @assert mesh == :cartesian
+                    model = CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (res_structured[grid_res], res_structured[grid_res]))
+                end
                 spaces, gridap_args = gridap_setup(model, order)
 
                 M = assemble_mass_matrix(v, N, spaces, gridap_args)
@@ -389,7 +399,7 @@ begin
                 begin
                     heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y)), aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
                     plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-                    savefig("results_l2hdiv/$(name(v))_$(order)_$(grid_res).png")
+                    savefig(joinpath(folder_name, "$(name(v))_$(order)_$(grid_res).png"))
                 end
 
                 L2_ = sqrt(sum(∫((sqrt(2π)*f.interp.uh - (x -> analytic_solution(x, 1.0)))*(sqrt(2π)*f.interp.uh - (x -> analytic_solution(x, 1.0))))*dx))
@@ -397,25 +407,25 @@ begin
                 Linf_ = maximum(abs(sqrt(2π)*f(VectorValue(x, y)) - analytic_solution(VectorValue(x, y), 1.0)) for x in -1.5:0.001:1.5, y in -1.5:0.001:1.5)
                 
                 if grid_res == 5 && order == 0
-                    mkdir("results_l2hdiv/all_moments_$(name(v))")
-                    mkdir("results_l2hdiv/all_moments_$(name(v))_noclim")
+                    mkdir(joinpath(folder_name, "all_moments_$(name(v))"))
+                    mkdir(joinpath(folder_name, "all_moments_$(name(v))_noclim"))
                     for i in 0:N
                         f_viz = interpolable_deg(v, spaces, i, u)
                         heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> f_viz(VectorValue(x, y))[1], aspect_ratio=:equal, clims=(-4/sqrt(2π), 4/sqrt(2π)), cmap=:jet)
                         plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-                        savefig("results_l2hdiv/all_moments_$(name(v))/ch_$(i)_0.png")
+                        savefig(joinpath(folder_name, "all_moments_$(name(v))/ch_$(i)_0.png"))
 
                         heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> f_viz(VectorValue(x, y))[1], aspect_ratio=:equal, cmap=:jet)
                         plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-                        savefig("results_l2hdiv/all_moments_$(name(v))_noclim/ch_$(i)_0.png")
+                        savefig(joinpath(folder_name, "all_moments_$(name(v))_noclim/ch_$(i)_0.png"))
                         if i != 0
                             heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> f_viz(VectorValue(x, y))[2], aspect_ratio=:equal, clims=(-4/sqrt(2π), 4/sqrt(2π)), cmap=:jet)
                             plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-                            savefig("results_l2hdiv/all_moments_$(name(v))/ch_$(i)_1.png")
+                            savefig(joinpath(folder_name, "all_moments_$(name(v))/ch_$(i)_1.png"))
 
                             heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> f_viz(VectorValue(x, y))[2], aspect_ratio=:equal, cmap=:jet)
                             plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-                            savefig("results_l2hdiv/all_moments_$(name(v))_noclim/ch_$(i)_1.png")
+                            savefig(joinpath(folder_name, "all_moments_$(name(v))_noclim/ch_$(i)_1.png"))
                         end
                     end
                 end
@@ -438,11 +448,15 @@ begin
                     )
 
                 push!(df, data_)
-                serialize("results_l2hdiv/data.jls", df)
+                serialize(joinpath(folder_name, "data.jls"), df)
             end
         end
     end
 end
+
+# heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> analytic_solution(VectorValue(x, y), 1), aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
+# plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
+# savefig("results_l2hdiv/reference.png")
 
 # using EPMAfem.HCubature
 # σ = 0.1
@@ -457,283 +471,189 @@ end
 
 # begin
 #     plot(xaxis=:log, yaxis=:log)
-#     for (v, c) in [(L2_H1(), 1), (H1_L2(), 2), (L2_Hdiv_H1_{:H1H1}(), 3)]
+#     vars_cols = [(L2_H1(), 1), (H1_L2(), 2), (L2_Hdiv_H1_{:H1H1}(), 3)]
+#     for (v, c) in vars_cols
 #         y_axis_val = :n_cells
-#         df_v = sort(df[df.variant .== name(v), :], y_axis_val)
-#         plot!(df_v.:($y_axis_val), df_v.L2 ./ L2_ref, color=c, ls=:solid, label=Lname(v), marker=:o)
+#         df_v = sort(df[(df.variant .== name(v)) .& (df.order .== 0), :], y_axis_val)
+#         plot!(df_v.:($y_axis_val), df_v.L2 ./ L2_ref, color=c, ls=:solid, label=nothing, marker=:o)
 #         plot!(df_v.:($y_axis_val), df_v.Linf ./ Linf_ref, color=c, ls=:dash, label=nothing, marker=:o)
 #         plot!(df_v.:($y_axis_val), df_v.L1 ./ L1_ref, color=c, ls=:dot, label=nothing, marker=:o)
 #     end
+
+#     plot!([], [], color=vars_cols[1][2], ls=:solid, label=Lname(vars_cols[1][1]), marker=:o)
 #     plot!([], [], color=:gray, ls=:solid, label=L"rel. $L^2$ err.")
+#     plot!([], [], color=vars_cols[2][2], ls=:solid, label=Lname(vars_cols[2][1]), marker=:o)
 #     plot!([], [], color=:gray, ls=:dash, label=L"rel. $L^\infty$ err.")
+#     plot!([], [], color=vars_cols[3][2], ls=:solid, label=Lname(vars_cols[3][1]), marker=:o)
 #     plot!([], [], color=:gray, ls=:dot, label=L"rel. $L^1$ err.")
+
 #     plot!(3e2:5e4, x->200/x, ls=:dash, color=:gray, label=nothing)
 #     annotate!(2e3, 5.2e-2, Plots.text(L"\mathcal{O}(1/N)", 9, :gray), color=:gray)
-#     plot!(3e2:5e4, x->50/(x)^(1/2), ls=:dash, color=:gray, label=nothing)
-#     annotate!(8e3, 1, Plots.text(L"\mathcal{O}(1/\sqrt{N})", 9, :gray), color=:gray)
+#     plot!(3e2:5e4, x->120/(x)^(1/2), ls=:dash, color=:gray, label=nothing)
+#     # plot!(3e2:5e4, x->50/(x)^(1/2), ls=:dash, color=:gray, label=nothing)
+#     annotate!(14e3, 1.9, Plots.text(L"\mathcal{O}(1/\sqrt{N})", 9, :gray), color=:gray)
 #     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
-# end
-
-# nothing
-# df_v
-# sort(df, :n_dof)
-
-# begin
-#     ord = 0
-
-#     plot(xaxis=:log, yaxis=:log)
-#     for (v, c, name) in [(L2_Hdiv_H1_L2(), 1, L"L^2-H(\textrm{div})-H^1"), (L2_H1(), 2, L"L^2-H^1"), (H1_L2(), 3, L"H^1-L^2")]
-#         df_v = df[df.variant .== name(v), :]
-#         plot!(n_cells[(v, ord)], L2[(v, ord)] ./ L2_ref, color=c, ls=:solid, label=nothing, marker=:o)
-#         # plot!(n_cells[(v, ord)], Linf[(v, ord)] ./ Linf_ref, color=c,ls=:dash, label=nothing, marker=:o)
-#         # plot!(n_cells[(v, ord)], L1[(v, ord)] ./ L1_ref, color=c, ls=:dot, label=nothing, marker=:o)
-#     end
-#     plot!([], [], color=1, ls=:solid, label=L"L^2\!-\!H(\textrm{div})\!-\!H^1", marker=:o)
-#     plot!([], [], color=:gray, ls=:solid, label=L"rel. $L^2$ err.")
-#     plot!([], [], color=2, ls=:solid, label=L"L^2\!-\!H^1", marker=:o)
-#     plot!([], [], color=:gray, ls=:dash, label=L"rel. $L^\infty$ err.")
-#     plot!([], [], color=3, ls=:solid, label=L"H^1\!-\!L^2", marker=:o)
-#     plot!([], [], color=:gray, ls=:dot, label=L"rel. $L^1$ err.")
-
-#     plot!(3e2:5e4, x->200/x, ls=:dash, color=:gray, label=nothing)
-#     annotate!(2e3, 5.2e-2, Plots.text(L"\mathcal{O}(1/N)", 9, :gray), color=:gray)
-#     plot!(3e2:5e4, x->50/(x)^(1/2), ls=:dash, color=:gray, label=nothing)
-#     annotate!(8e3, 1, Plots.text(L"\mathcal{O}(1/\sqrt{N})", 9, :gray), color=:gray)
-#     xlabel!("number of cells")
+#     xlabel!("number of grid cells")
 #     ylabel!("relative errors")
-#     yticks!([10^0, 10^-1, 1e-2])
-#     xticks!([100, 1000, 10000])
-#     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
-#     # savefig("results_l2hdiv/convergence_p0_hierarchies.png")
+#     # savefig("results_l2hdiv/convergence_order0_variants.png")
 # end
 
-
-# nothing
 # begin
-#     ord = 1
-    
 #     plot(xaxis=:log, yaxis=:log)
-
-#     for (v, c, name) in [(L2_Hdiv_H1_L2(), 1, L"L^2-H(\textrm{div})-H^1")] #, (L2_H1(), 2, L"L^2-H^1"), (H1_L2(), 3, L"H^1-L^2")]
-#         for (ord, c) in [(0, 1), (1, 2), (2, 3)]
-#             range = n_cells[(v, ord)] .!= 0
-#             plot!(n_dof[(v, ord)][range], L2[(v, ord)][range] ./ L2_ref, color=c, ls=:solid, label=nothing, marker=:o)
-#             plot!(n_dof[(v, ord)][range], Linf[(v, ord)][range] ./ Linf_ref, color=c,ls=:dash, label=nothing, marker=:o)
-#             plot!(n_dof[(v, ord)][range], L1[(v, ord)][range] ./ L1_ref, color=c, ls=:dot, label=nothing, marker=:o)
-#         end
+#     vars_order_cols = [(L2_H1(), 0, 1, :o), (H1_L2(), 0, 2, :o), (L2_Hdiv_H1_{:H1H1}(), 0, 3, :o), (L2_H1(), 1, 1, :dtriangle), (H1_L2(), 1, 2, :dtriangle), (L2_Hdiv_H1_{:H1H1}(), 1, 3, :dtriangle)]
+#     for (v, o, c, marker) in vars_order_cols
+#         y_axis_val = :n_dof
+#         df_v = sort(df[(df.variant .== name(v)) .& (df.order .== o), :], y_axis_val)
+#         plot!(df_v.:($y_axis_val), df_v.L2 ./ L2_ref, color=c, ls=:solid, label=nothing, marker=marker)
+#         plot!(df_v.:($y_axis_val), df_v.Linf ./ Linf_ref, color=c, ls=:dash, label=nothing, marker=marker)
+#         # plot!(df_v.:($y_axis_val), df_v.L1 ./ L1_ref, color=c, ls=:dot, label=nothing, marker=marker)
 #     end
-#     plot!([], [], color=1, ls=:solid, label=L"p=0", marker=:o)
-#     plot!([], [], color=2, ls=:solid, label=L"p=1", marker=:o)
-#     plot!([], [], color=3, ls=:solid, label=L"p=2", marker=:o)
+
+#     plot!([], [], color=vars_order_cols[1][3], ls=:solid, label=Lname(vars_order_cols[1][1]))
+#     plot!([], [], color=vars_order_cols[2][3], ls=:solid, label=Lname(vars_order_cols[2][1]))
+#     plot!([], [], color=vars_order_cols[3][3], ls=:solid, label=Lname(vars_order_cols[3][1]))
 #     plot!([], [], color=:gray, ls=:solid, label=L"rel. $L^2$ err.")
 #     plot!([], [], color=:gray, ls=:dash, label=L"rel. $L^\infty$ err.")
-#     plot!([], [], color=:gray, ls=:dot, label=L"rel. $L^1$ err.")
+#     plot!([], [], color=:transparent, label=" ")
+#     plot!([], [], color=:gray, ls=:solid, label="order: 0", marker=:o)
+#     plot!([], [], color=:gray, ls=:solid, label="order: 1", marker=:dtriangle)
 
-#     plot!(3e2:7e3, x->2000/x^1.5, ls=:dash, color=:gray, label=nothing)
-#     annotate!(3e3, 0.5e-2, Plots.text(L"\mathcal{O}(1/N^{3/2})", 9, :gray), color=:gray)
-#     plot!(3e2:5e4, x->200/x, ls=:dash, color=:gray, label=nothing)
-#     annotate!(1.5e3, 7.2e-2, Plots.text(L"\mathcal{O}(1/N)", 9, :gray), color=:gray)
-#     plot!(3e2:5e4, x->50/(x)^(1/2), ls=:dash, color=:gray, label=nothing)
-#     annotate!(8e3, 1, Plots.text(L"\mathcal{O}(1/\sqrt{N})", 9, :gray), color=:gray)
+#     plot!([1e4, 5e6], x->1e3/sqrt(x), ls=:dash, color=:gray, label=nothing)
+#     plot!([1e4, 5e6], x->5e4/x, ls=:dash, color=:gray, label=nothing)
+#     plot!([1e4, 5e6], x->2e8/x^2, ls=:dash, color=:gray, label=nothing)
+
+#     ylims!(5e-4, 11)
+#     yticks!([10^0, 10^-1, 10^-2, 10^-3])
+
+
+#     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
 #     xlabel!("number of dof")
 #     ylabel!("relative errors")
-#     yticks!([10^0, 10^-1, 1e-2])
-#     xticks!([100, 1000, 10000])
-#     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=1)
-#     savefig("results_l2hdiv/convergence_hdiv.png")
+#     # savefig("results_l2hdiv/convergence_ndof_variants.png")
+#     # savefig("results_l2hdiv/convergence_ndof_variants.pdf")
 # end
 
+
+# begin
+#     plot(xaxis=:log, yaxis=:log)
+#     vars_cols = [(L2_H1(), 1), (H1_L2(), 2), (L2_Hdiv_H1_{:H1H1}(), 3)]
+#     for (v, c) in vars_cols
+#         y_axis_val = :n_cells
+#         df_v = sort(df[(df.variant .== name(v)) .& (df.order .== 1), :], y_axis_val)
+#         plot!(df_v.:($y_axis_val), df_v.L2 ./ L2_ref, color=c, ls=:solid, label=nothing, marker=:o)
+#         plot!(df_v.:($y_axis_val), df_v.Linf ./ Linf_ref, color=c, ls=:dash, label=nothing, marker=:o)
+#         plot!(df_v.:($y_axis_val), df_v.L1 ./ L1_ref, color=c, ls=:dot, label=nothing, marker=:o)
+#     end
+
+#     plot!([], [], color=vars_cols[1][2], ls=:solid, label=Lname(vars_cols[1][1]), marker=:o)
+#     plot!([], [], color=:gray, ls=:solid, label=L"rel. $L^2$ err.")
+#     plot!([], [], color=vars_cols[2][2], ls=:solid, label=Lname(vars_cols[2][1]), marker=:o)
+#     plot!([], [], color=:gray, ls=:dash, label=L"rel. $L^\infty$ err.")
+#     plot!([], [], color=vars_cols[3][2], ls=:solid, label=Lname(vars_cols[3][1]), marker=:o)
+#     plot!([], [], color=:gray, ls=:dot, label=L"rel. $L^1$ err.")
+#     plot!(3e2:7e3, x->2000/x, ls=:dash, color=:gray, label=nothing)
+#     annotate!(3e3, 1.9, Plots.text(L"\mathcal{O}(1/N)", 9, :gray), color=:gray)
+#     plot!(3e2:7e3, x->20000/(x)^(2), ls=:dash, color=:gray, label=nothing)
+#     annotate!(5e2, 3e-2, Plots.text(L"\mathcal{O}(1/N^2)", 9, :gray), color=:gray)
+#     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
+#     xlabel!("number of grid cells")
+#     ylabel!("relative errors")
+#     yticks!([10^0, 10^-1, 10^-2, 10^-3])
+#     xticks!([10^2.5, 10^3, 10^3.5])
+#     savefig("results_l2hdiv/convergence_order1_variants.png")
+# end
+
+
+# begin
+#     plot(xaxis=:log, yaxis=:log)
+#     for (v, c, o, marker) in [(L2_H1(), 1, 0, :o), (H1_L2(), 2, 0, :o), (L2_H1(), 1, 1, :dtriangle), (H1_L2(), 2, 1, :dtriangle)]
+#         df_v = sort(df[(df.variant .== name(v)) .& (df.order .== o), :], :grid_res)
+#         plot!(df_v.n_dof0, df_v.L2_input ./ L2_input_ref, color=c, label=nothing, ls=:solid, marker=marker)
+#         plot!(df_v.n_dof0, df_v.Linf_input ./ Linf_input_ref, color=c, label=nothing, ls=:dash, marker=marker)
+#         plot!(df_v.n_dof0, df_v.L1_input ./ L1_input_ref, color=c, label=nothing, ls=:dot, marker=marker)
+#     end
+#     plot!([], [], color=1, label=L"L^2")
+#     plot!([], [], color=2, label=L"H^1")
+#     plot!([], [], color=:gray, ls=:solid, label=L"rel. $L^2$ err.")
+#     plot!([], [], color=:gray, ls=:dash, label=L"rel. $L^\infty$ err.")
+#     plot!([], [], color=:gray, ls=:dot, label=L"rel. $L^1$ err.")
+#     plot!([], [], color=:transparent, label=" ")
+#     plot!([], [], color=:gray, ls=:solid, label="order: 0", marker=:o)
+#     plot!([], [], color=:gray, ls=:solid, label="order: 1", marker=:dtriangle)
+    
+#     # plot!([1e4, 5e6], x->1e2/sqrt(x), ls=:dash, color=:gray, label=nothing)
+#     # plot!([1e4, 5e6], x->5e3/x, ls=:dash, color=:gray, label=nothing)
+#     # plot!([1e4, 5e6], x->2e7/x^2, ls=:dash, color=:gray, label=nothing)
+
+#     ylims!(5e-4, 1)
+    
+#     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
+#     xlabel!("number of dof")
+#     ylabel!("relative error (input)")
+#     savefig("results_l2hdiv/convergence_ndof_input.png")
+# end
+
+
+# nothing
+
+
+
 # # compute a single solution for visualization
+# N = 39
+# v = H1_L2()
 # grid_gen_2D((-1.5, 1.5, -1.5, 1.5); min_res=0.06, max_res=0.06, filepath="/tmp/tmp_msh.msh")
-# # grid_gen_2D((-1.5, 1.5, -1.5, 1.5); min_res=0.25, max_res=0.25, filepath="/tmp/tmp_msh.msh")
 # model = DiscreteModelFromFile("/tmp/tmp_msh.msh")
-# # model = CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (40, 40))
-
-
-
 # spaces, gridap_args = gridap_setup(model, 0)
 
-# v = L2_Hdiv_H1_{:H1H1}()
-# v = L2_H1_H1H1()
-# N = 19
 # M = assemble_mass_matrix(v, N, spaces, gridap_args)
 # B = assemble_transport_matrix(v, N, spaces, gridap_args)
 
 # N_t = 299
 # Δt = 1.0 / N_t
-# A = lu((M/Δt + B/2));
-# C = (M/Δt - B/2);
+# σ = 0.0
+# # try with absorption # implicit midpoint
+# A = (M/Δt + (σ/2)*M + B/2);
+# C = (M/Δt - (σ/2)*M - B/2);
 
-# σ = 0.1
+# # implicit euler
+# A = (M/Δt + σ*M + B)
+# C = M/Δt
+
+# dx = gridap_args[2]
+
 # u = let
-#     u_ = zeros(n_variables(v, N, spaces))
-#     gaussian(x) = sqrt(2π)/(2π*σ^2)*exp(-1/(2σ^2)*(x[1]^2 + x[2]^2))
+#     u = zeros(n_variables(v, N, spaces))
+    
 #     M0 = assemble_mass_matrix_part(getproperty(spaces, deg_to_space(v, 0)), gridap_args)
 #     u0 = M0 \ assemble_vector(v -> ∫(gaussian * v)dx, getproperty(spaces, deg_to_space(v, 0)))
-#     u_[1:getproperty(spaces, deg_to_space(v, 0)).nfree] .= u0
-#     u_
+#     u[1:n_variables_part(v, 0, spaces)] .= u0
+#     u
 # end
 
-# for i in 1:300
-#     @show i
-#     u = ldiv!(u, A, C*u)
-# end
+# solver = MKLPardisoSolver()
 
-# neg_to_nan(x) = x < 0 ? NaN : x
-
-# f = interpolable_deg(v, spaces, 0, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 1, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 1, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[2], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 2, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 2, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[2], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 3, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 3, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[2], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 4, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 4, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[2], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 5, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 5, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[2], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 13, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-# f = interpolable_deg(v, spaces, 13, u)
-# heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[2], aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
-
-
-# ch = CircularHarmonic(2, 0)
-# SphericalHarmonicsModels.is_even_in(ch, Z()), SphericalHarmonicsModels.is_even_in(ch, X())
-
-# for d in 0:N
-#     @show d
-#     f = interpolable_deg(v, spaces, d, u)
-#     if d == 0
-#         heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> f(VectorValue(x, y)), aspect_ratio=:equal, cmap=:jet)
-#         plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-#         savefig("results_l2hdiv/all_moments_h1l2_noclim/ch_$(d)_0.png")
-#     else
-#         heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> f(VectorValue(x, y))[1], aspect_ratio=:equal, cmap=:jet)
-#         plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-#         savefig("results_l2hdiv/all_moments_h1l2_noclim/ch_$(d)_0.png")
-
-#         heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> f(VectorValue(x, y))[2], aspect_ratio=:equal, cmap=:jet)
-#         plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-#         savefig("results_l2hdiv/all_moments_h1l2_noclim/ch_$(d)_1.png")
-#     end
-# end
-
-# # check krylov
-
-# A = (M/Δt + B/2);
-# C = (M/Δt - B/2);
-
-# function symmetrize!(A::SparseMatrixCSC, N, v)
-#     index_start = 0
-
-#     for i in 0:N
-#         nfree = getproperty(spaces, deg_to_space(v, i)).nfree
-#         index_end = index_start + nfree
-
-#         if iseven(i)
-#             # Scale all stored entries in these rows
-#             for j in axes(A, 2)
-#                 for p in A.colptr[j]:(A.colptr[j+1] - 1)
-#                     row = A.rowval[p]
-#                     if index_start < row <= index_end
-#                         A.nzval[p] = -A.nzval[p]
-#                     end
-#                 end
-#             end
-#         end
-
-#         index_start = index_end
-#     end
-
-#     return A
-# end
-
-# A = symmetrize!(A, N, v)
-# C = symmetrize!(C, N, v)
-
-# using EPMAfem.Krylov
+# set_phase!(solver, 12) # analysis/numerical_factorization
+# fix_iparm!(solver, :N)
+# Pardiso.pardiso(solver, u, A, C*u)
 
 # for i in 1:N_t
 #     @show i
-#     sol, stats = Krylov.minres(A, C*u; rtol=1e-12, atol=1e-12)
-#     @show stats
-#     u .= sol
+#     rhs = C*u
+
+#     set_phase!(solver, 33) # solve/iterative_refinement
+#     fix_iparm!(solver, :N)
+#     Pardiso.pardiso(solver, u, A, rhs)
+#     # Pardiso.solve!(ps, u, A, rhs)
 #     # u = ldiv!(u, A, C*u)
-#     # f = interpolable_deg(v, spaces, 0, u)
-#     # p = heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y)), aspect_ratio=:equal, cmap=:jet, clims=(-4, 4))
-#     # display(p)
 # end
 
+# set_phase!(solver, -1) # release internal memory
+# Pardiso.pardiso(solver, u, A, C*u)
+
+# f = interpolable_deg(v, spaces, 0, u)
+# # multiply f by sqrt(2π) to get the angular integral
 # begin
-#     f = interpolable_deg(v, spaces, 3, u)
-#     heatmap(-1.5:0.01:1.5, -1.5:0.01:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, cmap=:jet, clims=(-4, 4))
+#     heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y)), aspect_ratio=:equal, cmap=:jet)
 #     plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
 # end
 
-
-# BM = problem_cache[1].BM; 
-# u_BM = problem_cache[2];
-
-# # test_u_BM = sort(u_BM)
-# # test_u = sort(u)
-# # maximum(test_u_BM - test_u .|> abs)
-
-# # temp_BM = BM * u_BM
-# # temp = A * u
-
-# # test_BM = sort(-temp_BM / Δt)
-# # test = sort(temp)
-# # plot(sort((test_BM - test) .|> abs)[end-100:end])
-
-# # maximum(test_BM - test .|> abs)
-
-# A
-# test = sparse(Matrix(BM))
-# sort(test.nzval .|> abs) |> plot
-# sort(sparse(A).nzval * Δt .|> abs) |> plot!
-
-# maximum(sort(test.nzval .|> abs)  - sort(sparse(A).nzval * Δt .|> abs))
-
-# test2 = zeros(1830, 1830)
-# unit = zeros(1830)
-# for i in 1:1830
-#     unit[i] = 1.0
-#     test2[:, i] .= BM * unit
-#     unit[i] = 0.0
-# end
-# test2 = sparse(test2)
-
-# maximum(sort(test.nzval .|> abs)  - sort(sparse(A).nzval * Δt .|> abs))
-# maximum(sort(test2.nzval .|> abs)  - sort(sparse(A).nzval * Δt .|> abs))
-
-
-# temptemp = (A* Δt) * u
-# temptemp_BM = BM * problem_cache[2]
-
-# maximum(abs.(sort(abs.(u)) - sort(abs.(problem_cache[2]))))
-
-# maximum(abs.(sort(abs.(temptemp)) - sort(abs.(temptemp_BM))))
