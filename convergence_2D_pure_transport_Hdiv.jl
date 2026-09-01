@@ -48,7 +48,41 @@ struct L2_H1_L2H1 <: HierarchyVariant end # mäh
 name(::L2_H1_L2H1) = "L2-H1-L2H1"
 Lname(::L2_H1_L2H1) = L"L^2\!-\!H^1\!-\!L^2H^1"
 
+struct H1_H1H1_H1 <: HierarchyVariant end # because why not
+name(::H1_H1H1_H1) = "H1-H1H1-H1"
+Lname(::H1_H1H1_H1) = L"H^1\!-\!H^1"
+
+struct H1_Hdiv_H1 <: HierarchyVariant end # because why not
+name(::H1_Hdiv_H1) = "H1-Hdiv-H1"
+Lname(::H1_Hdiv_H1) = L"H^1\!-\!H(\textrm{div})\!-\!H^1"
+
 deg_to_space(v::HierarchyVariant, deg) = deg_to_spaces(v, deg)[1]
+
+function deg_to_spaces(::H1_Hdiv_H1, deg)
+    if deg == 0
+        return :H1_, :Hdiv
+    elseif deg == 1
+        return :Hdiv, :H1
+    else
+        if deg % 2 == 0
+            return :H1, :H1H1
+        else
+            return :H1H1, :H1
+        end
+    end
+end
+
+function deg_to_spaces(::H1_H1H1_H1, deg)
+    if deg == 0
+        return :H1_, :H1H1
+    else
+        if deg % 2 == 0
+            return :H1, :H1H1
+        else
+            return :H1H1, :H1
+        end
+    end
+end
 
 function deg_to_spaces(::L2_H1_H1H1, deg)
     if deg == 0
@@ -112,7 +146,7 @@ function deg_to_spaces(::H1_L2, deg)
     end
 end
 
-for v in [H1_L2(), L2_H1(), L2_Hdiv_H1_{:H1}(), L2_Hdiv_H1_{:L2}(), L2_Hdiv_H1_{:H1L2}(), L2_Hdiv_H1_{:L2H1}(), L2_Hdiv_H1_{:H1H1}(), L2_H1_H1H1(), L2_H1_L2H1()]
+for v in [H1_L2(), L2_H1(), L2_Hdiv_H1_{:H1}(), L2_Hdiv_H1_{:L2}(), L2_Hdiv_H1_{:H1L2}(), L2_Hdiv_H1_{:L2H1}(), L2_Hdiv_H1_{:H1H1}(), L2_H1_H1H1(), L2_H1_L2H1(), H1_H1H1_H1(), H1_Hdiv_H1()]
     @show "testing $(name(v))"
     for deg in 0:21
         # test validity
@@ -296,6 +330,7 @@ end
 
 # df = DataFrame(variant = String[], order = Int[], grid_res = Float64[], N = Int[], L2 = Float64[], L1 = Float64[], Linf = Float64[], L2_input = Float64[], L1_input = Float64[], Linf_input = Float64[], n_cells = Int[], n_dof0 = Int[], n_dof = Int[])
 folder_name = "results_l2hdiv_cartesian/"
+# folder_name = "results_l2hdiv/"
 # df = serialize(joinpath(folder_name, "data.jls"), df)
 df = deserialize(joinpath(folder_name, "data.jls"))
 
@@ -349,7 +384,7 @@ begin
                 M = assemble_mass_matrix(v, N, spaces, gridap_args)
                 B = assemble_transport_matrix(v, N, spaces, gridap_args)
 
-                N_t = 299
+                N_t = 299*2
                 Δt = 1.0 / N_t
                 # A = lu((M/Δt + B/2));
                 A = (M/Δt + B/2);
@@ -456,7 +491,7 @@ end
 
 # heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> analytic_solution(VectorValue(x, y), 1), aspect_ratio=:equal, clims=(-4, 4), cmap=:jet)
 # plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
-# savefig("results_l2hdiv/reference.png")
+# savefig(joinpath(folder_name, "reference.png"))
 
 # using EPMAfem.HCubature
 # σ = 0.1
@@ -487,15 +522,14 @@ end
 #     plot!([], [], color=vars_cols[3][2], ls=:solid, label=Lname(vars_cols[3][1]), marker=:o)
 #     plot!([], [], color=:gray, ls=:dot, label=L"rel. $L^1$ err.")
 
-#     plot!(3e2:5e4, x->200/x, ls=:dash, color=:gray, label=nothing)
-#     annotate!(2e3, 5.2e-2, Plots.text(L"\mathcal{O}(1/N)", 9, :gray), color=:gray)
-#     plot!(3e2:5e4, x->120/(x)^(1/2), ls=:dash, color=:gray, label=nothing)
-#     # plot!(3e2:5e4, x->50/(x)^(1/2), ls=:dash, color=:gray, label=nothing)
-#     annotate!(14e3, 1.9, Plots.text(L"\mathcal{O}(1/\sqrt{N})", 9, :gray), color=:gray)
+#     plot!(3e2:5e4, x->100/x, ls=:dash, color=:gray, label=nothing)
+#     annotate!(2e3, 2.5e-2, Plots.text(L"\mathcal{O}(1/N)", 9, :gray), color=:gray)
+#     plot!(3e2:5e4, x->50/(x)^(1/2), ls=:dash, color=:gray, label=nothing)
+#     annotate!(14e3, 0.8, Plots.text(L"\mathcal{O}(1/\sqrt{N})", 9, :gray), color=:gray)
 #     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
 #     xlabel!("number of grid cells")
 #     ylabel!("relative errors")
-#     # savefig("results_l2hdiv/convergence_order0_variants.png")
+#     savefig(joinpath(folder_name, "convergence_order0_variants.png"))
 # end
 
 # begin
@@ -518,21 +552,20 @@ end
 #     plot!([], [], color=:gray, ls=:solid, label="order: 0", marker=:o)
 #     plot!([], [], color=:gray, ls=:solid, label="order: 1", marker=:dtriangle)
 
-#     plot!([1e4, 5e6], x->1e3/sqrt(x), ls=:dash, color=:gray, label=nothing)
+#     plot!([1e4, 5e6], x->5e2/sqrt(x), ls=:dash, color=:gray, label=nothing)
 #     plot!([1e4, 5e6], x->5e4/x, ls=:dash, color=:gray, label=nothing)
-#     plot!([1e4, 5e6], x->2e8/x^2, ls=:dash, color=:gray, label=nothing)
+#     plot!([1e4, 5e6], x->5e8/x^2, ls=:dash, color=:gray, label=nothing)
 
-#     ylims!(5e-4, 11)
+#     ylims!(2e-4, 3)
 #     yticks!([10^0, 10^-1, 10^-2, 10^-3])
 
 
 #     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
 #     xlabel!("number of dof")
 #     ylabel!("relative errors")
-#     # savefig("results_l2hdiv/convergence_ndof_variants.png")
-#     # savefig("results_l2hdiv/convergence_ndof_variants.pdf")
+#     savefig(joinpath(folder_name, "convergence_ndof_variants.png"))
+#     savefig(joinpath(folder_name, "convergence_ndof_variants.pdf"))
 # end
-
 
 # begin
 #     plot(xaxis=:log, yaxis=:log)
@@ -551,16 +584,16 @@ end
 #     plot!([], [], color=:gray, ls=:dash, label=L"rel. $L^\infty$ err.")
 #     plot!([], [], color=vars_cols[3][2], ls=:solid, label=Lname(vars_cols[3][1]), marker=:o)
 #     plot!([], [], color=:gray, ls=:dot, label=L"rel. $L^1$ err.")
-#     plot!(3e2:7e3, x->2000/x, ls=:dash, color=:gray, label=nothing)
-#     annotate!(3e3, 1.9, Plots.text(L"\mathcal{O}(1/N)", 9, :gray), color=:gray)
-#     plot!(3e2:7e3, x->20000/(x)^(2), ls=:dash, color=:gray, label=nothing)
-#     annotate!(5e2, 3e-2, Plots.text(L"\mathcal{O}(1/N^2)", 9, :gray), color=:gray)
+#     plot!(3e2:7e3, x->200/x, ls=:dash, color=:gray, label=nothing)
+#     annotate!(3e3, 0.2, Plots.text(L"\mathcal{O}(1/N)", 9, :gray), color=:gray)
+#     plot!(3e2:7e3, x->10000/(x)^(2), ls=:dash, color=:gray, label=nothing)
+#     annotate!(5e2, 2e-2, Plots.text(L"\mathcal{O}(1/N^2)", 9, :gray), color=:gray)
 #     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
 #     xlabel!("number of grid cells")
 #     ylabel!("relative errors")
 #     yticks!([10^0, 10^-1, 10^-2, 10^-3])
 #     xticks!([10^2.5, 10^3, 10^3.5])
-#     savefig("results_l2hdiv/convergence_order1_variants.png")
+#     savefig(joinpath(folder_name, "convergence_order1_variants.png"))
 # end
 
 
@@ -585,24 +618,24 @@ end
 #     # plot!([1e4, 5e6], x->5e3/x, ls=:dash, color=:gray, label=nothing)
 #     # plot!([1e4, 5e6], x->2e7/x^2, ls=:dash, color=:gray, label=nothing)
 
-#     ylims!(5e-4, 1)
+#     ylims!(2e-4, 0.4)
     
 #     plot!(size=(400, 300), dpi=1000, fontfamily="Computer Modern", legend=:bottomleft, legend_columns=2)
 #     xlabel!("number of dof")
 #     ylabel!("relative error (input)")
-#     savefig("results_l2hdiv/convergence_ndof_input.png")
+#     savefig(joinpath(folder_name, "convergence_ndof_input.png"))
 # end
-
 
 # nothing
 
 
 
-# # compute a single solution for visualization
+# # # compute a single solution for visualization
 # N = 39
-# v = H1_L2()
+# v = H1_Hdiv_H1()
 # grid_gen_2D((-1.5, 1.5, -1.5, 1.5); min_res=0.06, max_res=0.06, filepath="/tmp/tmp_msh.msh")
 # model = DiscreteModelFromFile("/tmp/tmp_msh.msh")
+# # model = CartesianDiscreteModel((-1.5, 1.5, -1.5, 1.5), (75, 75))
 # spaces, gridap_args = gridap_setup(model, 0)
 
 # M = assemble_mass_matrix(v, N, spaces, gridap_args)
@@ -616,8 +649,8 @@ end
 # C = (M/Δt - (σ/2)*M - B/2);
 
 # # implicit euler
-# A = (M/Δt + σ*M + B)
-# C = M/Δt
+# # A = (M/Δt + σ*M + B)
+# # C = M/Δt
 
 # dx = gridap_args[2]
 
@@ -654,6 +687,13 @@ end
 # # multiply f by sqrt(2π) to get the angular integral
 # begin
 #     heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y)), aspect_ratio=:equal, cmap=:jet)
+#     plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
+# end
+
+# f = interpolable_deg(v, spaces, 1, u)
+# # multiply f by sqrt(2π) to get the angular integral
+# begin
+#     heatmap(-1.5:0.005:1.5, -1.5:0.005:1.5, (x, y) -> sqrt(2π)*f(VectorValue(x, y))[1], aspect_ratio=:equal, cmap=:jet)
 #     plot!(size=(315, 300), dpi=1000, fontfamily="Computer Modern")
 # end
 
